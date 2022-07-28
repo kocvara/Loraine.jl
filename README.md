@@ -12,10 +12,10 @@ To run the code, use the `tvp.jl` script in the `scripts` directory; in this scr
 The list of options to be set/changed in `tvp.jl`
 ```
 kit          # kit = 0 for direct solver; kit = 1 for CG
-tol_cg       # tolerance for CG solver [1e-2]
+tol_cg       # tolerance for CG solver [1.0e-2]
 tol_cg_up    # tolerance update [0.5]
-tol_cg_min   # minimal tolerance for CG solver [1e-6]
-eDIMACS      # epsilon for DIMACS error stopping criterion [1e-5]
+tol_cg_min   # minimal tolerance for CG solver [1.0e-6]
+eDIMACS      # epsilon for DIMACS error stopping criterion [1.0e-5]
 erank        # estimated rank [1]
 verb         # 2..full output; 1..short output; 0..no output
 maxit        # maximal number of global iterations [200]
