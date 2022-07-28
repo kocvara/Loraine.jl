@@ -9,7 +9,7 @@ To run the code, use the `tvp.jl` script in the `scripts` directory; in this scr
 
 ## Options
 
-The list of options to be set/changed in tvp.jl
+The list of options to be set/changed in `tvp.jl`
 ```
 kit          # kit = 0 for direct solver; kit = 1 for CG
 tol_cg       # tolerance for CG solver [1e-2]
