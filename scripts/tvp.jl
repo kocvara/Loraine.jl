@@ -6,10 +6,7 @@ using LinearAlgebra
 using MAT
 using Printf
 using TimerOutputs
-# using MKLSparse
 using MKL
-# using GLMakie
-# using Traceur
 using Profile
 using ProfileView
 
@@ -51,6 +48,5 @@ options["maxit"]    = 200
 ## CALLING Loraine
 
 loraine(d,options)
-# ProfileView.@profview loraine(d,options)
 
 end
