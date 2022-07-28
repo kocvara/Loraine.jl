@@ -5,7 +5,7 @@ The special feature of Loraine is the iterative solver for linear systems. This 
 Standard (non-low-rank) problems can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
 
 At the moment, Loraine is a stand-alone code, reading data from a Matlab file - sample input files can be found in directory `examples`.
-To run the code, use the tvp.jl script in the `scripts` directory; in this script you can select one of the provided input files.
+To run the code, use the `tvp.jl` script in the `scripts` directory; in this script you can select one of the provided input files.
 
 ## Options
 
