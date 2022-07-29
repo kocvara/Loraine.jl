@@ -7,15 +7,14 @@ function predictor(solver,halpha)
     solver.Rp = solver.model.b'
 
     for i = 1:solver.model.nlmi
-        solver.Rp = solver.Rp - solver.model.AA[i] * solver.X[i][:]
-        solver.Rd[i] = solver.model.C[i] - solver.S[i] - mat(solver.model.AA[i]' * solver.y)
-        solver.Rc[i] = solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
+        solver.Rp -= solver.model.AA[i] * solver.X[i][:]
+        solver.Rd[i] .= solver.model.C[i] - solver.S[i] - mat(solver.model.AA[i]' * solver.y)
+        solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
     if solver.model.nlin > 0
-        solver.Rp = solver.Rp - solver.model.C_lin * solver.X_lin
+        solver.Rp -= solver.model.C_lin * solver.X_lin
         solver.Rd_lin = solver.model.d_lin - solver.S_lin - solver.model.C_lin' * solver.y
-        # Rc_lin = sigma*mu.*ones(nlin,1) - (diag(X_lin)*diag(S_lin))*ones(nlin,1)
         Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
     end
 
@@ -29,14 +28,14 @@ function predictor(solver,halpha)
         # BBBB = makeBBBBsp2(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
 
         if solver.model.nlin > 0
-            BBBB = BBBB + solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
+            BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
         end
     end
     end
 
     h = makeRHS(solver.model.nlmi,solver.model.AA,solver.W,solver.S,solver.Rp,solver.Rd)
     if solver.model.nlin > 0
-        h = h + solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin)
+        h .+= solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin)
     end
 
     # solving the linear system()
@@ -52,7 +51,6 @@ function predictor(solver,halpha)
         
         @timeit solver.to "CG predictor" begin
         solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 1000, precon = M)
-        # solver.dely, exit_code, num_iters = cg((x,y) -> mul!(x,BBBB,y), h[:]; tol = 1e-8, maxIter = 100)
         end
 
         # print(num_iters, exit_code)
@@ -98,7 +96,7 @@ function corrector(solver,halpha)
     solver.predict = false
     h = solver.Rp #RHS for the linear system()
     for i = 1:solver.model.nlmi
-        h = h + solver.model.AA[i] * my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i]))         # RHS using my_kron()
+        h += solver.model.AA[i] * my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i]))         # RHS using my_kron()
     end
     if solver.model.nlin > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
@@ -143,13 +141,7 @@ function find_step(solver)
         # determining steplength to stay feasible
         @timeit solver.to "find_step_B" begin
         delSb = solver.G[i]' * solver.delS[i] * solver.G[i]
-        # delSb = Matrix{Float64}(undef,size(solver.G[i], 1), size(solver.G[i], 1))
-        # mul!(delSb, solver.delS[i], solver.G[i])
-        # mul!(delSb, solver.G[i]', copy(delSb))
         delXb = solver.Gi[i] * solver.delX[i] * solver.Gi[i]'
-        # delXb = Matrix{Float64}(undef,size(solver.G[i], 1), size(solver.G[i], 1))
-        # mul!(delXb, solver.delX[i], solver.Gi[i]')
-        # mul!(delXb, solver.Gi[i], copy(delXb))
         delXb = Hermitian(delXb)
         end
 
