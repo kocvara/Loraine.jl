@@ -6,7 +6,6 @@ function prepare_W(solver)
     # @timeit to "prpr" begin
         for i = 1:solver.model.nlmi
             # @timeit to "prpr1" begin
-            # Ctmp = cholesky(sparse(X[i]), perm=1:size(X[i],1))
             Ctmp = cholesky(solver.X[i])
     
             if issuccess(Ctmp) == false
@@ -25,7 +24,7 @@ function prepare_W(solver)
             if issuccess(CtmpS) == false
                 icount = 0
                 while issuccess(CtmpS) == false
-                    solver.S[i] = solver.S[i] + 1e-6 .* eye(size(solver.S[i], 1))
+                    solver.S[i] = solver.S[i] + 1.0e-6 .* eye(size(solver.S[i], 1))
                     CtmpS = cholesky(sparse(solver.S[i]), perm=1:size(solver.S[i],1))
                     icount = icount + 1
                     if icount > 1000
@@ -43,7 +42,6 @@ function prepare_W(solver)
             end
 
             solver.D[i] = copy(Dtmp)
-            # push!(Di, sparse(diagm(1 ./ Dtmp)))
             Di2 = Diagonal(1 ./ sqrt.(Dtmp))
             # @timeit to "prpr3a" begin
                 solver.G[i] = Ctmp.L * V * Di2

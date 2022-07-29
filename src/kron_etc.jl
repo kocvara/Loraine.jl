@@ -7,7 +7,7 @@ function my_kron(A, B, C)
     TMP = Matrix{Float64}(undef,size(B,1),size(C,1))
     mul!(TMP1,C,A')
     mul!(TMP,B,TMP1)
-    return vec(TMP)
+    return vec(TMP) 
 end
 ###########################################################################
 function mat(vecA)

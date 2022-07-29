@@ -11,10 +11,8 @@ using MKL
 #modules
 include("Model.jl")
 include("Solvers.jl")
-include("Precon.jl")
 using .Model
 using .Solvers
-using .Precon
 
 include("kron_etc.jl")
 include("makeBBBB.jl")
@@ -67,7 +65,9 @@ function loraine(d,options)
     tottime = time() - t1
 
     if verb > 0
-        @printf(" *** Total CG iterations: %8.0d \n", solver.cg_iter_tot)
+        if kit == 1
+            @printf(" *** Total CG iterations: %8.0d \n", solver.cg_iter_tot)
+        end
         @printf(" *** Optimal solution found in %8.2f seconds\n", tottime)
     end
     

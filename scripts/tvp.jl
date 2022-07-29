@@ -21,8 +21,8 @@ const to = TimerOutput()
 # file = matopen("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/d.mat")
 # file = matopen("examples/control1.poema")
 # file = matopen("examples/theta1.poema")
-# file = matopen("examples/vib3.poema")
-file = matopen("examples/trto3.poema")
+file = matopen("examples/vib3.poema")
+# file = matopen("examples/trto3.poema")
 d = read(file, "d")
 
 # OPTIONS FOR myIP
@@ -42,7 +42,6 @@ options["aamat"] = 2    # 0 ... A^TA; 1 ... diag(A^TA); 2 ... identity
 options["fig_ev"]   = 0  # 0...no figure; 1.1.figure with eigenvalues of H; H_til; etc in every IP iteration
 
 options["verb"]     = 1   # 2..full output; 1..short output; 0..no output
-
 options["maxit"]    = 200
 
 ## CALLING Loraine

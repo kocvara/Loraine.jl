@@ -12,7 +12,7 @@ function initial_point(solver)
 
     solver.DIMACS_error = 1.0
     solver.iter = 0
-    solver.status = 0
+    solver.status = 0 
 
 end
 

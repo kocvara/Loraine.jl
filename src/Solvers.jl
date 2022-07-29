@@ -18,17 +18,17 @@ using MKL
 
 mutable struct MySolver
     # main options
-    kit::Int
+    kit::Int64
     tol_cg::Float64
     tol_cg_up::Float64
     tol_cg_min::Float64
     eDIMACS::Float64
-    preconditioner::Int
-    erank::Int
-    aamat::Int
-    fig_ev::Int
-    verb::Int
-    maxit::Int
+    preconditioner::Int64
+    erank::Int64
+    aamat::Int64
+    fig_ev::Int64
+    verb::Int64
+    maxit::Int64
 
     to::Any
 
@@ -42,7 +42,7 @@ mutable struct MySolver
     tau::Float64
     mu::Float64
     expon::Float64
-    iter::Int
+    iter::Int64
     DIMACS_error::Float64
     cholBBBB
 
@@ -73,8 +73,6 @@ mutable struct MySolver
     delS_lin
     Xn_lin
     Sn_lin
-    # delXb
-    # delSb::Matrix{Float64}
 
     D
     G
@@ -223,7 +221,7 @@ function solve(solver::MySolver,halpha::Halpha)
         myIPstep(solver,halpha)
         solver.itertime = time()-t1
 
-        solver.tol_cg = max(solver.tol_cg * solver.tol_cg_up,solver.tol_cg_min)
+        solver.tol_cg = max(solver.tol_cg * solver.tol_cg_up, solver.tol_cg_min)
 
         check_convergence(solver)
 
@@ -249,8 +247,6 @@ function setup_solver(solver::MySolver,halpha::Halpha)
     solver.Rd = Matrix{Float64}[]
     solver.Rc = Matrix{Float64}[]
 
-    # solver.alpha = Vector{Float64}
-    # solver.beta = Vector{Float64}
     solver.alpha = zeros(solver.model.nlmi)
     solver.beta = zeros(solver.model.nlmi)
 
@@ -274,19 +270,16 @@ function setup_solver(solver::MySolver,halpha::Halpha)
         push!(solver.Xn,zeros(solver.model.msizes[i], solver.model.msizes[i]))
         push!(solver.Sn,zeros(solver.model.msizes[i], solver.model.msizes[i]))
         push!(solver.RNT,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        # solver.alpha[i] = 0.
-        # solver.beta[i] = 0.
     end
 
     halpha.Umat = Matrix{Float64}[]
     halpha.Z = Matrix{Float64}[]
     halpha.AAAATtau = SparseMatrixCSC{Float64}[]
-    # halpha.cholS = Cholesky{Float64, Matrix{Float64}}[]
 
     for i = 1:solver.model.nlmi
         push!(halpha.Umat,zeros(solver.model.msizes[i], solver.erank))
         push!(halpha.Z,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        tmp = Matrix(I(solver.model.msizes[i]))
+        # tmp = Matrix(I(solver.model.msizes[i]))
         # push!(halpha.cholS,cholesky(tmp))
         push!(halpha.AAAATtau,zeros(solver.model.n, solver.model.n))
     end
@@ -376,7 +369,7 @@ function check_convergence(solver)
 
 end
 
-
+```Functions for the iterative solver follow```
 
 struct MyA
     W::Vector{Matrix{Float64}}
@@ -446,37 +439,29 @@ function Prec_for_CG_tilS_prep(solver,halpha)
         F = eigen(solver.W[ilmi]); 
         vectf = F.vectors
         lambdaf = F.values 
-        # dlambdaf = diag(lambdaf);
 
         vect_l = vectf[:,n-k+1:n]
         lambda_l = lambdaf[n-k+1:n]
         vect_s = vectf[:,1:n-k]
         lambda_s = lambdaf[1:n-k]
 
-        # [lambda1,iind] = maxk(dlambdaf,k)
-        # vect_l = vectf(:,iind)
-        # lambda_l=diag(lambda1)
-        # jind = setdiff(1:n,iind);
-        # [lambda1] = dlambdaf(jind); vect_s = vectf(:,jind);
-        # lambda_s=diag(lambda1);
         if solver.aamat==0
-            ttau = 1.0*minimum(lambda_s);
+            ttau = 1.0*minimum(lambda_s)
         else
             ttau = (minimum(lambda_s) + mean(lambda_s))/2 - 1.0e-14
         end
         
         halpha.Umat[ilmi] = sqrt.(spdiagm(lambda_l) - ttau .* I(k))
-        halpha.Umat[ilmi] = vect_l * halpha.Umat[ilmi];
+        halpha.Umat[ilmi] = vect_l * halpha.Umat[ilmi]
         # m = size(halpha.Umat[ilmi],1);
         
         @timeit solver.to "prec1" begin
-        W0 = [vect_s vect_l]*[spdiagm(lambda_s[:]) spzeros(n-k,k); spzeros(k,n-k) ttau * I(k)] * [vect_s vect_l]'
+        W0 .= [vect_s vect_l]*[spdiagm(lambda_s[:]) spzeros(n-k,k); spzeros(k,n-k) ttau * I(k)] * [vect_s vect_l]'
         end
 
         @timeit solver.to "prec2" begin
         Z = cholesky(2 .* Hermitian(W0) + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
         halpha.Z[ilmi] = Z.L
-        # Z{ilmi} = sqrt(ttau) .* I(size(W0));
         end
         
         # switch aamat
@@ -485,13 +470,13 @@ function Prec_for_CG_tilS_prep(solver,halpha)
             # case 1
                 # ZZZ = spdiags(diag(AAAAT{ilmi}),0,nvar,nvar);
             if solver.aamat < 3
-                ZZZ = spdiagm(ones(nvar));
+                ZZZ = spdiagm(ones(nvar))
             else
-                ZZZ = spzeros(nvar,nvar);
+                ZZZ = spzeros(nvar,nvar)
             end
         # end
         
-        halpha.AAAATtau += ttau^2 .* ZZZ;
+        halpha.AAAATtau .+= ttau^2 .* ZZZ
     end
     
     if solver.model.nlin > 0
@@ -509,8 +494,8 @@ function Prec_for_CG_tilS_prep(solver,halpha)
         for ilmi = 1:nlmi
             n = size(solver.W[ilmi],1)
             k = kk[ilmi]
-            TT = kron(halpha.Umat[ilmi],halpha.Z[ilmi])
-            t[1:nvar,lbt:lbt+k*n-1] = solver.model.AA[ilmi] * TT
+            TT .= kron(halpha.Umat[ilmi],halpha.Z[ilmi])
+            t[1:nvar,lbt:lbt+k*n-1] .= solver.model.AA[ilmi] * TT
             lbt = lbt + k*n
         end
         end
@@ -528,7 +513,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
             end
             n = size(solver.W[ilmi],1) 
             k = kk[ilmi] 
-            AAs = AAAATtau_d * solver.model.AA[ilmi]
+            AAs .= AAAATtau_d * solver.model.AA[ilmi]
             ii_, jj_, aa_ = findnz(AAs)
             qq_ = floor.(Int,(jj_ .- 1) ./ n) .+ 1
             pp_ = mod.(jj_ .- 1, n) .+ 1
@@ -536,13 +521,13 @@ function Prec_for_CG_tilS_prep(solver,halpha)
             aau = aa_ .* UU
             AU = sparse(ii_,pp_,aau,nvar,n)
             if nlmi>1
-                t[1:nvar,lbt:lbt+k*n-1] = AU * halpha.Z[ilmi]
+                t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
             else
-                t = AU * halpha.Z[1]
+                t .= AU * halpha.Z[1]
             end
             lbt = lbt + k*n
         end 
-        S = (t' * t)
+        S .= (t' * t)
     end
 
     
@@ -586,18 +571,15 @@ function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
     y33 = zeros(Float64,0)
 
     # titi = time()
-    AAAAinvx = t.AAAATtau\x;
+    AAAAinvx = t.AAAATtau\x
 
     # mul!(Mx,I(nvar),x)
 
     for ilmi = 1:nlmi
-        # n = size(t.Umat[ilmi],1)
-        # k = size(t.Umat[ilmi],2)
-        y22 = t.AA[ilmi]' * AAAAinvx
-        y33 = [y33; vec(t.Z[ilmi]' * mat(y22) * t.Umat[ilmi])]
+        y22 .= t.AA[ilmi]' * AAAAinvx
+        y33 .= [y33; vec(t.Z[ilmi]' * mat(y22) * t.Umat[ilmi])]
     end
     
-    # y33 = (t.L' \ (t.L \ y33))
     y33 = t.L \ y33
 
     ii = 0

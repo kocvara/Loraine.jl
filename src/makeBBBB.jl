@@ -2,7 +2,6 @@
 
 
 function makeBBBB(n,nlmi,A,G)
-    # BBBB = zeros(n, n)
     # BBBB = Matrix{Float64}(zeros, n, n)
     # @timeit to "BBBB" begin
     BBBB = zeros(Float64, n, n)
@@ -23,14 +22,11 @@ function makeBBBBi(Ailmi,Gilmi,n)
     gugu1 = Matrix{Float64}(undef,size(Gilmi, 1), size(Ailmi[1], 2))
     gugu = Matrix{Float64}(undef,size(Gilmi, 1), size(Gilmi, 1))
     @inbounds @fastmath for i = 1:n
-        #tmp  = (Gilmi'*A(ilmi,i))*Gilmi
         # @timeit to "BBBB1a" begin
-            # gugu1 = Gilmi' * transpose(Ailmi[i+1])
             mul!(gugu1,Gilmi',transpose(Ailmi[i+1]))
         # end
         # @timeit to "BBBB1b" begin
             mul!(gugu,gugu1,Gilmi)
-            # gugu = gugu1 * Gilmi
         # end
         # @timeit to "BBBB1c" begin
             BB[:, i] = vec(gugu)
@@ -58,15 +54,10 @@ function makeBBBBalt(n,nlmi,A,AA,W,to)
 end
 #####
 function makeBBBBalti(Ailmi,AAilmi,Wilmi,n,to)
-    # tAAilmi = transpose(AAilmi)
     Hnn = zeros(Float64, n, n)
     tmp1 = Matrix{Float64}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
-    # tmp1 = GBMatrix(tmp1)
-    # tmp1 = spzeros(size(Wilmi, 2), size(Ailmi[1], 1))
     tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
-    # tmp = GBMatrix(tmp)
     tmp2 = Matrix{Float64}(undef,size(AAilmi, 1), 1)
-    # tmp2 = GBMatrix(tmp2)
 
     @timeit to "BBBB1a" begin
         @inbounds for i = 1:n
@@ -75,10 +66,8 @@ function makeBBBBalti(Ailmi,AAilmi,Wilmi,n,to)
             # end
             @timeit to "BBBB1a2" begin
                 mul!(tmp,tmp1,Wilmi)
-                # mul!(tmp,Wilmi,transpose(tmp1))
             end
             @timeit to "BBBB1a3" begin
-                # mul!(tmp2,AAilmi,vec(tmp))
                 tmp2 .= AAilmi * vec(tmp)
             end
             @timeit to "BBBB1a4" begin    
@@ -115,27 +104,9 @@ function makeBBBBalti1(Ailmi,AAilmi,Wilmi,n)
 
     # @timeit to "BBBB1a" begin
         @inbounds for i = 1:n
-            # @timeit to "BBBB1a1" begin
-            #     mul!(tmp1,Wilmi,transpose(Ailmi[i+1]))
-            # # tmp1 = sparse(tmp1)
-            # end
-            # @timeit to "BBBB1a2" begin
-            #     mul!(tmp,Wilmi,transpose(tmp1))
-            # end
-            # @timeit to "BBBB1a3" begin
-            # Fkok = -vec(tmp);
-            # end
-            # Fkok = -vec((Wilmi*Ailmi[i+1])*Wilmi);
-            # @timeit to "BBBB1a1" begin
                 Fkok = Wilmi*Ailmi[i+1][:]
-            # end    
-            # @timeit to "BBBB1a2" begin
-            # Fkok = -Wilmi*AAilmi[i,:]
-            # end
-            # @timeit to "BBBB1a4" begin
                 mul!(tmp2,AAilmi,Fkok)
-                Hnn[:,i] = -tmp2
-            # end
+                Hnn[:,i] .= -tmp2
         end
     # end
     Hnn = Hermitian(Hnn)
