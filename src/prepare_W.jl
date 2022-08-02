@@ -38,9 +38,18 @@ function prepare_W(solver)
             @timeit solver.to "prep W SVD" begin
                 CCtmp = Matrix{Float64}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
+                # U, Dtmp, V = try
                 U, Dtmp, V = svd!(CCtmp)
+                # catch
+                    # U, Dtmp, V = try
+                        # U, Dtmp, V = LAPACK.gesvd!('S','S',CCtmp); V = V'
+                    # catch
+                        # ()
+                    # end
+            #     end
             end
 
+            # print(typeof(Dtmp))
             solver.D[i] = copy(Dtmp)
             Di2 = Diagonal(1 ./ sqrt.(Dtmp))
             # @timeit to "prpr3a" begin

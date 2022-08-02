@@ -50,7 +50,7 @@ function predictor(solver,halpha)
         M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         
         @timeit solver.to "CG predictor" begin
-        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 1000, precon = M)
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 5000, precon = M)
         end
 
         # print(num_iters, exit_code)
@@ -111,7 +111,7 @@ function corrector(solver,halpha)
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
         M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         @timeit solver.to "CG corrector" begin
-        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 1000, precon = M)
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 5000, precon = M)
         end
         solver.cg_iter += num_iters
         solver.cg_iter_tot += num_iters

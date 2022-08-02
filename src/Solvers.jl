@@ -28,6 +28,7 @@ mutable struct MySolver
     aamat::Int64
     fig_ev::Int64
     verb::Int64
+    timing::Int64
     maxit::Int64
 
     to::Any
@@ -110,6 +111,7 @@ mutable struct MySolver
         aamat::Int ,
         fig_ev::Int ,
         verb::Int ,
+        timing::Int ,
         maxit::Int, 
         model::MyModel
         )
@@ -125,6 +127,7 @@ mutable struct MySolver
         solver.aamat           = aamat
         solver.fig_ev          = fig_ev
         solver.verb            = verb   
+        solver.timing          = timing   
         solver.maxit           = maxit 
         solver.model           = model
         return solver
@@ -163,6 +166,7 @@ function load(model, options::Dict)
     aamat = Int64(get(options, "aamat", 1))
     fig_ev = Int64(get(options, "fig_ev", 1))
     verb = Int64(get(options, "verb", 1))
+    timing = Int64(get(options, "timing", 1))
     maxit = Int64(get(options, "maxit", 1))
 
     solver = MySolver(kit,
@@ -175,6 +179,7 @@ function load(model, options::Dict)
         aamat,
         fig_ev,
         verb,
+        timing,
         maxit, 
         MyModel(model.A,
             model.AA,
@@ -281,9 +286,10 @@ function setup_solver(solver::MySolver,halpha::Halpha)
         push!(halpha.Z,zeros(solver.model.msizes[i], solver.model.msizes[i]))
         # tmp = Matrix(I(solver.model.msizes[i]))
         # push!(halpha.cholS,cholesky(tmp))
-        push!(halpha.AAAATtau,zeros(solver.model.n, solver.model.n))
+        push!(halpha.AAAATtau,spzeros(solver.model.n, solver.model.n))
     end
 
+    
 end
 
 
@@ -416,6 +422,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     @timeit solver.to "prec" begin
     nlmi = solver.model.nlmi
     kk = solver.erank .* ones(Int,nlmi,1)
+    # kk[2] = 3
     
     nvar = size(solver.model.AA[1],1)
     
@@ -456,7 +463,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
         # m = size(halpha.Umat[ilmi],1);
         
         @timeit solver.to "prec1" begin
-        W0 .= [vect_s vect_l]*[spdiagm(lambda_s[:]) spzeros(n-k,k); spzeros(k,n-k) ttau * I(k)] * [vect_s vect_l]'
+        W0 = [vect_s vect_l]*[spdiagm(lambda_s[:]) spzeros(n-k,k); spzeros(k,n-k) ttau * I(k)] * [vect_s vect_l]'
         end
 
         @timeit solver.to "prec2" begin
@@ -494,7 +501,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
         for ilmi = 1:nlmi
             n = size(solver.W[ilmi],1)
             k = kk[ilmi]
-            TT .= kron(halpha.Umat[ilmi],halpha.Z[ilmi])
+            TT = kron(halpha.Umat[ilmi],halpha.Z[ilmi])
             t[1:nvar,lbt:lbt+k*n-1] .= solver.model.AA[ilmi] * TT
             lbt = lbt + k*n
         end
@@ -513,7 +520,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
             end
             n = size(solver.W[ilmi],1) 
             k = kk[ilmi] 
-            AAs .= AAAATtau_d * solver.model.AA[ilmi]
+            AAs = AAAATtau_d * solver.model.AA[ilmi]
             ii_, jj_, aa_ = findnz(AAs)
             qq_ = floor.(Int,(jj_ .- 1) ./ n) .+ 1
             pp_ = mod.(jj_ .- 1, n) .+ 1
@@ -576,8 +583,8 @@ function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
     # mul!(Mx,I(nvar),x)
 
     for ilmi = 1:nlmi
-        y22 .= t.AA[ilmi]' * AAAAinvx
-        y33 .= [y33; vec(t.Z[ilmi]' * mat(y22) * t.Umat[ilmi])]
+        y22 = t.AA[ilmi]' * AAAAinvx
+        y33 = [y33; vec(t.Z[ilmi]' * mat(y22) * t.Umat[ilmi])]
     end
     
     y33 = t.L \ y33

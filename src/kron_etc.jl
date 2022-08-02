@@ -25,13 +25,6 @@ function btrace(nlmi, X, S)
     return trXS
 end
 
-# struct SpMa{Tv,Ti<:Integer}
-#     n::Int
-#     iind::Vector{Ti}
-#     jind::Vector{Ti}
-#     nzval::Vector{Tv}
-# end
-
 
 
 # How to create a vector of sparse matrices:
@@ -43,11 +36,6 @@ end
 # v[2]
 
 
-# file = matopen("../POEMA/IP/ip-for-low-rank-sdp/d.mat")
-# d=read(file,"d")
-# A=get(d,"A",1);
-# A[1]
-# close(file)
 
 
 

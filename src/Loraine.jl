@@ -22,16 +22,19 @@ include("prepare_W.jl")
 
 function loraine(d,options)
 
-    verb = Int64(get(options, "verb", 1))
-    kit  = Int64(get(options, "kit", 1))
+    verb   = Int64(get(options, "verb", 1))
+    timing = Int64(get(options, "timing", 1))
+    kit    = Int64(get(options, "kit", 1))
     if verb > 0
         t1 = time()
         @printf("\n *** Loraine.jl v0.1 ***\n")
         @printf(" *** Initialisation STARTS\n")
     end
 
+    ```PREPARE MODEL```
     model = prepare_model_data(d)
 
+    ```LOAD MODEL```
     solver, halpha = load(model,options)
 
     tottime = time() - t1
@@ -58,6 +61,8 @@ function loraine(d,options)
             end
         end
     end
+
+    ```SOLVE```
     @timeit solver.to "solver" begin
     solve(solver::MySolver,halpha::Halpha)
     end
@@ -71,7 +76,9 @@ function loraine(d,options)
         @printf(" *** Optimal solution found in %8.2f seconds\n", tottime)
     end
     
-    show(solver.to)
+    if timing > 0
+        show(solver.to)
+    end
     @printf("\n")
 
 end

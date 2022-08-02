@@ -18,16 +18,16 @@ const to = TimerOutput()
 
 # READING the input file in Matlab format
 
-file = matopen("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/d.mat")
+# file = matopen("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/d.mat")
 # file = matopen("examples/control1.poema")
 # file = matopen("examples/theta1.poema")
-# file = matopen("examples/vib3.poema")
+file = matopen("examples/vib3.poema")
 # file = matopen("examples/trto3.poema")
 d = read(file, "d")
 
 # OPTIONS FOR myIP
 options = Dict{String,Float64}()
-options["kit"]          = 0         # kit = 0 for direct solver; kit = 1 for CG
+options["kit"]          = 1         # kit = 0 for direct solver; kit = 1 for CG
 options["tol_cg"]       = 1e-1      # tolerance for CG solver [1e-2]
 options["tol_cg_up"]    = 0.5       # tolerance update [0.5]
 options["tol_cg_min"]   = 1e-6      # minimal tolerance for CG solver [1e-6]
@@ -42,6 +42,7 @@ options["aamat"] = 2    # 0 ... A^TA; 1 ... diag(A^TA); 2 ... identity
 options["fig_ev"]   = 0  # 0...no figure; 1.1.figure with eigenvalues of H; H_til; etc in every IP iteration
 
 options["verb"]     = 1   # 2..full output; 1..short output; 0..no output
+options["timing"]   = 1   # 1..print timing; 0..don't
 options["maxit"]    = 200
 
 ## CALLING Loraine
