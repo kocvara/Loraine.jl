@@ -1,5 +1,5 @@
 
-module tvp
+# module tvp
 
 using SparseArrays
 using LinearAlgebra
@@ -7,19 +7,19 @@ using MAT
 using Printf
 using TimerOutputs
 using MKL
-using Profile
-using ProfileView
+# using Profile
+# using ProfileView
 
 
-include("../src/Loraine.jl")
-using .Loraine
+# include("../src/Loraine.jl")
+using Loraine
 
 const to = TimerOutput()
 
 # READING the input file in Matlab format
 
-file = matopen("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/d.mat")
-# file = matopen("examples/control1.poema")
+# file = matopen("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/d.mat")
+file = matopen("examples/control1.poema")
 # file = matopen("examples/theta1.poema")
 # file = matopen("examples/vib3.poema")
 # file = matopen("examples/trto3.poema")
@@ -27,7 +27,7 @@ d = read(file, "d")
 
 # OPTIONS FOR myIP
 options = Dict{String,Float64}()
-options["kit"]          = 0         # kit = 0 for direct solver; kit = 1 for CG
+options["kit"]          = 1         # kit = 0 for direct solver; kit = 1 for CG
 options["tol_cg"]       = 1e-1      # tolerance for CG solver [1e-2]
 options["tol_cg_up"]    = 0.5       # tolerance update [0.5]
 options["tol_cg_min"]   = 1e-6      # minimal tolerance for CG solver [1e-6]
@@ -48,4 +48,4 @@ options["maxit"]    = 200
 
 loraine(d,options)
 
-end
+# end

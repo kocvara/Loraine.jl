@@ -1,4 +1,4 @@
-module Model
+# module Model
 
 export prepare_model_data, MyModel, SpMa
 
@@ -17,7 +17,7 @@ end
 mutable struct MyModel
     A::Matrix{Any}
     AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
-    myA::Vector{Main.tvp.Loraine.Model.SpMa{Float64}}
+    myA::Vector{SpMa{Float64}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     b::SparseArrays.SparseMatrixCSC{Float64, Int64}
     d_lin::SparseArrays.SparseVector{Float64, Int64}
@@ -30,7 +30,7 @@ mutable struct MyModel
     function MyModel(
         A::Matrix{Any},
         AA::Vector{SparseArrays.SparseMatrixCSC{Float64}},
-        myA::Vector{Main.tvp.Loraine.Model.SpMa{Float64}},
+        myA::Vector{SpMa{Float64}},
         C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         b::SparseArrays.SparseMatrixCSC{Float64, Int64},
         d_lin::SparseArrays.SparseVector{Float64, Int64},
@@ -135,4 +135,4 @@ function prep_AA!(myA,Ai,n)
     return AAA
 end
 
-end #module
+# end #module

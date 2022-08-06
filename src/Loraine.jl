@@ -9,9 +9,9 @@ using TimerOutputs
 using MKL
 
 #modules
-include("Model.jl")
+# include("Model.jl")
 include("Solvers.jl")
-using .Model
+# using .Model
 using .Solvers
 
 include("kron_etc.jl")

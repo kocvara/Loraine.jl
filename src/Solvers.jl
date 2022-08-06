@@ -6,7 +6,7 @@ include("kron_etc.jl")
 include("predictor_corrector.jl")
 include("makeBBBB.jl")
 include("Model.jl")
-using .Model
+# using .Model
 using SparseArrays
 using LinearAlgebra
 using Statistics
