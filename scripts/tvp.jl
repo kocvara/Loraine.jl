@@ -10,16 +10,14 @@ using MKL
 # using Profile
 # using ProfileView
 
-
-# include("../src/Loraine.jl")
 using Loraine
 
 const to = TimerOutput()
 
 # READING the input file in Matlab format
 
-# file = matopen("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/d.mat")
-file = matopen("examples/control1.poema")
+file = matopen("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/d.mat")
+# file = matopen("examples/control1.poema")
 # file = matopen("examples/theta1.poema")
 # file = matopen("examples/vib3.poema")
 # file = matopen("examples/trto3.poema")

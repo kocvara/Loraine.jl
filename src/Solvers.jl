@@ -2,11 +2,6 @@ module Solvers
 
 export  MySolver, solve, load, MyA, Halpha
 
-include("kron_etc.jl")
-include("predictor_corrector.jl")
-include("makeBBBB.jl")
-include("Model.jl")
-# using .Model
 using SparseArrays
 using LinearAlgebra
 using Statistics
@@ -15,6 +10,9 @@ using TimerOutputs
 # using MKLSparse
 using MKL
 
+include("kron_etc.jl")
+include("makeBBBB.jl")
+include("model.jl")
 
 mutable struct MySolver
     # main options
@@ -308,7 +306,7 @@ function myIPstep(solver::MySolver,halpha::Halpha)
 
     ## predictor
     @timeit solver.to "predictor" begin
-    predictor(solver,halpha)
+    predictor(solver::MySolver,halpha::Halpha)
     end
 
     sigma_update(solver)
