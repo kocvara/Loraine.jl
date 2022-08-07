@@ -1,7 +1,7 @@
-using TimerOutputs
+
 using ConjugateGradients
 
-function predictor(solver,halpha)
+function predictor(solver::MySolver,halpha::Halpha)
     
     solver.predict = true
     solver.Rp = solver.model.b'
