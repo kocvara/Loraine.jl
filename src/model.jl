@@ -71,19 +71,6 @@ end
 nlin = Int64(get(d, "nlin", 1))
 nlmi = Int64(get(d, "nlmi", 1))
 A = get(d, "A", 1);
-AA = SparseMatrixCSC{Float64}[]
-myA = SpMa{Float64}[]
-C = SparseMatrixCSC{Float64}[]
-
-for i = 1:nlmi
-    
-    push!(C, copy(-A[i, 1]))
-
-    Ai = A[i,:]
-    AAA = prep_AA!(myA,Ai,n)
-    push!(AA, copy(AAA'))
-
-end
 b = -get(d, "c", 1);
 
 if nlin > 0
@@ -95,9 +82,28 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-model = MyModel(A, AA, myA, C, b, d_lin, C_lin, n, msizes, nlin, nlmi)
+model = MyModel(A, _prepare_A(A)..., b, d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model
+end
+
+function _prepare_A(A)
+    nlmi = size(A, 1)
+    n = size(A, 2) - 1
+    AA = SparseMatrixCSC{Float64}[]
+    myA = SpMa{Float64}[]
+    C = SparseMatrixCSC{Float64}[]
+
+    for i = 1:nlmi
+        
+        push!(C, copy(-A[i, 1]))
+
+        Ai = A[i,:]
+        AAA = prep_AA!(myA,Ai,n)
+        push!(AA, copy(AAA'))
+
+    end
+    return AA, myA, C
 end
 
 function prep_AA!(myA,Ai,n)
