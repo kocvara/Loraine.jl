@@ -42,14 +42,14 @@ function  find_initial!(solver)
     dd = size(solver.model.d_lin,1)
     if solver.model.nlin>0
         for j=1:n
-            normClin = 1+norm(solver.model.C_lin[:,j])
+            normClin = 1+norm(solver.model.C_lin[j,:])
             p[j]=b2[j]./normClin;
         end
         Epss = max(1, maximum(p))
         solver.X_lin = 1 .* Epss * ones(dd,1)
         
         for j=1:n
-            pp[j]=norm(solver.model.C_lin[:,j])
+            pp[j]=norm(solver.model.C_lin[j,:])
         end
         mf = max(maximum(pp),norm(solver.model.d_lin))
         mf = (1 + mf) ./ sqrt(dd)

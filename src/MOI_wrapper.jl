@@ -1,15 +1,15 @@
 using MathOptInterface
 const MOI = MathOptInterface
 
-MOI.Utilities.@product_of_sets(Nonnegatives, MOI.Nonnegatives)
+const VAF = MOI.VectorAffineFunction{Float64}
+const PSD = MOI.PositiveSemidefiniteConeTriangle
+const NNG = MOI.Nonnegatives
 
-MOI.Utilities.@product_of_sets(PSD, MOI.PositiveSemidefiniteConeTriangle)
+MOI.Utilities.@product_of_sets(NNGCones, NNG)
 
-MOI.Utilities.@struct_of_constraints_by_set_types(
-    PSDOrNot,
-    MOI.PositiveSemidefiniteConeTriangle,
-    MOI.Nonnegatives,
-)
+MOI.Utilities.@product_of_sets(PSDCones, PSD)
+
+MOI.Utilities.@struct_of_constraints_by_set_types(PSDOrNot, PSD, NNG)
 
 const OptimizerCache = MOI.Utilities.GenericModel{
     Float64,
@@ -24,7 +24,7 @@ const OptimizerCache = MOI.Utilities.GenericModel{
                 MOI.Utilities.OneBasedIndexing,
             },
             Vector{Float64},
-            PSD{Float64},
+            PSDCones{Float64},
         },
         MOI.Utilities.MatrixOfConstraints{
             Float64,
@@ -34,21 +34,32 @@ const OptimizerCache = MOI.Utilities.GenericModel{
                 MOI.Utilities.OneBasedIndexing,
             },
             Vector{Float64},
-            Nonnegatives{Float64},
+            NNGCones{Float64},
         },
     },
 }
 
 mutable struct Optimizer <: MOI.AbstractOptimizer
-    model::Union{Nothing,MySolver}
+    solver::Union{Nothing,MySolver}
     halpha::Union{Nothing,Halpha}
+    lmi_id::Dict{MOI.ConstraintIndex{VAF,PSD},Int}
+    lin_cones::Union{Nothing,NNGCones{Float64}}
     max_sense::Bool
     objective_constant::Float64
     silent::Bool
     options::Dict{String,Any}
 
     function Optimizer()
-        return new(nothing, nothing, false, 0.0, false, copy(Solvers.DEFAULT_OPTIONS))
+        return new(
+            nothing,
+            nothing,
+            Dict{MOI.ConstraintIndex{VAF,PSD},Int}(),
+            nothing,
+            false,
+            0.0,
+            false,
+            copy(Solvers.DEFAULT_OPTIONS),
+        )
     end
 end
 
@@ -57,11 +68,12 @@ function MOI.default_cache(::Optimizer, ::Type{Float64})
 end
 
 function MOI.is_empty(optimizer::Optimizer)
-    return isnothing(optimizer.model)
+    return isnothing(optimizer.solver)
 end
 
 function MOI.empty!(optimizer::Optimizer)
-    optimizer.model = nothing
+    optimizer.solver = nothing
+    optimizer.lin_cones = nothing
     return
 end
 
@@ -103,60 +115,55 @@ MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 
 function MOI.supports(
     ::Optimizer,
-    ::Union{
-        MOI.ObjectiveSense,
-        MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}},
-    },
+    ::Union{MOI.ObjectiveSense,MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}},
 )
     return true
 end
 
-const SUPPORTED_CONES = Union{MOI.Nonnegatives, MOI.PositiveSemidefiniteConeTriangle}
+const SUPPORTED_CONES = Union{NNG,PSD}
 
-function MOI.supports_constraint(
-    ::Optimizer,
-    ::Type{MOI.VectorAffineFunction{Float64}},
-    ::Type{<:SUPPORTED_CONES},
-)
+function MOI.supports_constraint(::Optimizer, ::Type{VAF}, ::Type{<:SUPPORTED_CONES})
     return true
 end
 
 function MOI.optimize!(optimizer::Optimizer)
-    optimizer.model.to = TimerOutput()
-    solve(optimizer.model, optimizer.halpha)
+    optimizer.solver.to = TimerOutput()
+    solve(optimizer.solver, optimizer.halpha)
     return
 end
 
 function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     MOI.empty!(dest)
-    F = MOI.VectorAffineFunction{Float64}
-    PSD = MOI.PositiveSemidefiniteConeTriangle
-    psd_AC = MOI.Utilities.constraints(src.constraints, F, PSD)
-    Cd_lin = MOI.Utilities.constraints(
-        src.constraints,
-        F,
-        MOI.Nonnegatives,
-    )
-    psd_A = convert(SparseMatrixCSC{Float64,Int}, psd_AC.coefficients)
-    C_lin = convert(SparseMatrixCSC{Float64,Int}, Cd_lin.coefficients)
+    psd_AC = MOI.Utilities.constraints(src.constraints, VAF, PSD)
+    Cd_lin = MOI.Utilities.constraints(src.constraints, VAF, NNG)
+    SM = SparseMatrixCSC{Float64,Int}
+    psd_A = convert(SM, psd_AC.coefficients)
+    C_lin = convert(SM, Cd_lin.coefficients)
+    C_lin = convert(SM, C_lin')
     n = MOI.get(src, MOI.NumberOfVariables())
-    nlmi = MOI.get(src, MOI.NumberOfConstraints{F,PSD}())
-    A = Tuple{Vector{Int},Vector{Int},Vector{Float64}}[(Int[], Int[], Float64[]) for _ in 1:nlmi, _ in 1:(1 + n)]
+    nlmi = MOI.get(src, MOI.NumberOfConstraints{VAF,PSD}())
+    A = Matrix{Tuple{Vector{Int},Vector{Int},Vector{Float64},Int,Int}}(undef, nlmi, n + 1)
     back = Vector{Tuple{Int,Int,Int}}(undef, size(psd_A, 1))
+    empty!(dest.lmi_id)
     row = 0
     msizes = Int[]
-    for (lmi_id, ci) in enumerate(MOI.get(src, MOI.ListOfConstraintIndices{F,PSD}()))
+    for (lmi_id, ci) in enumerate(MOI.get(src, MOI.ListOfConstraintIndices{VAF,PSD}()))
+        dest.lmi_id[ci] = lmi_id
         set = MOI.get(src, MOI.ConstraintSet(), ci)
-        push!(msizes, set.side_dimension)
-        for j in 1:set.side_dimension
-            for i in 1:j
+        d = set.side_dimension
+        push!(msizes, d)
+        for k = 1:(n+1)
+            A[lmi_id, k] = (Int[], Int[], Float64[], d, d)
+        end
+        for j = 1:d
+            for i = 1:j
                 row += 1
                 back[row] = (lmi_id, i, j)
             end
         end
     end
     function __add(lmi_id, k, i, j, v)
-        I, J, V = A[lmi_id, k]
+        I, J, V, _, _ = A[lmi_id, k]
         push!(I, i)
         push!(J, j)
         push!(V, v)
@@ -173,7 +180,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         lmi_id, i, j = back[row]
         _add(lmi_id, 1, i, j, -psd_AC.constants[row])
     end
-    for var in 1:n
+    for var = 1:n
         for k in nzrange(psd_A, var)
             lmi_id, i, j = back[rowvals(psd_A)[k]]
             col = 1 + var
@@ -192,8 +199,8 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     model = MyModel(
         AA,
         Solvers._prepare_A(AA)...,
-        _sparse(b),
-        sparsevec(Cd_lin.constants),
+        b,
+        sparsevec(-Cd_lin.constants),
         C_lin,
         n,
         msizes,
@@ -205,11 +212,10 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     if dest.silent
         options["verb"] = 0
     end
-    dest.model, dest.halpha = load(model, options)
+    dest.lin_cones = Cd_lin.sets
+    dest.solver, dest.halpha = load(model, options)
     return MOI.Utilities.identity_index_map(src)
 end
-
-_sparse(x::Vector) = sparse(reshape(x, length(x), 1))
 
 function MOI.copy_to(dest::Optimizer, src::MOI.ModelLike)
     cache = OptimizerCache()
@@ -218,14 +224,26 @@ function MOI.copy_to(dest::Optimizer, src::MOI.ModelLike)
     return index_map
 end
 
-function MOI.get(model::Optimizer, ::MOI.TerminationStatus)
-    if isnothing(model.model) || model.model.status == 0
+function MOI.get(optimizer::Optimizer, ::MOI.TerminationStatus)
+    if isnothing(optimizer.solver) || optimizer.solver.status == 0
         return MOI.OPTIMIZE_NOT_CALLED
-    elseif model.model.status == 1
+    elseif optimizer.solver.status == 1
         return MOI.OPTIMAL
     else
-        @assert model.model.status == 2
+        @assert optimizer.solver.status == 2
         return MOI.ITERATION_LIMIT
+    end
+end
+
+function MOI.get(model::Optimizer, ::Union{MOI.PrimalStatus,MOI.DualStatus})
+    term = MOI.get(model, MOI.TerminationStatus())
+    if term == MOI.OPTIMIZE_NOT_CALLED
+        return MOI.NO_SOLUTION
+    elseif term == MOI.OPTIMAL
+        return MOI.FEASIBLE_POINT
+    else
+        @assert term == MOI.ITERATION_LIMIT
+        return MOI.UNKNOWN_RESULT_STATUS
     end
 end
 
@@ -237,7 +255,43 @@ function MOI.get(model::Optimizer, ::MOI.ResultCount)
     end
 end
 
+function MOI.get(optimizer::Optimizer, attr::MOI.ObjectiveValue)
+    MOI.check_result_index_bounds(optimizer, attr)
+    val = dot(optimizer.solver.model.b, optimizer.solver.y)
+    return optimizer.max_sense ? val : -val
+end
+
+function MOI.get(optimizer::Optimizer, attr::MOI.DualObjectiveValue)
+    MOI.check_result_index_bounds(optimizer, attr)
+    val =
+        btrace(optimizer.solver.model.nlmi, optimizer.solver.model.C, optimizer.solver.X) +
+        dot(optimizer.solver.model.d_lin, optimizer.solver.X_lin)
+    return optimizer.max_sense ? val : -val
+end
+
 function MOI.get(model::Optimizer, attr::MOI.VariablePrimal, vi::MOI.VariableIndex)
     MOI.check_result_index_bounds(model, attr)
-    return model.model.y[vi.value]
+    return model.solver.y[vi.value]
+end
+
+function MOI.get(
+    optimizer::Optimizer,
+    attr::MOI.ConstraintDual,
+    ci::MOI.ConstraintIndex{VAF,PSD},
+)
+    MOI.check_result_index_bounds(optimizer, attr)
+    lmi_id = optimizer.lmi_id[ci]
+    X = optimizer.solver.X[lmi_id]
+    n = optimizer.solver.model.msizes[lmi_id]
+    return [X[i, j] for j = 1:n for i = 1:j]
+end
+
+function MOI.get(
+    optimizer::Optimizer,
+    attr::MOI.ConstraintDual,
+    ci::MOI.ConstraintIndex{VAF,NNG},
+)
+    MOI.check_result_index_bounds(optimizer, attr)
+    rows = MOI.Utilities.rows(optimizer.lin_cones, ci)
+    return -optimizer.solver.X_lin[rows]
 end

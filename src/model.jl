@@ -19,7 +19,7 @@ mutable struct MyModel
     AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     myA::Vector{SpMa{Float64}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
-    b::SparseArrays.SparseMatrixCSC{Float64, Int64}
+    b::Vector{Float64}
     d_lin::SparseArrays.SparseVector{Float64, Int64}
     C_lin::SparseArrays.SparseMatrixCSC{Float64, Int64}
     n::Int64
@@ -32,7 +32,7 @@ mutable struct MyModel
         AA::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         myA::Vector{SpMa{Float64}},
         C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
-        b::SparseArrays.SparseMatrixCSC{Float64, Int64},
+        b::Vector{Float64},
         d_lin::SparseArrays.SparseVector{Float64, Int64},
         C_lin::SparseArrays.SparseMatrixCSC{Float64, Int64},
         n::Int64,
