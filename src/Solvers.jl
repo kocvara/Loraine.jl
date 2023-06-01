@@ -152,6 +152,21 @@ include("initial_point.jl")
 include("prepare_W.jl") 
 include("predictor_corrector.jl")
 
+const DEFAULT_OPTIONS = Dict{String,Any}(
+    "kit" => 0,
+    "tol_cg" => 1.0,
+    "tol_cg_up" => 1.0,
+    "tol_cg_min" => 1.0,
+    "eDIMACS" => 1e-6,
+    "preconditioner" => 1,
+    "erank" => 1,
+    "aamat" => 1,
+    "fig_ev" => 1,
+    "verb" => 1,
+    "timing" => 1,
+    "maxit" => 10,
+)
+
 function load(model, options::Dict)
 
     kit = Int64(get(options, "kit", 0))

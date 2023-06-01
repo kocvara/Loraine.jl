@@ -42,9 +42,13 @@ const OptimizerCache = MOI.Utilities.GenericModel{
 mutable struct Optimizer <: MOI.AbstractOptimizer
     model::Union{Nothing,MySolver}
     halpha::Union{Nothing,Halpha}
+    max_sense::Bool
+    objective_constant::Float64
+    silent::Bool
+    options::Dict{String,Any}
 
     function Optimizer()
-        return new(nothing, nothing)
+        return new(nothing, nothing, false, 0.0, false, copy(Solvers.DEFAULT_OPTIONS))
     end
 end
 
@@ -62,6 +66,38 @@ function MOI.empty!(optimizer::Optimizer)
 end
 
 MOI.get(::Optimizer, ::MOI.SolverName) = "Loraine"
+
+# MOI.RawOptimizerAttribute
+
+function MOI.supports(::Optimizer, param::MOI.RawOptimizerAttribute)
+    return haskey(Solvers.DEFAULT_OPTIONS, Symbol(param.name))
+end
+
+function MOI.set(optimizer::Optimizer, param::MOI.RawOptimizerAttribute, value)
+    if !MOI.supports(optimizer, param)
+        throw(MOI.UnsupportedAttribute(param))
+    end
+    optimizer.options[param.name] = value
+    return
+end
+
+function MOI.get(optimizer::Optimizer, param::MOI.RawOptimizerAttribute)
+    if !MOI.supports(optimizer, param)
+        throw(MOI.UnsupportedAttribute(param))
+    end
+    return optimizer.options[param.name]
+end
+
+# MOI.Silent
+
+MOI.supports(::Optimizer, ::MOI.Silent) = true
+
+function MOI.set(optimizer::Optimizer, ::MOI.Silent, value::Bool)
+    optimizer.silent = value
+    return
+end
+
+MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 
 # MOI.supports
 
@@ -96,13 +132,13 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     F = MOI.VectorAffineFunction{Float64}
     PSD = MOI.PositiveSemidefiniteConeTriangle
     psd_AC = MOI.Utilities.constraints(src.constraints, F, PSD)
-    Dc_lin = MOI.Utilities.constraints(
+    Cd_lin = MOI.Utilities.constraints(
         src.constraints,
         F,
         MOI.Nonnegatives,
     )
     psd_A = convert(SparseMatrixCSC{Float64,Int}, psd_AC.coefficients)
-    D_lin = convert(SparseMatrixCSC{Float64,Int}, Dc_lin.coefficients)
+    C_lin = convert(SparseMatrixCSC{Float64,Int}, Cd_lin.coefficients)
     n = MOI.get(src, MOI.NumberOfVariables())
     nlmi = MOI.get(src, MOI.NumberOfConstraints{F,PSD}())
     A = Tuple{Vector{Int},Vector{Int},Vector{Float64}}[(Int[], Int[], Float64[]) for _ in 1:nlmi, _ in 1:(1 + n)]
@@ -153,31 +189,22 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     end
     b = max_sense ? b0 : -b0
     AA = Any[sparse(IJV...) for IJV in A]
-    for i in 1:nlmi
-        @show i
-        for j in 1:(n+1)
-            @show j
-            display(AA[i, j])
-        end
-    end
-    @show b
-    @show Dc_lin.constants
-    display(D_lin)
-    @show n
-    @show msizes
-    @show nlmi
     model = MyModel(
         AA,
         Solvers._prepare_A(AA)...,
         _sparse(b),
-        sparsevec(Dc_lin.constants),
-        D_lin,
+        sparsevec(Cd_lin.constants),
+        C_lin,
         n,
         msizes,
-        length(Dc_lin.constants),
+        length(Cd_lin.constants),
         nlmi,
     )
-    options = Dict()
+    # FIXME this does not work if an option is changed between `MOI.copy_to` and `MOI.optimize!`
+    options = copy(dest.options)
+    if dest.silent
+        options["verb"] = 0
+    end
     dest.model, dest.halpha = load(model, options)
     return MOI.Utilities.identity_index_map(src)
 end

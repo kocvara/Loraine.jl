@@ -4,7 +4,7 @@ using ConjugateGradients
 function predictor(solver::MySolver,halpha::Halpha)
     
     solver.predict = true
-    solver.Rp = solver.model.b'
+    solver.Rp = solver.model.b
 
     for i = 1:solver.model.nlmi
         solver.Rp -= solver.model.AA[i] * solver.X[i][:]
@@ -13,8 +13,8 @@ function predictor(solver::MySolver,halpha::Halpha)
     end
 
     if solver.model.nlin > 0
-        solver.Rp -= solver.model.C_lin * solver.X_lin
-        solver.Rd_lin = solver.model.d_lin - solver.S_lin - solver.model.C_lin' * solver.y
+        solver.Rp -= solver.model.C_lin' * vec(solver.X_lin)
+        solver.Rd_lin = solver.model.d_lin - solver.S_lin - solver.model.C_lin * solver.y
         Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
     end
 
@@ -236,5 +236,3 @@ function find_step_lin(solver)
 
     return 
 end
-
-
