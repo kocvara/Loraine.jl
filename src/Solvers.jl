@@ -99,18 +99,18 @@ mutable struct MySolver
     RNT_lin
 
     function MySolver(
-        kit::Int ,
+        kit::Int64,
         tol_cg::Float64 ,
         tol_cg_up::Float64 ,
         tol_cg_min::Float64 ,
         eDIMACS::Float64 ,
-        preconditioner::Int,
-        erank::Int ,
-        aamat::Int ,
-        fig_ev::Int ,
-        verb::Int ,
-        timing::Int ,
-        maxit::Int, 
+        preconditioner::Int64,
+        erank::Int64,
+        aamat::Int64,
+        fig_ev::Int64,
+        verb::Int64,
+        timing::Int64,
+        maxit::Int64, 
         model::MyModel
         )
 
@@ -139,7 +139,7 @@ mutable struct Halpha
     cholS
     AAAATtau
     function Halpha(
-        kit::Int
+        kit::Int64
     )
     halpha = new()
     halpha.kit             = kit
@@ -434,7 +434,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     
     @timeit solver.to "prec" begin
     nlmi = solver.model.nlmi
-    kk = solver.erank .* ones(Int,nlmi,1)
+    kk = solver.erank .* ones(Int64,nlmi,1)
     # kk[2] = 3
     
     nvar = size(solver.model.AA[1],1)
@@ -535,7 +535,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
             k = kk[ilmi] 
             AAs = AAAATtau_d * solver.model.AA[ilmi]
             ii_, jj_, aa_ = findnz(AAs)
-            qq_ = floor.(Int,(jj_ .- 1) ./ n) .+ 1
+            qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
             pp_ = mod.(jj_ .- 1, n) .+ 1
             UU = halpha.Umat[ilmi][qq_]
             aau = aa_ .* UU

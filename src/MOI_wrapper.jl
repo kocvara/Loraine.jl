@@ -20,7 +20,7 @@ const OptimizerCache = MOI.Utilities.GenericModel{
             Float64,
             MOI.Utilities.MutableSparseMatrixCSC{
                 Float64,
-                Int,
+                Int64,
                 MOI.Utilities.OneBasedIndexing,
             },
             Vector{Float64},
@@ -30,7 +30,7 @@ const OptimizerCache = MOI.Utilities.GenericModel{
             Float64,
             MOI.Utilities.MutableSparseMatrixCSC{
                 Float64,
-                Int,
+                Int64,
                 MOI.Utilities.OneBasedIndexing,
             },
             Vector{Float64},
@@ -42,7 +42,7 @@ const OptimizerCache = MOI.Utilities.GenericModel{
 mutable struct Optimizer <: MOI.AbstractOptimizer
     solver::Union{Nothing,MySolver}
     halpha::Union{Nothing,Halpha}
-    lmi_id::Dict{MOI.ConstraintIndex{VAF,PSD},Int}
+    lmi_id::Dict{MOI.ConstraintIndex{VAF,PSD},Int64}
     lin_cones::Union{Nothing,NNGCones{Float64}}
     max_sense::Bool
     objective_constant::Float64
@@ -53,7 +53,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         return new(
             nothing,
             nothing,
-            Dict{MOI.ConstraintIndex{VAF,PSD},Int}(),
+            Dict{MOI.ConstraintIndex{VAF,PSD},Int64}(),
             nothing,
             false,
             0.0,
@@ -136,24 +136,24 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     MOI.empty!(dest)
     psd_AC = MOI.Utilities.constraints(src.constraints, VAF, PSD)
     Cd_lin = MOI.Utilities.constraints(src.constraints, VAF, NNG)
-    SM = SparseMatrixCSC{Float64,Int}
+    SM = SparseMatrixCSC{Float64,Int64}
     psd_A = convert(SM, psd_AC.coefficients)
     C_lin = convert(SM, Cd_lin.coefficients)
     C_lin = convert(SM, C_lin')
     n = MOI.get(src, MOI.NumberOfVariables())
     nlmi = MOI.get(src, MOI.NumberOfConstraints{VAF,PSD}())
-    A = Matrix{Tuple{Vector{Int},Vector{Int},Vector{Float64},Int,Int}}(undef, nlmi, n + 1)
-    back = Vector{Tuple{Int,Int,Int}}(undef, size(psd_A, 1))
+    A = Matrix{Tuple{Vector{Int64},Vector{Int64},Vector{Float64},Int64,Int64}}(undef, nlmi, n + 1)
+    back = Vector{Tuple{Int64,Int64,Int64}}(undef, size(psd_A, 1))
     empty!(dest.lmi_id)
     row = 0
-    msizes = Int[]
+    msizes = Int64[]
     for (lmi_id, ci) in enumerate(MOI.get(src, MOI.ListOfConstraintIndices{VAF,PSD}()))
         dest.lmi_id[ci] = lmi_id
         set = MOI.get(src, MOI.ConstraintSet(), ci)
         d = set.side_dimension
         push!(msizes, d)
         for k = 1:(n+1)
-            A[lmi_id, k] = (Int[], Int[], Float64[], d, d)
+            A[lmi_id, k] = (Int64[], Int64[], Float64[], d, d)
         end
         for j = 1:d
             for i = 1:j
