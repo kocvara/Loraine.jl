@@ -8,7 +8,7 @@ using TimerOutputs
 using LinearAlgebra
 
 struct SpMa{Tv,Ti<:Integer}
-    n::Int
+    n::Int64
     iind::Vector{Ti}
     jind::Vector{Ti}
     nzval::Vector{Tv}
@@ -123,8 +123,8 @@ function prep_AA!(myA,Ai,n)
         nnz += length(ii)
     end
 
-    iii = zeros(Int, nnz)
-    jjj = zeros(Int, nnz)
+    iii = zeros(Int64, nnz)
+    jjj = zeros(Int64, nnz)
     vvv = zeros(Float64, nnz)
     AAA1 = spzeros(ntmp, n)
     lb = 1
@@ -132,7 +132,7 @@ function prep_AA!(myA,Ai,n)
         ii,vv = findnz(-(Ai[j+1])[:])
         lf = lb+length(ii)-1
         iii[lb:lf] = ii
-        jjj[lb:lf] = j .* ones(Int,length(ii))
+        jjj[lb:lf] = j .* ones(Int64,length(ii))
         vvv[lb:lf] = float(vv)
         lb = lf+1
     end
