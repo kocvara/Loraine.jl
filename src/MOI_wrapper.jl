@@ -200,7 +200,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         AA,
         Solvers._prepare_A(AA)...,
         b,
-        sparsevec(-Cd_lin.constants),
+        convert(SparseVector{Float64,Int64}, sparsevec(-Cd_lin.constants)),
         C_lin,
         n,
         msizes,
