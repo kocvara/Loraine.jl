@@ -170,17 +170,17 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
 function load(model, options::Dict)
 
     kit = Int64(get(options, "kit", 0))
-    tol_cg = get(options, "tol_cg", 1.0)
-    tol_cg_up = get(options, "tol_cg_up", 1.0)
-    tol_cg_min = get(options, "tol_cg_min", 1.0)
+    tol_cg = get(options, "tol_cg", 1.0e-2)
+    tol_cg_up = get(options, "tol_cg_up", 0.5)
+    tol_cg_min = get(options, "tol_cg_min", 1.0e-6)
     eDIMACS = get(options, "eDIMACS", 1e-6)
     preconditioner = Int64(get(options, "preconditioner", 1))
     erank = Int64(get(options, "erank", 1))
     aamat = Int64(get(options, "aamat", 1))
-    fig_ev = Int64(get(options, "fig_ev", 1))
+    fig_ev = Int64(get(options, "fig_ev", 0))
     verb = Int64(get(options, "verb", 1))
     timing = Int64(get(options, "timing", 1))
-    maxit = Int64(get(options, "maxit", 10))
+    maxit = Int64(get(options, "maxit", 100))
 
     solver = MySolver(kit,
         tol_cg,
