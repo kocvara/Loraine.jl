@@ -204,7 +204,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         C_lin,
         n,
         msizes,
-        length(Cd_lin.constants),
+        Int64(length(Cd_lin.constants)),
         nlmi,
     )
     # FIXME this does not work if an option is changed between `MOI.copy_to` and `MOI.optimize!`
