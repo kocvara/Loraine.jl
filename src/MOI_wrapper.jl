@@ -82,7 +82,7 @@ MOI.get(::Optimizer, ::MOI.SolverName) = "Loraine"
 # MOI.RawOptimizerAttribute
 
 function MOI.supports(::Optimizer, param::MOI.RawOptimizerAttribute)
-    return haskey(Solvers.DEFAULT_OPTIONS, Symbol(param.name))
+    return haskey(Solvers.DEFAULT_OPTIONS, param.name)
 end
 
 function MOI.set(optimizer::Optimizer, param::MOI.RawOptimizerAttribute, value)

@@ -57,12 +57,12 @@ function  find_initial!(solver)
         solver.S_lin = 1 .* Etaa * ones(dd,1)
         solver.S_lin_inv = 1 ./ solver.S_lin
     else
-        solver.X_lin = []; solver.S_lin = []
+        solver.X_lin = Float64[]; solver.S_lin = Float64[]
     end
     if solver.model.nlin==0
-        solver.X_lin=[]
-        solver.S_lin=[]
-        solver.S_lin_inv=[]
+        solver.X_lin=Float64[]
+        solver.S_lin=Float64[]
+        solver.S_lin_inv=Float64[]
     end
     
 end
