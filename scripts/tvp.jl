@@ -16,12 +16,14 @@ const to = TimerOutput()
 
 # READING the input file in Matlab format
 
-file = matopen("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/d.mat")
-# file = matopen("examples/control1.poema")
-# file = matopen("examples/theta1.poema")
+file = matopen("Loraine/examples/control1.poema")
+# file = matopen("Loraine/examples/theta1.poema")
 # file = matopen("examples/vib3.poema")
 # file = matopen("examples/trto3.poema")
 d = read(file, "d")
+
+c = get(d, "c", 1)
+d["c"] = Vector{Float64}(c[:])
 
 # OPTIONS FOR myIP
 options = Dict{String,Float64}()

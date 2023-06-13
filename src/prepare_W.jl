@@ -6,9 +6,16 @@ function prepare_W(solver)
     # @timeit to "prpr" begin
         for i = 1:solver.model.nlmi
             # @timeit to "prpr1" begin
-            Ctmp = cholesky(solver.X[i])
+                
+                try
+                    Ctmp = cholesky(solver.X[i])
+                catch
+                    println("Matrix X not positive definite")
+                else
+                    Ctmp = copy(Ctmp)
+                end
     
-            if issuccess(Ctmp) == false
+            if isposdef(Ctmp) == false
                 icount = 0
                 while issuccess(Ctmp) == false
                     solver.X[i] = solver.X[i] + 1e-6 .* eye(size(solver.X[i], 1))

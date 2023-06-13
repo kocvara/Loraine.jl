@@ -4,12 +4,14 @@ import Loraine
 
 function tests()
     optimizer = Loraine.Optimizer()
-    MOI.set(optimizer, MOI.RawOptimizerAttribute("eDIMACS"), 1e-7) # comment this to enable output
-    MOI.set(optimizer, MOI.Silent(), true) # comment this to enable output
+    MOI.set(optimizer, MOI.RawOptimizerAttribute("eDIMACS"), 1e-6) # comment this to enable output
+    MOI.set(optimizer, MOI.Silent(), false) # comment this to enable output
     model = MOI.Utilities.CachingOptimizer(
         MOI.Utilities.UniversalFallback(MOI.Utilities.Model{Float64}()),
         MOI.instantiate(Loraine.Optimizer, with_bridge_type = Float64),
     )
+    MOI.set(model, MOI.RawOptimizerAttribute("eDIMACS"), 1e-5)
+    MOI.set(model, MOI.RawOptimizerAttribute("kit"), 0)
     MOI.set(model, MOI.Silent(), true) # comment this to enable output
     config = MOI.Test.Config(
         atol = 1e-2,
@@ -25,7 +27,13 @@ function tests()
     MOI.Test.runtests(
         model,
         config,
-        exclude = [
+        # include = [
+        #     # r"test_conic_NormInfinityCone_INFEASIBLE$",
+        #     r"test_solve_VariableIndex_ConstraintDual_MAX_SENSE$",
+        #     r"test_solve_VariableIndex_ConstraintDual_MIN_SENSE$",
+        #     r"test_conic_PositiveSemidefiniteConeTriangle_VectorAffineFunction$",
+        # ],
+        include = [
             # One variable but no constraints
             r"test_attribute_RawStatusString$",
             r"test_attribute_SolveTimeSec$",
@@ -35,8 +43,6 @@ function tests()
             r"test_constraint_ScalarAffineFunction_LessThan$",
             r"test_constraint_ScalarAffineFunction_duplicate$",
             r"test_constraint_VectorAffineFunction_duplicate$",
-            r"test_linear_open_intervals$",
-            r"test_linear_modify_GreaterThan_and_LessThan_constraints$",
             r"test_conic_GeometricMeanCone_VectorAffineFunction$",
             r"test_conic_GeometricMeanCone_VectorAffineFunction_2$",
             r"test_conic_GeometricMeanCone_VectorAffineFunction_3$",

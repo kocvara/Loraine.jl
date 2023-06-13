@@ -1,5 +1,7 @@
 # module Model
 
+# NOT WORKING!!!
+
 export prepare_model_data, MyModel, SpMa
 
 using SparseArrays
@@ -88,6 +90,7 @@ return model
 end
 
 function _prepare_A(A)
+
     nlmi = size(A, 1)
     n = size(A, 2) - 1
     AA = SparseMatrixCSC{Float64}[]

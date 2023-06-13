@@ -52,7 +52,7 @@ function  find_initial!(solver)
             pp[j]=norm(solver.model.C_lin[j,:])
         end
         mf = max(maximum(pp),norm(solver.model.d_lin))
-        mf = (1 + mf) ./ sqrt(dd)
+        mf = (0 + mf) ./ sqrt(dd)
         Etaa =  max(1,mf)
         solver.S_lin = 1 .* Etaa * ones(dd,1)
         solver.S_lin_inv = 1 ./ solver.S_lin

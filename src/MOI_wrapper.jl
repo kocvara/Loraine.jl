@@ -139,7 +139,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     SM = SparseMatrixCSC{Float64,Int64}
     psd_A = convert(SM, psd_AC.coefficients)
     C_lin = convert(SM, Cd_lin.coefficients)
-    C_lin = convert(SM, C_lin')
+    C_lin = -convert(SM, C_lin')
     n = MOI.get(src, MOI.NumberOfVariables())
     nlmi = MOI.get(src, MOI.NumberOfConstraints{VAF,PSD}())
     A = Matrix{Tuple{Vector{Int64},Vector{Int64},Vector{Float64},Int64,Int64}}(undef, nlmi, n + 1)
@@ -195,12 +195,14 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         b0[term.variable.value] += term.coefficient
     end
     b = max_sense ? b0 : -b0
+    # b = max_sense ? -b0 : b0
+
     AA = Any[sparse(IJV...) for IJV in A]
     model = MyModel(
         AA,
         Solvers._prepare_A(AA)...,
         b,
-        convert(SparseVector{Float64,Int64}, sparsevec(-Cd_lin.constants)),
+        convert(SparseVector{Float64,Int64}, sparsevec(Cd_lin.constants)),
         C_lin,
         n,
         msizes,
@@ -229,8 +231,10 @@ function MOI.get(optimizer::Optimizer, ::MOI.TerminationStatus)
         return MOI.OPTIMIZE_NOT_CALLED
     elseif optimizer.solver.status == 1
         return MOI.OPTIMAL
+    elseif optimizer.solver.status == 2
+        return MOI.INFEASIBLE_OR_UNBOUNDED
     else
-        @assert optimizer.solver.status == 2
+        @assert optimizer.solver.status == 3
         return MOI.ITERATION_LIMIT
     end
 end
@@ -293,5 +297,5 @@ function MOI.get(
 )
     MOI.check_result_index_bounds(optimizer, attr)
     rows = MOI.Utilities.rows(optimizer.lin_cones, ci)
-    return -optimizer.solver.X_lin[rows]
+    return optimizer.solver.X_lin[rows]
 end
