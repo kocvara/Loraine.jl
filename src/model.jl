@@ -22,6 +22,7 @@ mutable struct MyModel
     myA::Vector{SpMa{Float64}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     b::Vector{Float64}
+    b_const::Float64
     d_lin::SparseArrays.SparseVector{Float64, Int64}
     C_lin::SparseArrays.SparseMatrixCSC{Float64, Int64}
     n::Int64
@@ -35,6 +36,7 @@ mutable struct MyModel
         myA::Vector{SpMa{Float64}},
         C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         b::Vector{Float64},
+        b_const::Float64,
         d_lin::SparseArrays.SparseVector{Float64, Int64},
         C_lin::SparseArrays.SparseMatrixCSC{Float64, Int64},
         n::Int64,
@@ -49,6 +51,7 @@ mutable struct MyModel
         model.myA = myA
         model.C = C
         model.b = b
+        model.b_const = b_const
         model.d_lin = d_lin
         model.C_lin = C_lin
         model.n = n

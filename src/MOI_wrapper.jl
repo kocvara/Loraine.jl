@@ -190,6 +190,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     max_sense = MOI.get(src, MOI.ObjectiveSense()) == MOI.MAX_SENSE
     obj = MOI.get(src, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}())
     # objective_constant = MOI.constant(obj) # TODO
+    b_const = obj.constant
     b0 = zeros(n)
     for term in obj.terms
         b0[term.variable.value] += term.coefficient
@@ -202,6 +203,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         AA,
         Solvers._prepare_A(AA)...,
         b,
+        b_const,
         convert(SparseVector{Float64,Int64}, sparsevec(Cd_lin.constants)),
         C_lin,
         n,
@@ -261,7 +263,7 @@ end
 
 function MOI.get(optimizer::Optimizer, attr::MOI.ObjectiveValue)
     MOI.check_result_index_bounds(optimizer, attr)
-    val = dot(optimizer.solver.model.b, optimizer.solver.y)
+    val = dot(optimizer.solver.model.b, optimizer.solver.y) - optimizer.solver.model.b_const
     return optimizer.max_sense ? val : -val
 end
 
@@ -269,7 +271,7 @@ function MOI.get(optimizer::Optimizer, attr::MOI.DualObjectiveValue)
     MOI.check_result_index_bounds(optimizer, attr)
     val =
         btrace(optimizer.solver.model.nlmi, optimizer.solver.model.C, optimizer.solver.X) +
-        dot(optimizer.solver.model.d_lin, optimizer.solver.X_lin)
+        dot(optimizer.solver.model.d_lin, optimizer.solver.X_lin) - optimizer.solver.model.b_const
     return optimizer.max_sense ? val : -val
 end
 

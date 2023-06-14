@@ -199,6 +199,7 @@ function load(model, options::Dict)
             model.myA,
             model.C,
             model.b,
+            model.b_const,
             model.d_lin,
             model.C_lin,
             model.n,
@@ -339,6 +340,28 @@ function setup_solver(solver::MySolver,halpha::Halpha)
     halpha.Z = Matrix{Float64}[]
     halpha.AAAATtau = SparseMatrixCSC{Float64}[]
 
+    @show solver.model.A
+    @show solver.model.b
+    @show solver.model.b_const
+    @show solver.model.C
+    @show solver.model.d_lin
+    @show solver.model.C_lin
+
+    println(size(solver.model.d_lin))
+
+    # model = new()
+    # model.A = A
+    # model.AA = AA
+    # model.myA = myA
+    # model.C = C
+    # model.b = b
+    # model.d_lin = d_lin
+    # model.C_lin = C_lin
+    # model.n = n
+    # model.msizes = msizes
+    # model.nlin = nlin
+    # model.nlmi = nlmi
+
     for i = 1:solver.model.nlmi
         push!(halpha.Umat,zeros(solver.model.msizes[i], solver.erank))
         push!(halpha.Z,zeros(solver.model.msizes[i], solver.model.msizes[i]))
@@ -439,9 +462,9 @@ function check_convergence(solver)
         @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b'), DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter, solver.itertime)
         else
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b'), DIMACS_error, solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.itertime)
             else
-                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b'), DIMACS_error, solver.cg_iter, solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.cg_iter, solver.itertime)
             end
         end
     end
