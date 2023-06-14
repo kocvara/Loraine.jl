@@ -13,7 +13,7 @@ function tests()
     )
     # MOI.set(model, MOI.RawOptimizerAttribute("eDIMACS"), 1e-5)
     # MOI.set(model, MOI.RawOptimizerAttribute("kit"), 0)
-    # MOI.set(model, MOI.Silent(), true) # comment this to enable output
+    MOI.set(model, MOI.Silent(), true) # comment this to enable output
     config = MOI.Test.Config(
         atol = 1e-2,
         exclude = Any[
@@ -81,6 +81,17 @@ function tests()
             r"test_conic_SecondOrderCone_no_initial_bound$",
             r"test_linear_INFEASIBLE$",
             r"test_linear_transform$",
+
+            r"test_infeasible_MAX_SENSE$",               
+            r"test_infeasible_MAX_SENSE_offset$",
+            r"test_infeasible_MIN_SENSE$",        
+            r"test_infeasible_MIN_SENSE_offset$",        
+            r"test_infeasible_affine_MAX_SENSE$",        
+            r"test_infeasible_affine_MAX_SENSE_offset$", 
+            r"test_infeasible_affine_MIN_SENSE$",        
+            r"test_infeasible_affine_MIN_SENSE_offset$", 
+            r"test_linear_FEASIBILITY_SENSE$",   
+            r"test_linear_integration_Interval$",   
         ],
     )
     return

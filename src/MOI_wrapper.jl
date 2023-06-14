@@ -193,7 +193,6 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         end
     end
     dest.max_sense = MOI.get(src, MOI.ObjectiveSense()) == MOI.MAX_SENSE
-    @show dest.max_sense
     obj = MOI.get(src, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}())
     # objective_constant = MOI.constant(obj) # TODO
     b_const = obj.constant
