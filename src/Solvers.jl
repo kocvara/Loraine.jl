@@ -287,7 +287,9 @@ function solve(solver::MySolver,halpha::Halpha)
         if solver.kit == 1
             @printf(" *** Total CG iterations: %8.0d \n", solver.cg_iter_tot)
         end
-        @printf(" *** Optimal solution found in %8.2f seconds\n", tottime)
+        if solver.status == 1
+            @printf(" *** Optimal solution found in %8.2f seconds\n", tottime)
+        end
     end
 
 end
@@ -340,14 +342,12 @@ function setup_solver(solver::MySolver,halpha::Halpha)
     halpha.Z = Matrix{Float64}[]
     halpha.AAAATtau = SparseMatrixCSC{Float64}[]
 
-    @show solver.model.A
-    @show solver.model.b
-    @show solver.model.b_const
-    @show solver.model.C
-    @show solver.model.d_lin
-    @show solver.model.C_lin
-
-    println(size(solver.model.d_lin))
+    # @show solver.model.A
+    # @show solver.model.b
+    # @show solver.model.b_const
+    # @show solver.model.C
+    # @show solver.model.d_lin
+    # @show solver.model.C_lin
 
     # model = new()
     # model.A = A
@@ -459,7 +459,7 @@ function check_convergence(solver)
         #@sprintf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %8.1e %6.0d %8.2f\n', iter, y[1:ddnvar]"*ddc[:], DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, eq_norm, arank, titi)
         # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
-        @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b'), DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter, solver.itertime)
+        @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter, solver.itertime)
         else
             if solver.kit == 0
                 @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.itertime)
@@ -474,9 +474,12 @@ function check_convergence(solver)
         solver.y = solver.y
     end
 
-    if DIMACS_error > 1e50 || abs(dot(solver.y, solver.model.b')) > 1e50
+    if DIMACS_error > 1e25 
         solver.status = 2
-        @warn("Problem probably unbounded or infeasible (stopping status = 2)")
+        @warn("Problem probably infeasible (stopping status = 2)")
+    elseif DIMACS_error > 1e25 || abs(dot(solver.y, solver.model.b')) > 1e25
+        solver.status = 3
+        @warn("Problem probably unbounded or infeasible (stopping status = 3)")
     end
 
 end

@@ -111,6 +111,11 @@ end
 
 MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 
+function MOI.set(optimizer::Optimizer, ::MOI.ObjectiveSense, value::Bool)
+    optimizer.max_sense = value
+    return
+end
+
 # MOI.supports
 
 function MOI.supports(
@@ -187,15 +192,17 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
             _add(lmi_id, col, i, j, nonzeros(psd_A)[k])
         end
     end
-    max_sense = MOI.get(src, MOI.ObjectiveSense()) == MOI.MAX_SENSE
+    dest.max_sense = MOI.get(src, MOI.ObjectiveSense()) == MOI.MAX_SENSE
+    @show dest.max_sense
     obj = MOI.get(src, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}())
     # objective_constant = MOI.constant(obj) # TODO
     b_const = obj.constant
+    b_const = dest.max_sense ? -b_const : b_const
     b0 = zeros(n)
     for term in obj.terms
         b0[term.variable.value] += term.coefficient
     end
-    b = max_sense ? b0 : -b0
+    b = dest.max_sense ? b0 : -b0
     # b = max_sense ? -b0 : b0
 
     AA = Any[sparse(IJV...) for IJV in A]
@@ -234,9 +241,11 @@ function MOI.get(optimizer::Optimizer, ::MOI.TerminationStatus)
     elseif optimizer.solver.status == 1
         return MOI.OPTIMAL
     elseif optimizer.solver.status == 2
+        return MOI.INFEASIBLE
+    elseif optimizer.solver.status == 3
         return MOI.INFEASIBLE_OR_UNBOUNDED
     else
-        @assert optimizer.solver.status == 3
+        @assert optimizer.solver.status == 4
         return MOI.ITERATION_LIMIT
     end
 end
@@ -272,7 +281,7 @@ function MOI.get(optimizer::Optimizer, attr::MOI.DualObjectiveValue)
     val =
         btrace(optimizer.solver.model.nlmi, optimizer.solver.model.C, optimizer.solver.X) +
         dot(optimizer.solver.model.d_lin, optimizer.solver.X_lin) - optimizer.solver.model.b_const
-    return optimizer.max_sense ? val : -val
+        return optimizer.max_sense ? val : -val
 end
 
 function MOI.get(model::Optimizer, attr::MOI.VariablePrimal, vi::MOI.VariableIndex)
