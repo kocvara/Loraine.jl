@@ -51,8 +51,27 @@ function predictor(solver::MySolver,halpha::Halpha)
     if solver.kit == 0   # direct solver
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
+            try
                 solver.cholBBBB = cholesky(BBBB)
-                solver.dely = solver.cholBBBB \ h
+            catch err
+                println("Matrix H not positive definite, trying to regularize")
+                icount = 0
+                while isposdef(BBBB) == false
+                    BBBB = BBBB + 1e-5 .* I(size(BBBB, 1))
+                    icount = icount + 1
+                    # @show icount
+                    if icount > 1000
+                        println("WARNING: H cannot be made positive definite, giving up")
+                        solver.cholBBBB = I(size(BBBB, 1))
+                        solver.status = 4
+                        return
+                    end
+                end
+                solver.cholBBBB = cholesky(BBBB)
+            else
+                solver.cholBBBB = copy(solver.cholBBBB)
+            end
+            solver.dely = solver.cholBBBB \ h
         else
             @warn("System matrix not Hermitian, stopping Loraine")
             solver.maxit = 1e10
@@ -62,9 +81,16 @@ function predictor(solver::MySolver,halpha::Halpha)
     #     end
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
-        Prec_for_CG_tilS_prep(solver,halpha)  
-        M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
-        
+        if solver.preconditioner == 0
+            M = MyM_no(solver.to)
+        elseif solver.preconditioner == 1
+            Prec_for_CG_tilS_prep(solver,halpha)  
+            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+        elseif solver.preconditioner == 2 || solver.preconditioner == 4
+            Prec_for_CG_beta(solver,halpha)  
+            M = MyM_beta(solver.model.AA, halpha.AAAATtau)
+        end
+
         @timeit solver.to "CG predictor" begin
         solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 5000, precon = M)
         end
@@ -131,7 +157,14 @@ function corrector(solver,halpha)
     
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
-        M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+        if solver.preconditioner == 0
+            M = MyM_no(solver.to)
+        elseif solver.preconditioner == 1
+            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+        else
+            M = MyM_beta(solver.model.AA, halpha.AAAATtau)
+        end
+
         @timeit solver.to "CG corrector" begin
         solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 5000, precon = M)
         end

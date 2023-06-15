@@ -286,6 +286,16 @@ function solve(solver::MySolver,halpha::Halpha)
 
         check_convergence(solver)
 
+        if solver.preconditioner == 4
+            #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
+            if (solver.cg_iter / 2 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/10 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter > 80
+                solver.preconditioner = 1; solver.aamat = 2; 
+                if solver.verb > 0
+                    println("Switching to preconditioner 1")
+                end
+            end
+        end
+
     end
 
     tottime = time() - t1
@@ -392,7 +402,8 @@ end
 function myIPstep(solver::MySolver,halpha::Halpha)
     solver.iter += 1
     if solver.iter > solver.maxit
-        solver.status = 2
+        solver.status = 4
+        println("WARNING: Stopped by iteration limit (stopping status = 4)")
     end
     solver.cg_iter = 0
     
@@ -461,7 +472,7 @@ function check_convergence(solver)
     else
         DIMACS_error = solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
     end
-    if solver.verb > 0
+    if solver.verb > 0 && solver.status == 0 
         #@sprintf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %8.1e %6.0d %8.2f\n', iter, y[1:ddnvar]"*ddc[:], DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, eq_norm, arank, titi)
         # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
@@ -482,10 +493,10 @@ function check_convergence(solver)
 
     if DIMACS_error > 1e25 
         solver.status = 2
-        @warn("Problem probably infeasible (stopping status = 2)")
+        println("WARNING: Problem probably infeasible (stopping status = 2)")
     elseif DIMACS_error > 1e25 || abs(dot(solver.y, solver.model.b')) > 1e25
         solver.status = 3
-        @warn("Problem probably unbounded or infeasible (stopping status = 3)")
+        println("WARNING: Problem probably unbounded or infeasible (stopping status = 3)")
     end
 
 end
@@ -533,6 +544,60 @@ function (t::MyA)(Ax::Vector{Float64}, x::Vector{Float64})
     end
 end
 
+struct MyM_no
+    to::TimerOutputs.TimerOutput
+end
+
+function (t::MyM_no)(Mx::Vector{Float64}, x::Vector{Float64})
+    copy!(Mx,x)
+end
+
+function Prec_for_CG_beta(solver,halpha)    
+    
+    nlmi = solver.model.nlmi
+    kk = solver.erank .* ones(Int64,nlmi,1)  
+    nvar = solver.model.n
+        
+    ntot=0
+    if nlmi > 0
+        for ilmi=1:nlmi
+            ntot = ntot + size(solver.W[ilmi],1)
+        end
+    end
+    
+    halpha.AAAATtau = zeros(nvar)
+    if nlmi > 0
+        for ilmi = 1:nlmi
+            n = size(solver.W[ilmi],1);
+            k = kk[ilmi];
+            F = eigen(solver.W[ilmi]); 
+            lambdaf = F.values 
+            lambda_s = lambdaf[1:n-k]
+
+            if solver.aamat==0
+                ttau = 1.0*minimum(lambda_s)
+            else
+                ttau = (minimum(lambda_s) + mean(lambda_s))/2.0 - 1.0e-14
+            end
+            if solver.aamat < 3
+                ZZZ = ones(nvar)
+            else
+                ZZZ = spzeros(nvar,1)
+            end
+            
+            halpha.AAAATtau += ttau^2 .* ZZZ
+        end
+    end
+end
+
+struct MyM_beta
+    AA
+    AAAATtau
+end
+
+function (t::MyM_beta)(Mx::Vector{Float64}, x::Vector{Float64})
+    copy!(Mx, x ./ t.AAAATtau)
+end
 
 function Prec_for_CG_tilS_prep(solver,halpha)    
     
@@ -541,7 +606,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     kk = solver.erank .* ones(Int64,nlmi,1)
     # kk[2] = 3
     
-    nvar = size(solver.model.AA[1],1)
+    nvar = solver.model.n
     
     halpha.AAAATtau = spzeros(nvar,nvar)
     
@@ -663,25 +728,10 @@ function Prec_for_CG_tilS_prep(solver,halpha)
         end
         S .= (t' * t)
     end
-
     
     # Schur complement for the SMW formula
-
     S = Hermitian(S) + I(size(S,1))
-    
     halpha.cholS = cholesky(S)
-    # if flag>0
-    #     icount = 0;
-    #     while flag>0
-    #         S = S + ttau.*eye(sizeS);
-    #         [L,flag] = chol(S,'lower');
-    #         icount = icount + 1;
-    #         if icount>1000
-    #             error('Schur complement cannot be made positive definite')
-    #             return
-    #         end
-    #     end
-    # end
 
     end
        
@@ -701,13 +751,9 @@ function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
     nlmi = length(t.AA)
 
     yy2 = zeros(nvar,1)
-    # y3 = []
     y33 = zeros(Float64,0)
 
-    # titi = time()
     AAAAinvx = t.AAAATtau\x
-
-    # mul!(Mx,I(nvar),x)
 
     if nlmi > 0
         for ilmi = 1:nlmi
@@ -735,12 +781,7 @@ function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
 
     yyy2 = t.AAAATtau \ yy2
 
-    # mx1 = AAAAinvx - yyy2
-    # mul!(Mx,I(nvar),mx1[:])
     copy!(Mx,(AAAAinvx - yyy2)[:])
-    # copy!(Mx,x)
-
-    # print(time()-titi,"\n")
 
 end
 

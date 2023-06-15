@@ -12,7 +12,8 @@ function tests()
         MOI.instantiate(Loraine.Optimizer, with_bridge_type = Float64),
     )
     # MOI.set(model, MOI.RawOptimizerAttribute("eDIMACS"), 1e-5)
-    # MOI.set(model, MOI.RawOptimizerAttribute("kit"), 0)
+    MOI.set(model, MOI.RawOptimizerAttribute("kit"), 0)
+    MOI.set(model, MOI.RawOptimizerAttribute("initpoint"), 1)
     MOI.set(model, MOI.Silent(), true) # comment this to enable output
     config = MOI.Test.Config(
         atol = 1e-2,
