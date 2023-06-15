@@ -26,6 +26,7 @@ mutable struct MySolver
     aamat::Int64
     fig_ev::Int64
     verb::Int64
+    initpoint::Int64
     timing::Int64
     maxit::Int64
 
@@ -109,6 +110,7 @@ mutable struct MySolver
         aamat::Int64,
         fig_ev::Int64,
         verb::Int64,
+        initpoint::Int64,
         timing::Int64,
         maxit::Int64, 
         model::MyModel
@@ -125,7 +127,8 @@ mutable struct MySolver
         solver.aamat           = aamat
         solver.fig_ev          = fig_ev
         solver.verb            = verb   
-        solver.timing          = timing   
+        solver.initpoint       = initpoint   
+        solver.timing          = timing
         solver.maxit           = maxit 
         solver.model           = model
         return solver
@@ -163,6 +166,7 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
     "aamat" => 1,
     "fig_ev" => 0,
     "verb" => 1,
+    "initpoint" => 0,
     "timing" => 1,
     "maxit" => 20,
 )
@@ -179,6 +183,7 @@ function load(model, options::Dict)
     aamat = Int64(get(options, "aamat", 1))
     fig_ev = Int64(get(options, "fig_ev", 0))
     verb = Int64(get(options, "verb", 1))
+    initpoint = Int64(get(options, "initpoint", 0))
     timing = Int64(get(options, "timing", 1))
     maxit = Int64(get(options, "maxit", 20))
 
@@ -192,6 +197,7 @@ function load(model, options::Dict)
         aamat,
         fig_ev,
         verb,
+        initpoint,
         timing,
         maxit, 
         MyModel(model.A,
