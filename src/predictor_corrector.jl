@@ -23,11 +23,15 @@ function predictor(solver::MySolver,halpha::Halpha)
     if solver.kit .== 0   # if direct solver; compute the Hessian matrix
     @timeit solver.to "BBBB" begin 
         if solver.model.nlmi > 0
-            # BBBB = makeBBBB(n,nlmi,A,G)   
-            BBBB = makeBBBBalt(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W,solver.to)    
-            # BBBB = makeBBBBalt1(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W)  
-            # BBBB = makeBBBBsp(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
-            # BBBB = makeBBBBsp2(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
+            if 1 == 0
+                BBBB = makeBBBB_rank1(solver.model.n,solver.model.nlmi,solver.model.B,solver.G)
+            else
+                # BBBB = makeBBBB(n,nlmi,A,G)   
+                BBBB = makeBBBBalt(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W,solver.to)    
+                # BBBB = makeBBBBalt1(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W)  
+                # BBBB = makeBBBBsp(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
+                # BBBB = makeBBBBsp2(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
+            end
         else
             BBBB = zeros(Float64, solver.model.n, solver.model.n)
         end

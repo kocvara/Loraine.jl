@@ -20,6 +20,7 @@ mutable struct MyModel
     A::Matrix{Any}
     AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     myA::Vector{SpMa{Float64}}
+    B::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     b::Vector{Float64}
     b_const::Float64
@@ -34,6 +35,7 @@ mutable struct MyModel
         A::Matrix{Any},
         AA::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         myA::Vector{SpMa{Float64}},
+        B::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         b::Vector{Float64},
         b_const::Float64,
@@ -49,6 +51,7 @@ mutable struct MyModel
         model.A = A
         model.AA = AA
         model.myA = myA
+        model.B = B
         model.C = C
         model.b = b
         model.b_const = b_const
@@ -98,6 +101,7 @@ function _prepare_A(A)
     n = size(A, 2) - 1
     AA = SparseMatrixCSC{Float64}[]
     myA = SpMa{Float64}[]
+    B = SparseMatrixCSC{Float64}[]
     C = SparseMatrixCSC{Float64}[]
 
     for i = 1:nlmi
@@ -108,8 +112,34 @@ function _prepare_A(A)
         AAA = prep_AA!(myA,Ai,n)
         push!(AA, copy(AAA'))
 
+        if 1 == 1
+            for k = 1:nlmi
+                m = size(A[i, 1],1)
+                Btmp = spzeros(n,m)
+                for i = 1:n
+                    ii = rowvals(A[k, i + 1])
+                    bidx = unique(ii)
+                    if !isempty(bidx)
+                        tmp = Matrix(A[k, i + 1][bidx, bidx])
+                        utmp, vtmp = eigen(Hermitian(tmp))
+                        bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
+                        tmp2 = bbb * bbb'
+                        if norm(tmp - tmp2) > 5.0e-6
+                            datarank = -2
+                            @warn "data conversion problem, switch to datrank=0"
+                            break
+                        end
+                        Btmp[i, bidx] = bbb
+                        # push!(Btmp, SparseVector(m,bidx,bbb))
+                    end
+                end
+                push!(B, Btmp)
+            end
+        end
+
     end
-    return AA, myA, C
+
+    return AA, myA, B, C
 end
 
 function prep_AA!(myA,Ai,n)

@@ -203,6 +203,7 @@ function load(model, options::Dict)
         MyModel(model.A,
             model.AA,
             model.myA,
+            model.B,
             model.C,
             model.b,
             model.b_const,

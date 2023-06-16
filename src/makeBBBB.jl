@@ -1,5 +1,19 @@
 # using SuiteSparseGraphBLAS
+function makeBBBB_rank1(n,nlmi,B,G)
+    # BBBB = Matrix{Float64}(zeros, n, n)
+    # @timeit to "BBBB" begin
+    BBBB = zeros(Float64, n, n)
+    for ilmi = 1:nlmi
+        Gilmi = G[ilmi]
+        Bilmi = B[ilmi]
+        BB = Bilmi * Gilmi
+        BBBB += (BB * BB') .^ 2
+    end     
+# end
+    return BBBB
+end
 
+#########################
 
 function makeBBBB(n,nlmi,A,G)
     # BBBB = Matrix{Float64}(zeros, n, n)
