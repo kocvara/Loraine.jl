@@ -11,8 +11,8 @@ using MosekTools
 # import Hypatia
 
 # Select your semidefinite optimization problem in SDPA input format
-model=read_from_file("/Users/michal/Dropbox/michal/sdplib/maxG11.dat-s")
-# model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/tru9e.dat-s")
+# model=read_from_file("/Users/michal/Dropbox/michal/sdplib/maxG11.dat-s")
+model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/tru9e.dat-s")
 
 set_optimizer(model, Loraine.Optimizer)
 
