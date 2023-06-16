@@ -1,7 +1,6 @@
 using Test
 import MathOptInterface as MOI
 import Loraine
-import CSDP
 
 function tests()
     optimizer = Loraine.Optimizer()

@@ -4,7 +4,7 @@ export  MySolver, solve, load, MyA, Halpha
 
 using SparseArrays
 using LinearAlgebra
-using Statistics
+import Statistics: mean
 using Printf
 using TimerOutputs
 # using MKLSparse
