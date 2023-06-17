@@ -2,7 +2,7 @@ using JuMP
 import LinearAlgebra
 import Plots
 import Random
-import SCS
+# import SCS
 import Loraine
 import Test
 

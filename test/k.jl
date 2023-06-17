@@ -1,7 +1,7 @@
 using JuMP
 import MathOptInterface as MOI
 import Loraine
-import SCS
+# import SCS
 
 model = Model(Loraine.Optimizer)
 # @variable(model, x >= 0)
@@ -21,13 +21,13 @@ optimize!(model)
 
 # solution_summary(model)
 
-# @show termination_status(model)
+termination_status(model)
 
 # primal_status(model)
 
 # dual_status(model)
 
-# @show objective_value(model)
+# objective_value(model)
 
 # value(x)
 

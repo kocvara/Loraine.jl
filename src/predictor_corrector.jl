@@ -23,7 +23,7 @@ function predictor(solver::MySolver,halpha::Halpha)
     if solver.kit .== 0   # if direct solver; compute the Hessian matrix
     @timeit solver.to "BBBB" begin 
         if solver.model.nlmi > 0
-            if 1 == 0
+            if 1 == 1
                 BBBB = makeBBBB_rank1(solver.model.n,solver.model.nlmi,solver.model.B,solver.G)
             else
                 # BBBB = makeBBBB(n,nlmi,A,G)   

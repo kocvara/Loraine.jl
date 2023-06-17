@@ -389,10 +389,14 @@ function setup_solver(solver::MySolver,halpha::Halpha)
 
     if solver.kit == 1
         if solver.model.nlmi == 0
-            println("WARNING: Switching to a direct solver, no LMIs")
+            if solver.verb > 0
+                println("WARNING: Switching to a direct solver, no LMIs")
+            end
             solver.kit = 0
         elseif solver.model.nlmi > 0 && solver.erank >= maximum(solver.model.msizes) - 1
-            println("WARNING: Switching to a direct solver, erank bigger than matrix size")
+            if solver.verb > 0
+                println("WARNING: Switching to a direct solver, erank bigger than matrix size")
+            end
             solver.kit = 0
         end
     end
@@ -404,7 +408,9 @@ function myIPstep(solver::MySolver,halpha::Halpha)
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
-        println("WARNING: Stopped by iteration limit (stopping status = 4)")
+        if solver.verb > 0
+            println("WARNING: Stopped by iteration limit (stopping status = 4)")
+        end
     end
     solver.cg_iter = 0
     
@@ -494,10 +500,14 @@ function check_convergence(solver)
 
     if DIMACS_error > 1e25 
         solver.status = 2
-        println("WARNING: Problem probably infeasible (stopping status = 2)")
+        if solver.verb > 0
+            println("WARNING: Problem probably infeasible (stopping status = 2)")
+        end
     elseif DIMACS_error > 1e25 || abs(dot(solver.y, solver.model.b')) > 1e25
         solver.status = 3
-        println("WARNING: Problem probably unbounded or infeasible (stopping status = 3)")
+        if solver.verb > 0
+            println("WARNING: Problem probably unbounded or infeasible (stopping status = 3)")
+        end
     end
 
 end

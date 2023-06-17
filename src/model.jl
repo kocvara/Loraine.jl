@@ -112,7 +112,7 @@ function _prepare_A(A)
         AAA = prep_AA!(myA,Ai,n)
         push!(AA, copy(AAA'))
 
-        if 1 == 0
+        if 1 == 1
             for k = 1:nlmi
                 m = size(A[i, 1],1)
                 Btmp = spzeros(n,m)

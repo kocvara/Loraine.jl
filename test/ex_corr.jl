@@ -1,8 +1,6 @@
 using JuMP
 import LinearAlgebra
-import Plots
-import Random
-import SCS
+# import SCS
 import Loraine
 import Test
 
@@ -17,6 +15,7 @@ function example_correlation_problem()
     @constraint(model, -0.2 <= ρ["A", "B"] <= -0.1)
     @constraint(model, 0.4 <= ρ["B", "C"] <= 0.5)
     @objective(model, Max, ρ["A", "C"])
+    
     optimize!(model)
     println("An upper bound for ρ_AC is $(value(ρ["A", "C"]))")
     @objective(model, Min, ρ["A", "C"])
