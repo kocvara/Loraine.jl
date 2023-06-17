@@ -113,33 +113,38 @@ function _prepare_A(A)
         push!(AA, copy(AAA'))
 
         if 1 == 0
-            for k = 1:nlmi
-                m = size(A[i, 1],1)
-                Btmp = spzeros(n,m)
-                for i = 1:n
-                    ii = rowvals(A[k, i + 1])
-                    bidx = unique(ii)
-                    if !isempty(bidx)
-                        tmp = Matrix(A[k, i + 1][bidx, bidx])
-                        utmp, vtmp = eigen(Hermitian(tmp))
-                        bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
-                        tmp2 = bbb * bbb'
-                        if norm(tmp - tmp2) > 5.0e-6
-                            datarank = -2
-                            @warn "data conversion problem, switch to datrank=0"
-                            break
-                        end
-                        Btmp[i, bidx] = bbb
-                        # push!(Btmp, SparseVector(m,bidx,bbb))
-                    end
-                end
-                push!(B, Btmp)
-            end
+            Btmp = prep_B!(A,n,i)
+            push!(B, Btmp)
+            @show n
         end
 
     end
 
     return AA, myA, B, C
+end
+
+function prep_B!(A,n,i)
+    m = size(A[i, 1],1)
+    Btmp = spzeros(n,m)
+
+    for k = 1:n
+        ii = rowvals(A[i, k + 1])
+        bidx = unique(ii)
+        if !isempty(bidx)
+            tmp = Matrix(A[i, k + 1][bidx, bidx])
+            utmp, vtmp = eigen(Hermitian(tmp))
+            bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
+            tmp2 = bbb * bbb'
+            if norm(tmp - tmp2) > 5.0e-6
+                datarank = -2
+                @warn "data conversion problem, switching to datarank = 0"
+                break
+            end
+            Btmp[k, bidx] = bbb
+        end
+    end
+
+    return Btmp
 end
 
 function prep_AA!(myA,Ai,n)
