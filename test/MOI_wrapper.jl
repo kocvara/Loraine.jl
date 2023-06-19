@@ -31,7 +31,7 @@ function tests()
     MOI.Test.runtests(
         model,
         config,
-        include = [
+        exclude = [
             # No constraints
             r"test_solve_TerminationStatus_DUAL_INFEASIBLE$",
 
