@@ -95,6 +95,7 @@ mutable struct MySolver
     beta_lin
 
     itertime
+    tottime
 
     RNT
     RNT_lin
@@ -299,13 +300,13 @@ function solve(solver::MySolver,halpha::Halpha)
 
     end
 
-    tottime = time() - t1
+    solver.tottime = time() - t1
     if solver.verb > 0
         if solver.kit == 1
             @printf(" *** Total CG iterations: %8.0d \n", solver.cg_iter_tot)
         end
         if solver.status == 1
-            @printf(" *** Optimal solution found in %8.2f seconds\n", tottime)
+            @printf(" *** Optimal solution found in %8.2f seconds\n", solver.tottime)
         end
     end
 

@@ -234,6 +234,17 @@ function MOI.copy_to(dest::Optimizer, src::MOI.ModelLike)
     return index_map
 end
 
+function MOI.get(optimizer::Optimizer, ::MOI.SolveTimeSec)
+    return optimizer.solver.tottime
+end
+
+function MOI.get(optimizer::Optimizer, ::MOI.RawStatusString)
+    # TODO I'd probably do an `if`-`else` here like for `MOI.TerminationStatus`
+    #      except that here you are free to communicate any message to the user,
+    #      you are not constrained to an any like `MOI.TerminationStatus`
+    return "Terminated with status $(optimizer.solver.status)"
+end
+
 function MOI.get(optimizer::Optimizer, ::MOI.TerminationStatus)
     if isnothing(optimizer.solver) || optimizer.solver.status == 0
         return MOI.OPTIMIZE_NOT_CALLED
@@ -249,12 +260,38 @@ function MOI.get(optimizer::Optimizer, ::MOI.TerminationStatus)
     end
 end
 
-function MOI.get(model::Optimizer, ::Union{MOI.PrimalStatus,MOI.DualStatus})
+function MOI.get(model::Optimizer, attr::MOI.PrimalStatus)
+    if attr.result_index != MOI.get(model, MOI.ResultCount())
+        return MOI.NO_SOLUTION
+    end
     term = MOI.get(model, MOI.TerminationStatus())
     if term == MOI.OPTIMIZE_NOT_CALLED
         return MOI.NO_SOLUTION
     elseif term == MOI.OPTIMAL
         return MOI.FEASIBLE_POINT
+    elseif term == MOI.INFEASIBLE
+        return MOI.INFEASIBLE_POINT
+    elseif term == MOI.INFEASIBLE_OR_UNBOUNDED
+        return MOI.UNKNOWN_RESULT_STATUS
+    else
+        @assert term == MOI.ITERATION_LIMIT
+        return MOI.UNKNOWN_RESULT_STATUS
+    end
+end
+
+function MOI.get(model::Optimizer, attr::MOI.DualStatus)
+    if attr.result_index != MOI.get(model, MOI.ResultCount())
+        return MOI.NO_SOLUTION
+    end
+    term = MOI.get(model, MOI.TerminationStatus())
+    if term == MOI.OPTIMIZE_NOT_CALLED
+        return MOI.NO_SOLUTION
+    elseif term == MOI.OPTIMAL
+        return MOI.FEASIBLE_POINT
+    elseif term == MOI.INFEASIBLE
+        return MOI.INFEASIBILITY_CERTIFICATE
+    elseif term == MOI.INFEASIBLE_OR_UNBOUNDED
+        return MOI.UNKNOWN_RESULT_STATUS
     else
         @assert term == MOI.ITERATION_LIMIT
         return MOI.UNKNOWN_RESULT_STATUS
