@@ -160,7 +160,7 @@ function prep_AA!(myA,Ai,n)
     nnz = 0
     @inbounds for j = 1:n
         ii,jj,vv = findnz(-(Ai[j+1]))
-        push!(myA,SpMa(length(ii),ii,jj,float(vv)))
+        push!(myA,SpMa(Int64(length(ii)),ii,jj,float(vv)))
         nnz += length(ii)
     end
 

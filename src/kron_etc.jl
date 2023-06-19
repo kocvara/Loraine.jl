@@ -11,7 +11,7 @@ function my_kron(A, B, C)
 end
 ###########################################################################
 function mat(vecA)
-    n = Int64(sqrt(length(vecA)))
+    n = isqrt(length(vecA))
     return reshape(vecA, n, n)
 end
 
