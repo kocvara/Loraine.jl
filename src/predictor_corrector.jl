@@ -160,8 +160,7 @@ function corrector(solver,halpha)
     # solving the linear system()
     if solver.kit == 0   # direct solver
     # @timeit to "corrector backsl" begin
-    solver.dely = solver.cholBBBB \ h
-    
+        solver.dely = solver.cholBBBB \ h
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
         if solver.preconditioner == 0
@@ -214,7 +213,7 @@ function find_step(solver)
             mimiX = eigmin(XXX)
             end
             if mimiX .> -1e-6
-                solver.alpha[i] = 0.9
+                solver.alpha[i] = 0.99
             else
                 solver.alpha[i] = min(1, -solver.tau / mimiX)
             end
@@ -227,7 +226,7 @@ function find_step(solver)
             mimiS = eigmin(XXX)
             end
             if mimiS .> -1e-6
-                solver.beta[i] = 0.9
+                solver.beta[i] = 0.99
             else
                 solver.beta[i] = min(1, -solver.tau / mimiS)
             end
@@ -277,13 +276,13 @@ function find_step_lin(solver)
     end
     mimiX_lin = minimum(solver.delX_lin ./ solver.X_lin)
     if mimiX_lin .> -1e-6
-        solver.alpha_lin = 0.9
+        solver.alpha_lin = 0.79
     else
         solver.alpha_lin = min(1, -solver.tau / mimiX_lin)
     end
     mimiS_lin = minimum(solver.delS_lin ./ solver.S_lin)
     if mimiS_lin .> -1e-6
-        solver.beta_lin = 0.9
+        solver.beta_lin = 0.79
     else
         solver.beta_lin = min(1, -solver.tau / mimiS_lin)
     end

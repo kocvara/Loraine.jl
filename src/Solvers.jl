@@ -290,7 +290,7 @@ function solve(solver::MySolver,halpha::Halpha)
 
         if solver.preconditioner == 4
             #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
-            if (solver.cg_iter / 2 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/10 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter > 80
+            if (solver.cg_iter / 4 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/10 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter > 100
                 solver.preconditioner = 1; solver.aamat = 2; 
                 if solver.verb > 0
                     println("Switching to preconditioner 1")
