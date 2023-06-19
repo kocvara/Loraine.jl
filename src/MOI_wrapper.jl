@@ -289,7 +289,9 @@ function MOI.get(model::Optimizer, attr::MOI.DualStatus)
     elseif term == MOI.OPTIMAL
         return MOI.FEASIBLE_POINT
     elseif term == MOI.INFEASIBLE
-        return MOI.INFEASIBILITY_CERTIFICATE
+        # The solution doesn't seem to be a valid `MOI.INFEASIBILITY_CERTIFICATE`,
+        # e.g., it's failing `test_infeasible_affine_MIN_SENSE`
+        return MOI.UNKNOWN_RESULT_STATUS
     elseif term == MOI.INFEASIBLE_OR_UNBOUNDED
         return MOI.UNKNOWN_RESULT_STATUS
     else
