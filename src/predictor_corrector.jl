@@ -58,14 +58,17 @@ function predictor(solver::MySolver,halpha::Halpha)
             try
                 solver.cholBBBB = cholesky(BBBB)
             catch err
-                println("Matrix H not positive definite, trying to regularize")
+                if solver.verb > 0
+                    println("Matrix H not positive definite, trying to regularize")
+                end
                 icount = 0
                 while isposdef(BBBB) == false
                     BBBB = BBBB + 1e-5 .* I(size(BBBB, 1))
                     icount = icount + 1
-                    # @show icount
                     if icount > 1000
-                        println("WARNING: H cannot be made positive definite, giving up")
+                        if solver.verb > 0
+                            println("WARNING: H cannot be made positive definite, giving up")
+                        end
                         solver.cholBBBB = I(size(BBBB, 1))
                         solver.status = 4
                         return

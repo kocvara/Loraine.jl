@@ -4,19 +4,26 @@ Loraine is a Julia implementation of an interior point method algorithm for line
 The special feature of Loraine is the iterative solver for linear systems. This is to be used for problems with (very) low rank solution matrix.
 Standard (non-low-rank) problems can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
 
-At the moment, Loraine is a stand-alone code, reading data from a Matlab file - sample input files can be found in directory `examples`.
-To run the code, use the `tvp.jl` script in the `scripts` directory; in this script you can select one of the provided input files.
+Loraine is to be used with JuMP. Folder `examples` includes a few examples of how to use Loraine via JuMP; in particular, `solve_sdpa.jl` reads an SDP in the SDPA input format and solves it by Loraine. A few sample problems can be found in folder `examples/data`.
+
+To install Loraine, run 
+
+] add https://github.com/kocvara/Loraine/
 
 ## Options
 
-The list of options to be set/changed in `tvp.jl`
+The list of options:
 ```
-kit          # kit = 0 for direct solver; kit = 1 for CG
-tol_cg       # tolerance for CG solver [1.0e-2]
-tol_cg_up    # tolerance update [0.5]
-tol_cg_min   # minimal tolerance for CG solver [1.0e-6]
-eDIMACS      # epsilon for DIMACS error stopping criterion [1.0e-5]
-erank        # estimated rank [1]
-verb         # 2..full output; 1..short output; 0..no output
-maxit        # maximal number of global iterations [200]
+kit             # kit = 0 for direct solver; kit = 1 for CG [0]
+tol_cg          # tolerance for CG solver [1.0e-2]
+tol_cg_up       # tolerance update [0.5]
+tol_cg_min      # minimal tolerance for CG solver [1.0e-6]
+eDIMACS         # epsilon for DIMACS error stopping criterion [1.0e-5]
+preconditioner  # 0...no; 1...H_alpha; 2...H_beta; 4...hybrid [1]
+erank           # estimated rank [1]
+aamat           # 0..A^TA; 1..diag(A^TA); 2..identity [2]
+verb            # 2..full output; 1..short output; 0..no output [1]
+initpoint       # 0..Loraine heuristics, 1..SDPT3-like heuristics [0]
+timing          # 1..yes, 0..no
+maxit           # maximal number of global iterations [200]
 ```
