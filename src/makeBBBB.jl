@@ -88,7 +88,8 @@ function makeBBBBalti(Ailmi,AAilmi,Wilmi,n,to)
             end
         end
     end
-    Hnn = Hermitian(Hnn)
+    # Hnn = Hermitian(Hnn)
+    Hnn = (Hnn + Hnn') ./2
     return Hnn
 end
 
@@ -122,7 +123,8 @@ function makeBBBBalti1(Ailmi,AAilmi,Wilmi,n)
                 Hnn[:,i] .= -tmp2
         end
     # end
-    Hnn = Hermitian(Hnn)
+    # Hnn = Hermitian(Hnn)
+    Hnn = (Hnn + Hnn') ./ 2
     return Hnn
 end
 

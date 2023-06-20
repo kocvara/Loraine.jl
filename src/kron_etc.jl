@@ -12,7 +12,9 @@ end
 ###########################################################################
 function mat(vecA)
     n = isqrt(length(vecA))
-    return reshape(vecA, n, n)
+    Atmp = reshape(vecA, n, n)
+    return (Atmp + Atmp') ./ 2
+    # return Hermitian(reshape(vecA, n, n))
 end
 
 ###########################################################################

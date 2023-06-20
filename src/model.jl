@@ -132,7 +132,8 @@ function prep_B!(A,n,i)
         bidx = unique(ii)
         if !isempty(bidx)
             tmp = Matrix(A[i, k + 1][bidx, bidx])
-            utmp, vtmp = eigen(Hermitian(tmp))
+            # utmp, vtmp = eigen(Hermitian(tmp))
+            utmp, vtmp = eigen((tmp + tmp') ./ 2)
             bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
             tmp2 = bbb * bbb'
             if norm(tmp - tmp2) > 5.0e-6

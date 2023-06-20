@@ -37,7 +37,8 @@ function predictor(solver::MySolver,halpha::Halpha)
         end
         if solver.model.nlin > 0
             BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
-            BBBB = Hermitian(BBBB)
+            # BBBB = Hermitian(BBBB)
+            BBBB = (BBBB + BBBB') ./ 2
         end
     end
     end
@@ -202,12 +203,15 @@ function find_step(solver)
             @timeit solver.to "find_step_B" begin
             delSb = solver.G[i]' * solver.delS[i] * solver.G[i]
             delXb = solver.Gi[i] * solver.delX[i] * solver.Gi[i]'
-            delXb = Hermitian(delXb)
+            # @show ishermitian(delXb)
+            # delXb = Hermitian(delXb)
             end
 
             @timeit solver.to "find_step_C" begin
             XXX = solver.DDsi[i]' .* delXb .* solver.DDsi[i]
-            XXX = Hermitian(Matrix(XXX))
+            # @show ishermitian(XXX)
+            # XXX = Hermitian(Matrix(XXX))
+            XXX = (XXX + XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
             mimiX = eigmin(XXX)
@@ -217,10 +221,14 @@ function find_step(solver)
             else
                 solver.alpha[i] = min(1, -solver.tau / mimiX)
             end
+            # @show mimiX
+            # @show eigmin(solver.delX[i])
+            # @show solver.alpha[i]
 
             @timeit solver.to "find_step_C" begin
             XXX = solver.DDsi[i]' .* delSb .* solver.DDsi[i]
-            XXX = Hermitian(Matrix(XXX))
+            # XXX = Hermitian(Matrix(XXX))
+            XXX = (XXX + XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
             mimiS = eigmin(XXX)
@@ -256,9 +264,11 @@ function find_step(solver)
         if solver.model.nlmi > 0
             for i = 1:solver.model.nlmi
                 solver.X[i] = solver.X[i] + minimum([solver.alpha; solver.alpha_lin]) .* solver.delX[i]
-                solver.X[i] = Hermitian(solver.X[i])
+                # solver.X[i] = Hermitian(solver.X[i])
+                solver.X[i] = (solver.X[i] + solver.X[i]') ./ 2
                 solver.S[i] = solver.S[i] + minimum([solver.beta; solver.beta_lin]) .* solver.delS[i]
-                solver.S[i] = Hermitian(solver.S[i])
+                # solver.S[i] = Hermitian(solver.S[i])
+                solver.S[i] = (solver.S[i] + solver.S[i]') ./ 2
             end       
         end
     end  

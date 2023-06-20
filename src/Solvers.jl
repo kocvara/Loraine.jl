@@ -465,6 +465,7 @@ function check_convergence(solver)
             solver.err6 = solver.err6 + (vec(solver.S[i]))' * vec(solver.X[i]) / (1 + abs(vec(solver.model.C[i])' * vec(solver.X[i])) + abs(dot(solver.model.b', solver.y)))
         end
     end
+
     solver.err5 = (btrace(solver.model.nlmi, solver.model.C, solver.X) - dot(solver.model.b', solver.y)) / (1 + abs(btrace(solver.model.nlmi, solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
     if solver.model.nlin > 0
         solver.err2 = solver.err2 + max(0, -minimum(solver.X_lin) / (1 + norm(solver.model.b)))
@@ -666,9 +667,10 @@ function Prec_for_CG_tilS_prep(solver,halpha)
             end
 
             @timeit solver.to "prec2" begin
-            Z = cholesky(2 .* Hermitian(W0) + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
-            halpha.Z[ilmi] = Z.L
-            end
+            # Z = cholesky(2 .* Hermitian(W0) + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
+            W0 = (W0 + W0') ./ 2
+            Z = cholesky(2 .* W0 + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
+        end
             
             # switch aamat
                 # case 0
@@ -742,7 +744,8 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     end
     
     # Schur complement for the SMW formula
-    S = Hermitian(S) + I(size(S,1))
+    # S = Hermitian(S) + I(size(S,1))
+    S = (S + S') ./ 2 + I(size(S,1))
     halpha.cholS = cholesky(S)
 
     end
