@@ -86,7 +86,8 @@ mutable struct MySolver
     Rc
     Rd_lin
 
-    cg_iter
+    cg_iter_pre
+    cg_iter_cor
     cg_iter_tot
 
     alpha
@@ -230,7 +231,7 @@ function load(model, options::Dict)
     if verb > 0
         @printf(" Number of variables: %5d\n",model.n)
         @printf(" LMI constraints    : %5d\n",model.nlmi)
-        if model.nlmi>1
+        if model.nlmi>0
             @printf(" Matrix size(s)     :")
             Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), model.msizes);
             @printf("\n")
@@ -268,7 +269,7 @@ function solve(solver::MySolver,halpha::Halpha)
             if solver.kit == 0
                 @printf(" it        obj         error      err1      err2      err3      err4      err5      err6     CPU/it\n")
             else
-                @printf(" it        obj         error      err1      err2      err3      err4      err5      err6     cg_pre cg_cor  CPU/it\n")
+                @printf(" it        obj         error      err1      err2      err3      err4      err5      err6    cg_pre  cg_cor  CPU/it\n")
             end
         end
     end
@@ -290,7 +291,7 @@ function solve(solver::MySolver,halpha::Halpha)
 
         if solver.preconditioner == 4
             #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
-            if (solver.cg_iter / 4 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/10 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter > 100
+            if (solver.cg_iter / 10 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/1 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter_post > 100
                 solver.preconditioner = 1; solver.aamat = 2; 
                 if solver.verb > 0
                     println("Switching to preconditioner 1")
@@ -413,7 +414,8 @@ function myIPstep(solver::MySolver,halpha::Halpha)
             println("WARNING: Stopped by iteration limit (stopping status = 4)")
         end
     end
-    solver.cg_iter = 0
+    solver.cg_iter_pre = 0
+    solver.cg_iter_cor = 0
     
     find_mu(solver)
 
@@ -485,12 +487,12 @@ function check_convergence(solver)
         #@sprintf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %8.1e %6.0d %8.2f\n', iter, y[1:ddnvar]"*ddc[:], DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, eq_norm, arank, titi)
         # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
-        @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter, solver.itertime)
+        @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
         else
             if solver.kit == 0
                 @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.itertime)
             else
-                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.cg_iter, solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.cg_iter_pre + solver.cg_iter_cor, solver.itertime)
             end
         end
     end
@@ -600,6 +602,9 @@ function Prec_for_CG_beta(solver,halpha)
             
             halpha.AAAATtau += ttau^2 .* ZZZ
         end
+        if solver.model.nlin > 0
+            halpha.AAAATtau .+= diag(solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin')
+        end
     end
 end
 
@@ -618,6 +623,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     nlmi = solver.model.nlmi
     kk = solver.erank .* ones(Int64,nlmi,1)
     # kk[2] = 3
+    halpha.Z = SparseMatrixCSC{Float64}[]
     
     nvar = solver.model.n
     
@@ -669,7 +675,8 @@ function Prec_for_CG_tilS_prep(solver,halpha)
             @timeit solver.to "prec2" begin
             # Z = cholesky(2 .* Hermitian(W0) + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
             W0 = (W0 + W0') ./ 2
-            Z = cholesky(2 .* W0 + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
+            Ztmp = cholesky(2 .* W0 + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
+            push!(halpha.Z,Ztmp.L)
         end
             
             # switch aamat
@@ -689,7 +696,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     end
     
     if solver.model.nlin > 0
-        halpha.AAAATtau .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin';
+        halpha.AAAATtau .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
     end
     
     didi = 0
@@ -747,6 +754,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     # S = Hermitian(S) + I(size(S,1))
     S = (S + S') ./ 2 + I(size(S,1))
     halpha.cholS = cholesky(S)
+    # L = halpha.cholS.L
 
     end
        
@@ -757,7 +765,7 @@ struct MyM
     AAAATtau
     Umat
     Z
-    L
+    cholS
 end
 
 function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
@@ -777,7 +785,7 @@ function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
         end
     end
     
-    y33 = t.L \ y33
+    y33 = t.cholS \ y33
 
     ii = 0
     if nlmi > 0

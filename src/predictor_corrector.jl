@@ -100,11 +100,11 @@ function predictor(solver::MySolver,halpha::Halpha)
         end
 
         @timeit solver.to "CG predictor" begin
-        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 5000, precon = M)
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 10000, precon = M)
         end
 
         # print(num_iters, exit_code)
-        solver.cg_iter += num_iters
+        solver.cg_iter_pre += num_iters
         solver.cg_iter_tot += num_iters
     end
 
@@ -173,9 +173,9 @@ function corrector(solver,halpha)
         end
 
         @timeit solver.to "CG corrector" begin
-        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 5000, precon = M)
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 10000, precon = M)
         end
-        solver.cg_iter += num_iters
+        solver.cg_iter_cor += num_iters
         solver.cg_iter_tot += num_iters
     end
     # end
