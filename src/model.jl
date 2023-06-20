@@ -80,6 +80,7 @@ nlin = Int64(get(d, "nlin", 1))
 nlmi = Int64(get(d, "nlmi", 1))
 A = get(d, "A", 1);
 b = -get(d, "c", 1);
+b_const = -get(d, "b_const", 1);
 
 if nlin > 0
     d_lin = -get(d, "d", 1)
@@ -90,7 +91,7 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-model = MyModel(A, _prepare_A(A)..., b, d_lin, C_lin, n, msizes, nlin, nlmi)
+model = MyModel(A, _prepare_A(A)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model
 end

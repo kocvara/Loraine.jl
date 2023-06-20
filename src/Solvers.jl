@@ -8,7 +8,7 @@ import Statistics: mean
 using Printf
 using TimerOutputs
 # using MKLSparse
-using MKL
+# using MKL
 
 include("kron_etc.jl")
 include("makeBBBB.jl")
@@ -274,6 +274,8 @@ function solve(solver::MySolver,halpha::Halpha)
         end
     end
 
+@show BLAS.get_num_threads()
+
 
     setup_solver(solver::MySolver,halpha::Halpha)
 
@@ -291,7 +293,7 @@ function solve(solver::MySolver,halpha::Halpha)
 
         if solver.preconditioner == 4
             #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
-            if (solver.cg_iter / 10 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/1 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter_post > 100
+            if (solver.cg_iter_cor / 2 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/20 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter_cor > 100
                 solver.preconditioner = 1; solver.aamat = 2; 
                 if solver.verb > 0
                     println("Switching to preconditioner 1")
@@ -641,7 +643,7 @@ function Prec_for_CG_tilS_prep(solver,halpha)
             sizeS += kk[ilmi] * size(solver.W[ilmi],1)
         end
     end
-    S = zeros(sizeS,sizeS)
+    # S = zeros(sizeS,sizeS)
     
     lbt = 1; lbs=1;
     if nlmi > 0
@@ -724,37 +726,40 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     else #fast formula
         AAAATtau_d = spdiagm(sqrt.(1 ./ diag(halpha.AAAATtau)));
 
-        t = zeros(nvar, k*didi)
-        if nlmi > 0
-            for ilmi = 1:nlmi
-                if kk[ilmi] == 0
-                    continue 
-                end
-                n = size(solver.W[ilmi],1) 
-                k = kk[ilmi] 
-                AAs = AAAATtau_d * solver.model.AA[ilmi]
-                ii_, jj_, aa_ = findnz(AAs)
-                qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
-                pp_ = mod.(jj_ .- 1, n) .+ 1
-                UU = halpha.Umat[ilmi][qq_]
-                aau = aa_ .* UU
-                AU = sparse(ii_,pp_,aau,nvar,n)
-                if nlmi>1
-                    t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
-                else
-                    t .= AU * halpha.Z[1]
-                end
-                lbt = lbt + k*n
-            end 
-        end
-        S .= (t' * t)
+        # @timeit solver.to "prec3" begin
+        # t = zeros(nvar, k*didi)
+        # if nlmi > 0
+        #     for ilmi = 1:nlmi
+        #         if kk[ilmi] == 0
+        #             continue 
+        #         end
+        #         n = size(solver.W[ilmi],1) 
+        #         k = kk[ilmi] 
+        #         AAs = AAAATtau_d * solver.model.AA[ilmi]
+        #         ii_, jj_, aa_ = findnz(AAs)
+        #         qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
+        #         pp_ = mod.(jj_ .- 1, n) .+ 1
+        #         UU = halpha.Umat[ilmi][qq_]
+        #         aau = aa_ .* UU
+        #         AU = sparse(ii_,pp_,aau,nvar,n)
+        #         if nlmi>1
+        #             t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
+        #         else
+        #             t .= AU * halpha.Z[1]
+        #         end
+        #         lbt = lbt + k*n
+        #     end 
+        # end
+        # S .= (t' * t)
+        # # mul!(S,t',t)
+        # end
+
+        S, lbt = prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
     end
     
     # Schur complement for the SMW formula
-    # S = Hermitian(S) + I(size(S,1))
     S = (S + S') ./ 2 + I(size(S,1))
     halpha.cholS = cholesky(S)
-    # L = halpha.cholS.L
 
     end
        
@@ -767,6 +772,44 @@ struct MyM
     Z
     cholS
 end
+
+function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
+    @timeit solver.to "prec3" begin
+    S = zeros(sizeS,sizeS)
+    nvar = solver.model.n
+    t = zeros(nvar, kk[1]*didi)
+    if solver.model.nlmi > 0
+        for ilmi = 1:solver.model.nlmi
+            if kk[ilmi] == 0
+                continue 
+            end
+            n = size(solver.W[ilmi],1) 
+            k = kk[ilmi] 
+            AAs = AAAATtau_d * solver.model.AA[ilmi]
+            @timeit solver.to "prec31" begin
+            ii_, jj_, aa_ = findnz(AAs)
+            qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
+            pp_ = mod.(jj_ .- 1, n) .+ 1
+            UU = halpha.Umat[ilmi][qq_]
+            aau = aa_ .* UU
+            AU = sparse(ii_,pp_,aau,nvar,n)
+            end
+            if solver.model.nlmi>1
+                t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
+            else
+                @timeit solver.to "prec32" begin
+                t .= AU * halpha.Z[1]
+                end
+            end
+            lbt = lbt + k*n
+        end 
+    end
+    S .= t' * t
+end
+
+return S, lbt
+end
+
 
 function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
 

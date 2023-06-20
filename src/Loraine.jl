@@ -13,7 +13,7 @@ using LinearAlgebra
 using Printf
 using TimerOutputs
 # using MKLSparse
-using MKL
+# using MKL
 
 #modules
 include("Solvers.jl")

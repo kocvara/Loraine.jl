@@ -1,5 +1,5 @@
 using TimerOutputs
-using MKL
+# using MKL
 
 function prepare_W(solver)
 
