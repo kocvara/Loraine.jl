@@ -9,14 +9,18 @@ function prepare_W(solver)
                 try
                     Ctmp = cholesky(solver.X[i])
                 catch
-                    println("Matrix X not positive definite, trying to regularize")
+                    if solver.verb > 0
+                        println("Matrix X not positive definite, trying to regularize")
+                    end
                     icount = 0
                     while isposdef(solver.X[i]) == false
                         solver.X[i] = solver.X[i] + 1e-5 .* I(size(solver.X[i], 1))
                         icount = icount + 1
                         # @show icount
                         if icount > 1000
-                            println("WARNING: X cannot be made positive definite, giving up")
+                            if solver.verb > 0
+                                println("WARNING: X cannot be made positive definite, giving up")
+                            end
                             Ctmp = I(size(solver.X[i], 1))
                             solver.status = 4
                             return
@@ -30,14 +34,18 @@ function prepare_W(solver)
                 try
                     CtmpS = cholesky(solver.S[i])
                 catch
-                    println("Matrix S not positive definite, trying to regularize")
+                    if solver.verb > 0
+                        println("Matrix S not positive definite, trying to regularize")
+                    end
                     icount = 0
                     while isposdef(solver.S[i]) == false
                         solver.S[i] = solver.S[i] + 1e-5 .* I(size(solver.S[i], 1))
                         icount = icount + 1
                         # @show icount
                         if icount > 1000
-                            println("WARNING: S cannot be made positive definite, giving up")
+                            if solver.verb > 0
+                                println("WARNING: S cannot be made positive definite, giving up")
+                            end
                             CtmpS = I(size(solver.S[i], 1))
                             solver.status = 4
                             return
