@@ -9,7 +9,7 @@ There is also a Matlab version of the code here
 
 ## License and Original Contributors
 
-Loraine was developed by Soodeh Habibi and Michal Kocvara, University of Birmingham, and Michael Stingl, University of Erlangen, for H2020 ITN POEMA and is distributed under the GNU General Public License 3.0. For commercial applications that may be incompatible with this license, please contact the authors to discuss alternatives. 
+Loraine was developed by Soodeh Habibi and Michal Kočvara, University of Birmingham, and Michael Stingl, University of Erlangen, for H2020 ITN POEMA and is distributed under the GNU General Public License 3.0. For commercial applications that may be incompatible with this license, please contact the authors to discuss alternatives. 
 
 The JuMP interface was provided by Benoît Legat. His help is greatly ackowledged.
 
