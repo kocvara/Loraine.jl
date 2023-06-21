@@ -274,9 +274,6 @@ function solve(solver::MySolver,halpha::Halpha)
         end
     end
 
-@show BLAS.get_num_threads()
-
-
     setup_solver(solver::MySolver,halpha::Halpha)
 
     initial_point(solver)
@@ -537,6 +534,7 @@ function (t::MyA)(Ax::Vector{Float64}, x::Vector{Float64})
     ax1 = zeros(size(t.AA[1],1))
     if nlmi > 0
         for ilmi = 1:nlmi
+            waxw = zeros(size(t.W[ilmi]))
             @timeit t.to "Ax1" begin
             # ax = zeros(size(t.AA[ilmi],2))
             end
@@ -545,7 +543,7 @@ function (t::MyA)(Ax::Vector{Float64}, x::Vector{Float64})
             ax = transpose(t.AA[ilmi]) * x
             end
             @timeit t.to "Ax3" begin
-            waxw = t.W[ilmi] * mat(ax) * t.W[ilmi]
+            waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
             end
             @timeit t.to "Ax4" begin
             ax1 += t.AA[ilmi] * waxw[:]
