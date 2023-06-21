@@ -1,14 +1,42 @@
 # Loraine.jl
 
-Loraine is a Julia implementation of an interior point method algorithm for linear semidefinite optimization problems. 
+Loraine.jl is a Julia implementation of an interior point method algorithm for linear semidefinite optimization problems. 
 The special feature of Loraine is the iterative solver for linear systems. This is to be used for problems with (very) low rank solution matrix.
-Standard (non-low-rank) problems can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
+Standard (non-low-rank) problems and linear programs can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
 
-Loraine is to be used with JuMP. Folder `examples` includes a few examples of how to use Loraine via JuMP; in particular, `solve_sdpa.jl` reads an SDP in the SDPA input format and solves it by Loraine. A few sample problems can be found in folder `examples/data`.
+There is also a Matlab version of the code here
+```https://github.com/kocvara/Loraine.m```
 
-To install Loraine, run 
+## License and Original Contributors
 
-] add https://github.com/kocvara/Loraine/
+Loraine was developed by Soodeh Habibi and Michal Kocvara, University of Birmingham, and Michael Stingl, University of Erlangen, for H2020 ITN POEMA and is distributed under the GNU General Public License 3.0. For commercial applications that may be incompatible with this license, please contact the authors to discuss alternatives. 
+
+The JuMP interface was provided by Benoît Legat. His help is greatly ackowledged.
+
+## Intallation 
+
+] add https://github.com/kocvara/Loraine.jl
+
+## Using with JuMP
+```
+using JuMP, Loraine
+model = Model(Loraine.Optimizer)
+set_attribute(model, "maxit", 100)
+
+@variable(model,...)
+@constraint(model, ...)
+@variable(model, ...)
+@objective(model, Max, ...)
+optimize!(model)
+```
+To solve an SDP problem stored in SDPA format, do
+```
+using JuMP, Loraine
+model = read_from_file("examples/data/theta1.dat-s")
+set_optimizer(model, Loraine.Optimizer)
+optimize!(model)
+```
+For more examples, see folder `examples` includes a few examples of how to use Loraine via JuMP; in particular, `solve_sdpa.jl` reads an SDP in the SDPA input format and solves it by Loraine. A few sample problems can be found in folder `examples/data`.
 
 ## Options
 
@@ -26,4 +54,15 @@ verb            # 2..full output; 1..short output; 0..no output [1]
 initpoint       # 0..Loraine heuristics, 1..SDPT3-like heuristics [0]
 timing          # 1..yes, 0..no
 maxit           # maximal number of global iterations [200]
+```
+
+## Loraine paper
+```
+@article{loraine2023,
+  title={Loraine-An interior-point solver for low-rank semidefinite programming},
+  author={Habibi, Soodeh and Ko{\v{c}}vara, Michal and Stingl, Michael},
+  www={https://hal.science/hal-04076509/}
+  note={Preprint hal-04076509}
+  year={2023}
+}
 ```
