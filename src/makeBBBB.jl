@@ -1,5 +1,18 @@
 # using SuiteSparseGraphBLAS
+function makeBBBB_rank1(n,nlmi,B,G)
+    # @timeit to "BBBB" begin
+    BBBB = zeros(Float64, n, n)
+    for ilmi = 1:nlmi
+        Gilmi = G[ilmi]
+        Bilmi = B[ilmi]
+        BB = Bilmi * Gilmi
+        BBBB += (BB * BB') .^ 2
+    end     
+    # end
+    return BBBB
+end
 
+#########################
 
 function makeBBBB(n,nlmi,A,G)
     # BBBB = Matrix{Float64}(zeros, n, n)
@@ -75,7 +88,8 @@ function makeBBBBalti(Ailmi,AAilmi,Wilmi,n,to)
             end
         end
     end
-    Hnn = Hermitian(Hnn)
+    # Hnn = Hermitian(Hnn)
+    Hnn = (Hnn + Hnn') ./2
     return Hnn
 end
 
@@ -109,7 +123,8 @@ function makeBBBBalti1(Ailmi,AAilmi,Wilmi,n)
                 Hnn[:,i] .= -tmp2
         end
     # end
-    Hnn = Hermitian(Hnn)
+    # Hnn = Hermitian(Hnn)
+    Hnn = (Hnn + Hnn') ./ 2
     return Hnn
 end
 

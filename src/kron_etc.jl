@@ -11,8 +11,10 @@ function my_kron(A, B, C)
 end
 ###########################################################################
 function mat(vecA)
-    n = Int64(sqrt(length(vecA)))
-    return reshape(vecA, n, n)
+    n = isqrt(length(vecA))
+    Atmp = reshape(vecA, n, n)
+    return (Atmp + Atmp') ./ 2
+    # return Hermitian(reshape(vecA, n, n))
 end
 
 ###########################################################################
