@@ -1,6 +1,6 @@
 Copyright (c) 2023 Michal Kocvara and contributors
 
-Hypatia.jl is licensed under the MIT License.
+Loraine.jl is licensed under the MIT License.
 
 ```
 MIT License
