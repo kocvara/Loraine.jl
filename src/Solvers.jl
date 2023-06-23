@@ -531,28 +531,30 @@ function (t::MyA)(Ax::Vector{Float64}, x::Vector{Float64})
     @timeit t.to "Ax" begin
     nlmi = length(t.AA)
     m = size(t.AA[1],1)
-    ax1 = zeros(size(t.AA[1],1))
+    ax1 = zeros(m,1)
     if nlmi > 0
         for ilmi = 1:nlmi
-            waxw = zeros(size(t.W[ilmi]))
+            waxwtmp = Matrix{Float64}(undef,size(t.W[ilmi]))
+            waxw = Matrix{Float64}(undef,size(t.W[ilmi]))
             @timeit t.to "Ax1" begin
-            # ax = zeros(size(t.AA[ilmi],2))
+            ax = Vector{Float64}(undef,size(t.AA[ilmi],2))
             end
             @timeit t.to "Ax2" begin
-            # mul!(ax, transpose(t.AA[ilmi]), x)
-            ax = transpose(t.AA[ilmi]) * x
+            mul!(ax, transpose(t.AA[ilmi]), x)
+            # ax = transpose(t.AA[ilmi]) * x
             end
             @timeit t.to "Ax3" begin
-            waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
+            # waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
+            mul!(waxwtmp,t.W[ilmi], mat(ax))
+            mul!(waxw, waxwtmp, t.W[ilmi])
             end
             @timeit t.to "Ax4" begin
-            ax1 += t.AA[ilmi] * waxw[:]
+            ax1 .+= t.AA[ilmi] * waxw[:]
             end
-            # mul!(Ax,t.AA[1],waxw)
         end
     end
     if t.nlin>0
-        ax1 = ax1 + t.C_lin * ((t.X_lin .* t.S_lin_inv) .* (t.C_lin' * x))
+        ax1 .+= t.C_lin * ((t.X_lin .* t.S_lin_inv) .* (t.C_lin' * x))
     end
 
     mul!(Ax,I(m),ax1[:])
@@ -623,8 +625,9 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     nlmi = solver.model.nlmi
     kk = solver.erank .* ones(Int64,nlmi,1)
     # kk[2] = 3
-    halpha.Z = SparseMatrixCSC{Float64}[]
-    
+    # halpha.Z = SparseMatrixCSC{Float64}[]
+    halpha.Z = Matrix{Float64}[]
+
     nvar = solver.model.n
     
     halpha.AAAATtau = spzeros(nvar,nvar)
@@ -773,9 +776,9 @@ end
 
 function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
     @timeit solver.to "prec3" begin
-    S = zeros(sizeS,sizeS)
+    S = Matrix{Float64}(undef,sizeS,sizeS)
     nvar = solver.model.n
-    t = zeros(nvar, kk[1]*didi)
+    t = Matrix{Float64}(undef,nvar,kk[1]*didi)
     if solver.model.nlmi > 0
         for ilmi = 1:solver.model.nlmi
             if kk[ilmi] == 0
@@ -783,20 +786,23 @@ function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
             end
             n = size(solver.W[ilmi],1) 
             k = kk[ilmi] 
+
+            @timeit solver.to "prec30" begin
             AAs = AAAATtau_d * solver.model.AA[ilmi]
+            end
             @timeit solver.to "prec31" begin
             ii_, jj_, aa_ = findnz(AAs)
             qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
             pp_ = mod.(jj_ .- 1, n) .+ 1
-            UU = halpha.Umat[ilmi][qq_]
-            aau = aa_ .* UU
+            aau = Vector{Float64}(undef,length(aa_))
+            aau .= aa_ .* halpha.Umat[ilmi][qq_]
             AU = sparse(ii_,pp_,aau,nvar,n)
             end
             if solver.model.nlmi>1
                 t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
             else
                 @timeit solver.to "prec32" begin
-                t .= AU * halpha.Z[1]
+                mul!(t, AU, halpha.Z[1])
                 end
             end
             lbt = lbt + k*n
