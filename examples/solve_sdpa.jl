@@ -21,7 +21,7 @@ set_optimizer(model, Loraine.Optimizer)
 
 # Loraine options
 
-set_attribute(model, "kit", 1)
+set_attribute(model, "kit", 0)
 set_attribute(model, "tol_cg", 1.0e-2)
 set_attribute(model, "tol_cg_min", 1.0e-6)
 set_attribute(model, "eDIMACS", 2e-6)

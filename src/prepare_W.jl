@@ -1,9 +1,10 @@
 using TimerOutputs
+using FameSVD
 # using MKL
 
 function prepare_W(solver)
 
-    # @timeit to "prpr" begin
+    # @timeit solver.to "prpr" begin
         for i = 1:solver.model.nlmi
             # @timeit to "prpr1" begin
                 try
@@ -59,18 +60,11 @@ function prepare_W(solver)
             @timeit solver.to "prep W SVD" begin
                 CCtmp = Matrix{Float64}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
-                # U, Dtmp, V = try
-                U, Dtmp, V = svd!(CCtmp)
-                # catch
-                    # U, Dtmp, V = try
-                        # U, Dtmp, V = LAPACK.gesvd!('S','S',CCtmp); V = V'
-                    # catch
-                        # ()
-                    # end
-            #     end
+                @timeit solver.to "prep W SVD svd" begin
+                U, Dtmp, V = fsvd(CCtmp)
+                end
             end
 
-            # print(typeof(Dtmp))
             solver.D[i] = copy(Dtmp)
             try
                 Di2 = Diagonal(1 ./ sqrt.(Dtmp))
