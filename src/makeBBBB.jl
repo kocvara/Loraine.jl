@@ -161,12 +161,12 @@ function makeBBBBspi(ilmi,Ailmi,myA,Wilmi,n)
             jjj_j = myAjjj.jind
             vvv_j = myAjjj.nzval
             ttt = 0.0
-            @inbounds for iAj = 1:length(iii_j)
+            @inbounds for iAj in eachindex(iii_j)
                 ttt1 = 0.0
                 iiijAj = iii_j[iAj]
                 jjjjAj = jjj_j[iAj]
                 vvvj = -vvv_j[iAj]    
-                @inbounds for iAi = 1:length(iii_i)
+                @inbounds for iAi in eachindex(iii_i)
                     # @timeit to "inner" begin
                         iiiiAi = iii_i[iAi]
                         jjjiAi = jjj_i[iAi]
@@ -218,7 +218,7 @@ function makeBBBBsp2i(ilmi,Ailmi,myA,Wilmi,n)
                 jjj_j = myAjjj.jind
                 vvv_j = myAjjj.nzval
                 ttt = 0.0
-                @inbounds for iAj = 1:length(iii_j)
+                @inbounds for iAj in eachindex(iii_j)
                     iiii = iii_j[iAj]
                     jjjj = jjj_j[iAj]
                     vvv = -vvv_j[iAj]
