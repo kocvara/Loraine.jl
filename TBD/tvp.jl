@@ -27,7 +27,7 @@ options["kit"]          = 1         # kit = 0 for direct solver; kit = 1 for CG
 options["tol_cg"]       = 1e-2      # tolerance for CG solver [1e-2]
 options["tol_cg_up"]    = 0.5       # tolerance update [0.5]
 options["tol_cg_min"]   = 1e-6      # minimal tolerance for CG solver [1e-6]
-options["eDIMACS"]      = 3e-5      # epsilon for DIMACS error stopping criterion [1e-5]
+options["eDIMACS"]      = 1e-6      # epsilon for DIMACS error stopping criterion [1e-5]
 
 options["preconditioner"]  = 4    # 0...no; 1...H_tilde with SMW; 2...H_hat; 3...H_tilde inverse; 4...hybrid
 options["erank"] = 1    # estimated rank()

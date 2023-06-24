@@ -799,7 +799,13 @@ function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
             AU = sparse(ii_,pp_,aau,nvar,n)
             end
             if solver.model.nlmi>1
-                t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
+                @timeit solver.to "prec32" begin
+                didi1 = size(solver.W[ilmi],1)
+                ttmp = Matrix{Float64}(undef,nvar,kk[ilmi]*didi1)
+                mul!(ttmp, AU, halpha.Z[ilmi])
+                t[1:nvar,lbt:lbt+k*n-1] = ttmp
+                # t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
+                end
             else
                 @timeit solver.to "prec32" begin
                 mul!(t, AU, halpha.Z[1])
@@ -808,12 +814,13 @@ function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
             lbt = lbt + k*n
         end 
     end
-    S .= t' * t
+    @timeit solver.to "prec33" begin
+    mul!(S , t', t)
+    end
 end
 
 return S, lbt
 end
-
 
 function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
 
