@@ -5,7 +5,7 @@ The special feature of Loraine is the iterative solver for linear systems. This 
 Standard (non-low-rank) problems and linear programs can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
 
 There is also a Matlab version of the code here
-```https://github.com/kocvara/Loraine.m```
+`https://github.com/kocvara/Loraine.m`
 
 ## License and Original Contributors
 
@@ -17,10 +17,13 @@ The JuMP interface was provided by Benoît Legat. His help is greatly ackowledge
 
 ## Intallation 
 
+```
 ] add https://github.com/kocvara/Loraine.jl
+```
 
 ## Using with JuMP
-```
+
+```julia
 using JuMP, Loraine
 model = Model(Loraine.Optimizer)
 set_attribute(model, "maxit", 100)
@@ -32,7 +35,7 @@ set_attribute(model, "maxit", 100)
 optimize!(model)
 ```
 To solve an SDP problem stored in SDPA format, do
-```
+```julia
 using JuMP, Loraine
 model = read_from_file("examples/data/theta1.dat-s")
 set_optimizer(model, Loraine.Optimizer)
@@ -43,7 +46,7 @@ For more examples, see folder `examples` includes a few examples of how to use L
 ## Options
 
 The list of options:
-```
+```julia
 kit             # kit = 0 for direct solver; kit = 1 for CG [0]
 tol_cg          # tolerance for CG solver [1.0e-2]
 tol_cg_up       # tolerance update [0.5]
@@ -59,7 +62,8 @@ maxit           # maximal number of global iterations [200]
 ```
 
 ## Loraine paper
-```
+
+```bibtex
 @article{loraine2023,
   title={Loraine-An interior-point solver for low-rank semidefinite programming},
   author={Habibi, Soodeh and Ko{\v{c}}vara, Michal and Stingl, Michael},
