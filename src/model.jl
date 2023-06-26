@@ -139,8 +139,8 @@ function prep_B!(A,n,i)
             bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
             tmp2 = bbb * bbb'
             if norm(tmp - tmp2) > 5.0e-6
-                datarank = -2
-                @warn "data conversion problem, switching to datarank = 0"
+                drank = 0
+                println("\n WARNING: data conversion problem, switching to datarank = 0")
                 break
             end
             Btmp[k, bidx] = bbb
