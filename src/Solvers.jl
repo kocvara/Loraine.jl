@@ -408,8 +408,10 @@ function setup_solver(solver::MySolver,halpha::Halpha)
         end
     end
 
-    if nnz(solver.model.B[1]) == 0
-        solver.datarank = 0
+    for ilmi = 1:solver.model.nlmi
+        if nnz(solver.model.B[ilmi]) == 0
+            solver.datarank = 0
+        end
     end
 
 end
