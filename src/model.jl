@@ -118,7 +118,6 @@ function _prepare_A(A, datarank)
         if datarank == -1
             Btmp = prep_B!(A,n,i)
             push!(B, Btmp)
-            @show n
         end
 
     end
