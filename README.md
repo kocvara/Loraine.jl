@@ -55,8 +55,8 @@ erank           # estimated rank [1]
 aamat           # 0..A^TA; 1..diag(A^TA); 2..identity [2]
 verb            # 2..full output; 1..short output; 0..no output [1]
 datarank        # 0..full rank matrices expected [0]
-                # -1..rank-1 matrices expected, coverted to vectors, if possible
-                # (TBD) 1..vector expected for low-rank data matrices
+                # -1..rank-1 matrices expected, converted to vectors, if possible
+                # (TBD) 1..vectors expected for low-rank data matrices
 initpoint       # 0..Loraine heuristics, 1..SDPT3-like heuristics [0]
 timing          # 1..yes, 0..no
 maxit           # maximal number of global iterations [200]
