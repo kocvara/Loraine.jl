@@ -205,9 +205,10 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     # b = max_sense ? -b0 : b0
 
     AA = Any[sparse(IJV...) for IJV in A]
+    drank = get(dest.options,"datarank",1)
     model = MyModel(
         AA,
-        Solvers._prepare_A(AA)...,
+        Solvers._prepare_A(AA,drank)...,
         b,
         b_const,
         convert(SparseVector{Float64,Int64}, sparsevec(Cd_lin.constants)),

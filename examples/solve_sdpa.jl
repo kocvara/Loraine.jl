@@ -12,10 +12,10 @@ using Dualization
 
 # Select your semidefinite optimization problem in SDPA input format
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto3.dat-s")
-# model=read_from_file("/Users/michal/Dropbox/michal/sdplib/gpp250-2.dat-s")
+model=read_from_file("/Users/michal/Dropbox/michal/sdplib/maxG11.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib3.dat-s")
 
-model=read_from_file("examples/data/theta1.dat-s")
+# model=read_from_file("examples/data/theta1.dat-s")
 
 set_optimizer(model, Loraine.Optimizer)
 
@@ -31,6 +31,7 @@ set_attribute(model, "aamat", 2)
 set_attribute(model, "verb", 1)
 set_attribute(model, "initpoint", 0)
 set_attribute(model, "maxit", 100)
+set_attribute(model, "datarank", -1)
 
 optimize!(model)
 

@@ -91,12 +91,13 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-model = MyModel(A, _prepare_A(A)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
+datarank = 0
+model = MyModel(A, _prepare_A(A,drank)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model
 end
 
-function _prepare_A(A)
+function _prepare_A(A, datarank)
 
     nlmi = size(A, 1)
     n = size(A, 2) - 1
@@ -113,7 +114,8 @@ function _prepare_A(A)
         AAA = prep_AA!(myA,Ai,n)
         push!(AA, copy(AAA'))
 
-        if 1 == 0
+        # if 1 == 0
+        if datarank == -1
             Btmp = prep_B!(A,n,i)
             push!(B, Btmp)
             @show n

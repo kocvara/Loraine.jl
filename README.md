@@ -38,6 +38,9 @@ optimize!(model)
 ```
 For more examples, see folder `examples` includes a few examples of how to use Loraine via JuMP; in particular, `solve_sdpa.jl` reads an SDP in the SDPA input format and solves it by Loraine. A few sample problems can be found in folder `examples/data`.
 
+## Rank-one data
+If the solution does not have low rank, it is recommended to use a direct solver `kit = 0`. However, if you know that your data matrices are all rank-one, use the option `datarank = -1` to get a significant reduction in the complexity (and CPU time). Examples of such problems are `maxG11` and `thetaG11` from the `SDPLIB` collection.
+
 ## Options
 
 The list of options:
@@ -51,6 +54,9 @@ preconditioner  # 0...no; 1...H_alpha; 2...H_beta; 4...hybrid [1]
 erank           # estimated rank [1]
 aamat           # 0..A^TA; 1..diag(A^TA); 2..identity [2]
 verb            # 2..full output; 1..short output; 0..no output [1]
+datarank        # 0..full rank matrices expected [0]
+                # -1..rank-1 matrices expected, coverted to vectors, if possible
+                # (TBD) 1..vector expected for low-rank data matrices
 initpoint       # 0..Loraine heuristics, 1..SDPT3-like heuristics [0]
 timing          # 1..yes, 0..no
 maxit           # maximal number of global iterations [200]
