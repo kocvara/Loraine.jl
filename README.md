@@ -15,10 +15,10 @@ Loraine was developed by Soodeh Habibi and Michal Kočvara, University of Birmin
 
 The JuMP interface was provided by Benoît Legat. His help is greatly ackowledged.
 
-## Intallation 
+## Installation 
 
 ```
-] add https://github.com/kocvara/Loraine.jl
+] add Loraine.jl
 ```
 
 ## Using with JuMP
