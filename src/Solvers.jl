@@ -408,6 +408,7 @@ function setup_solver(solver::MySolver,halpha::Halpha)
         end
     end
 
+    # when datarank was set to -1 and conversion failed, we switch to datarank = 0
     if ~isempty(solver.model.B)
         if solver.model.nlmi > 0
             for ilmi = 1:solver.model.nlmi
@@ -419,7 +420,6 @@ function setup_solver(solver::MySolver,halpha::Halpha)
     end
 
 end
-
 
 function myIPstep(solver::MySolver,halpha::Halpha)
     solver.iter += 1

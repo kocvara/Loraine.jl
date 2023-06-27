@@ -1,5 +1,9 @@
 # Loraine.jl
 
+*Sweet Lor(r)aine, let the party carry on[^1]...*
+
+[^1]: https://www.youtube.com/watch?v=0D2wNf1lVrI
+
 Loraine.jl is a Julia implementation of an interior point method algorithm for linear semidefinite optimization problems. 
 The special feature of Loraine is the iterative solver for linear systems. This is to be used for problems with (very) low rank solution matrix.
 Standard (non-low-rank) problems and linear programs can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.

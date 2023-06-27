@@ -91,7 +91,7 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-datarank = 0
+drank = 0
 model = MyModel(A, _prepare_A(A,drank)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model
