@@ -1,10 +1,10 @@
 ## Linear SDP problem
 
 ```math
-\begin{align}
+\begin{align*}
 &\min c^Tx \\
-&\mbox{s.t.}\\
+&\text{s.t.}\\
 &\quad\sum_{i=1}^n x_i A_i - B \succeq 0
-\end{align}
+\end{align*}
 ```
 where ``x``
