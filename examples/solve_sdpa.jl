@@ -33,7 +33,7 @@ set_attribute(model, "verb", 1)
 set_attribute(model, "datarank", -1)
 set_attribute(model, "initpoint", 0)
 set_attribute(model, "maxit", 100)
-set_attribute(model, "datarank", -1)
+set_attribute(model, "datarank", 0)
 
 optimize!(model)
 
