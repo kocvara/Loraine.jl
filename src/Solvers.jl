@@ -26,6 +26,7 @@ mutable struct MySolver
     aamat::Int64
     fig_ev::Int64
     verb::Int64
+    datarank::Int64
     initpoint::Int64
     timing::Int64
     maxit::Int64
@@ -112,6 +113,7 @@ mutable struct MySolver
         aamat::Int64,
         fig_ev::Int64,
         verb::Int64,
+        datarank::Int64,
         initpoint::Int64,
         timing::Int64,
         maxit::Int64, 
@@ -129,6 +131,7 @@ mutable struct MySolver
         solver.aamat           = aamat
         solver.fig_ev          = fig_ev
         solver.verb            = verb   
+        solver.datarank        = datarank
         solver.initpoint       = initpoint   
         solver.timing          = timing
         solver.maxit           = maxit 
@@ -168,6 +171,7 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
     "aamat" => 1,
     "fig_ev" => 0,
     "verb" => 1,
+    "datarank" => 0,
     "initpoint" => 0,
     "timing" => 1,
     "maxit" => 20,
@@ -185,6 +189,7 @@ function load(model, options::Dict)
     aamat = Int64(get(options, "aamat", 1))
     fig_ev = Int64(get(options, "fig_ev", 0))
     verb = Int64(get(options, "verb", 1))
+    datarank = Int64(get(options, "datarank", 0))
     initpoint = Int64(get(options, "initpoint", 0))
     timing = Int64(get(options, "timing", 1))
     maxit = Int64(get(options, "maxit", 20))
@@ -199,6 +204,7 @@ function load(model, options::Dict)
         aamat,
         fig_ev,
         verb,
+        datarank,
         initpoint,
         timing,
         maxit, 
@@ -402,8 +408,18 @@ function setup_solver(solver::MySolver,halpha::Halpha)
         end
     end
 
-end
+    # when datarank was set to -1 and conversion failed, we switch to datarank = 0
+    if ~isempty(solver.model.B)
+        if solver.model.nlmi > 0
+            for ilmi = 1:solver.model.nlmi
+                if nnz(solver.model.B[ilmi]) == 0
+                    solver.datarank = 0
+                end
+            end
+        end
+    end
 
+end
 
 function myIPstep(solver::MySolver,halpha::Halpha)
     solver.iter += 1
@@ -486,8 +502,12 @@ function check_convergence(solver)
         #@sprintf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %8.1e %6.0d %8.2f\n', iter, y[1:ddnvar]"*ddc[:], DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, eq_norm, arank, titi)
         # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
-        @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
-        else
+            if solver.kit == 0
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6,solver.itertime)
+            else
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
+            end    
+    else
             if solver.kit == 0
                 @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.itertime)
             else
@@ -531,28 +551,30 @@ function (t::MyA)(Ax::Vector{Float64}, x::Vector{Float64})
     @timeit t.to "Ax" begin
     nlmi = length(t.AA)
     m = size(t.AA[1],1)
-    ax1 = zeros(size(t.AA[1],1))
+    ax1 = zeros(m,1)
     if nlmi > 0
         for ilmi = 1:nlmi
-            waxw = zeros(size(t.W[ilmi]))
+            waxwtmp = Matrix{Float64}(undef,size(t.W[ilmi]))
+            waxw = Matrix{Float64}(undef,size(t.W[ilmi]))
             @timeit t.to "Ax1" begin
-            # ax = zeros(size(t.AA[ilmi],2))
+            ax = Vector{Float64}(undef,size(t.AA[ilmi],2))
             end
             @timeit t.to "Ax2" begin
-            # mul!(ax, transpose(t.AA[ilmi]), x)
-            ax = transpose(t.AA[ilmi]) * x
+            mul!(ax, transpose(t.AA[ilmi]), x)
+            # ax = transpose(t.AA[ilmi]) * x
             end
             @timeit t.to "Ax3" begin
-            waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
+            # waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
+            mul!(waxwtmp,t.W[ilmi], mat(ax))
+            mul!(waxw, waxwtmp, t.W[ilmi])
             end
             @timeit t.to "Ax4" begin
-            ax1 += t.AA[ilmi] * waxw[:]
+            ax1 .+= t.AA[ilmi] * waxw[:]
             end
-            # mul!(Ax,t.AA[1],waxw)
         end
     end
     if t.nlin>0
-        ax1 = ax1 + t.C_lin * ((t.X_lin .* t.S_lin_inv) .* (t.C_lin' * x))
+        ax1 .+= t.C_lin * ((t.X_lin .* t.S_lin_inv) .* (t.C_lin' * x))
     end
 
     mul!(Ax,I(m),ax1[:])
@@ -623,8 +645,9 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     nlmi = solver.model.nlmi
     kk = solver.erank .* ones(Int64,nlmi,1)
     # kk[2] = 3
-    halpha.Z = SparseMatrixCSC{Float64}[]
-    
+    # halpha.Z = SparseMatrixCSC{Float64}[]
+    halpha.Z = Matrix{Float64}[]
+
     nvar = solver.model.n
     
     halpha.AAAATtau = spzeros(nvar,nvar)
@@ -773,9 +796,9 @@ end
 
 function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
     @timeit solver.to "prec3" begin
-    S = zeros(sizeS,sizeS)
+    S = Matrix{Float64}(undef,sizeS,sizeS)
     nvar = solver.model.n
-    t = zeros(nvar, kk[1]*didi)
+    t = Matrix{Float64}(undef,nvar,kk[1]*didi)
     if solver.model.nlmi > 0
         for ilmi = 1:solver.model.nlmi
             if kk[ilmi] == 0
@@ -783,31 +806,41 @@ function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
             end
             n = size(solver.W[ilmi],1) 
             k = kk[ilmi] 
+
+            @timeit solver.to "prec30" begin
             AAs = AAAATtau_d * solver.model.AA[ilmi]
+            end
             @timeit solver.to "prec31" begin
             ii_, jj_, aa_ = findnz(AAs)
             qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
             pp_ = mod.(jj_ .- 1, n) .+ 1
-            UU = halpha.Umat[ilmi][qq_]
-            aau = aa_ .* UU
+            aau = Vector{Float64}(undef,length(aa_))
+            aau .= aa_ .* halpha.Umat[ilmi][qq_]
             AU = sparse(ii_,pp_,aau,nvar,n)
             end
             if solver.model.nlmi>1
-                t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
+                @timeit solver.to "prec32" begin
+                didi1 = size(solver.W[ilmi],1)
+                ttmp = Matrix{Float64}(undef,nvar,kk[ilmi]*didi1)
+                mul!(ttmp, AU, halpha.Z[ilmi])
+                t[1:nvar,lbt:lbt+k*n-1] = ttmp
+                # t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
+                end
             else
                 @timeit solver.to "prec32" begin
-                t .= AU * halpha.Z[1]
+                mul!(t, AU, halpha.Z[1])
                 end
             end
             lbt = lbt + k*n
         end 
     end
-    S .= t' * t
+    @timeit solver.to "prec33" begin
+    mul!(S , t', t)
+    end
 end
 
 return S, lbt
 end
-
 
 function (t::MyM)(Mx::Vector{Float64}, x::Vector{Float64})
 

@@ -39,7 +39,7 @@ tmpA = get(tmpcon, "lmi_symat", 1)
 
 lA = length(tmpA)
 BB = zeros(nlmi, nvar + 1, maximum(tmpA)[4], maximum(tmpA)[5])
-for i = 1:length(tmpA)
+for i in eachindex(tmpA)
     BB[tmpA[i][3],tmpA[i][2]+1,tmpA[i][4],tmpA[i][5]] = tmpA[i][1]
 end
 

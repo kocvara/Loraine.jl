@@ -1,22 +1,27 @@
 using TimerOutputs
+using FameSVD
 # using MKL
 
 function prepare_W(solver)
 
-    # @timeit to "prpr" begin
+    # @timeit solver.to "prpr" begin
         for i = 1:solver.model.nlmi
             # @timeit to "prpr1" begin
                 try
                     Ctmp = cholesky(solver.X[i])
                 catch
-                    println("Matrix X not positive definite, trying to regularize")
+                    if solver.verb > 0
+                        println("Matrix X not positive definite, trying to regularize")
+                    end
                     icount = 0
                     while isposdef(solver.X[i]) == false
                         solver.X[i] = solver.X[i] + 1e-5 .* I(size(solver.X[i], 1))
                         icount = icount + 1
                         # @show icount
                         if icount > 1000
-                            println("WARNING: X cannot be made positive definite, giving up")
+                            if solver.verb > 0
+                                println("WARNING: X cannot be made positive definite, giving up")
+                            end
                             Ctmp = I(size(solver.X[i], 1))
                             solver.status = 4
                             return
@@ -30,14 +35,18 @@ function prepare_W(solver)
                 try
                     CtmpS = cholesky(solver.S[i])
                 catch
-                    println("Matrix S not positive definite, trying to regularize")
+                    if solver.verb > 0
+                        println("Matrix S not positive definite, trying to regularize")
+                    end
                     icount = 0
                     while isposdef(solver.S[i]) == false
                         solver.S[i] = solver.S[i] + 1e-5 .* I(size(solver.S[i], 1))
                         icount = icount + 1
                         # @show icount
                         if icount > 1000
-                            println("WARNING: S cannot be made positive definite, giving up")
+                            if solver.verb > 0
+                                println("WARNING: S cannot be made positive definite, giving up")
+                            end
                             CtmpS = I(size(solver.S[i], 1))
                             solver.status = 4
                             return
@@ -51,18 +60,11 @@ function prepare_W(solver)
             @timeit solver.to "prep W SVD" begin
                 CCtmp = Matrix{Float64}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
-                # U, Dtmp, V = try
-                U, Dtmp, V = svd!(CCtmp)
-                # catch
-                    # U, Dtmp, V = try
-                        # U, Dtmp, V = LAPACK.gesvd!('S','S',CCtmp); V = V'
-                    # catch
-                        # ()
-                    # end
-            #     end
+                @timeit solver.to "prep W SVD svd" begin
+                U, Dtmp, V = fsvd(CCtmp)
+                end
             end
 
-            # print(typeof(Dtmp))
             solver.D[i] = copy(Dtmp)
             try
                 Di2 = Diagonal(1 ./ sqrt.(Dtmp))

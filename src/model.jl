@@ -91,12 +91,13 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-model = MyModel(A, _prepare_A(A)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
+drank = 0
+model = MyModel(A, _prepare_A(A,drank)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model
 end
 
-function _prepare_A(A)
+function _prepare_A(A, datarank)
 
     nlmi = size(A, 1)
     n = size(A, 2) - 1
@@ -113,10 +114,10 @@ function _prepare_A(A)
         AAA = prep_AA!(myA,Ai,n)
         push!(AA, copy(AAA'))
 
-        if 1 == 0
+        # if 1 == 0
+        if datarank == -1
             Btmp = prep_B!(A,n,i)
             push!(B, Btmp)
-            @show n
         end
 
     end
@@ -138,8 +139,8 @@ function prep_B!(A,n,i)
             bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
             tmp2 = bbb * bbb'
             if norm(tmp - tmp2) > 5.0e-6
-                datarank = -2
-                @warn "data conversion problem, switching to datarank = 0"
+                drank = 0
+                println("\n WARNING: data conversion problem, switching to datarank = 0")
                 break
             end
             Btmp[k, bidx] = bbb
