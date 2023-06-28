@@ -33,15 +33,15 @@ set_attribute(model, "verb", 1)
 set_attribute(model, "datarank", -1)
 set_attribute(model, "initpoint", 0)
 set_attribute(model, "maxit", 100)
-set_attribute(model, "datarank", -1)
+set_attribute(model, "datarank", 0)
 
 optimize!(model)
 
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient
 
-# set_optimizer(model, Mosek.Optimizer)
-# dual_model = dualize(model, Mosek.Optimizer)
-# optimize!(dual_model)
+set_optimizer(model, CSDP.Optimizer)
+dual_model = dualize(model, CSDP.Optimizer)
+optimize!(dual_model)
 
 # termination_status(model)
