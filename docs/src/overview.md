@@ -1,8 +1,10 @@
-Linear SDP problem
+## Linear SDP problem
 
 ```math
 \begin{align}
-\min c^Tx 
+&\min c^Tx \\
+&\mbox{s.t.}\\
+&\quad\sum_{i=1}^n x_i A_i - B \succeq 0
 \end{align}
 ```
-asa ``x``
+where ``x``
