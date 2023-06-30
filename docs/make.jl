@@ -19,7 +19,7 @@ makedocs(
 )
 
 deploydocs(
-    repo   = "github.com/kocvara/Loraine.jl",
+    repo   = "github.com/kocvara/Loraine.jl.git",
     target = "build",
     push_preview = true,
 )
