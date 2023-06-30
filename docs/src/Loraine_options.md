@@ -19,9 +19,9 @@ timing          # 1..yes, 0..no
 maxit           # maximal number of global iterations [200]
 ```
 
-## Some more details
+## Comments
 
-- `eDIMACS` is checked against the maximum of DIMACS errors, measuring (weighted) primal and dual infeasibility, complementary slackness, duality gap.  
+- `eDIMACS` is checked against the maximum of [DIMACS errors](https://plato.asu.edu/dimacs/node3.html), measuring (weighted) primal and dual infeasibility, complementary slackness and duality gap.  
     - for the direct solver (`kit = 0`), value about `1e-7` should give a similar precision as default MOSEK
     - for the iterative solver (`kit = 1`), `eDIMACS` may need to be increased to `1e-6` or even `1e-5` to guarantee convergence of Loraine.
     - for the iterative solver (`kit = 1`), `tol_cg_min` should always be smaller than or equal to `eDIMACS`
