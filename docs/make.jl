@@ -1,7 +1,7 @@
 # Inspired from https://github.com/jump-dev/JuMP.jl/blob/master/docs/make.jl
 
 using Loraine
-using Documenter, Literate
+using Documenter, Literate, DocumenterTools
 
 makedocs(
     sitename = "Loraine",
@@ -20,6 +20,7 @@ makedocs(
 
 deploydocs(
     repo   = "github.com/kocvara/Loraine.jl.git",
+    branch = "gh-pages",
     target = "build",
     push_preview = true,
 )
