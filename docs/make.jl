@@ -1,7 +1,7 @@
 # Inspired from https://github.com/jump-dev/JuMP.jl/blob/master/docs/make.jl
 
 using Loraine
-using Documenter, Literate, DocumenterTools
+using Documenter
 
 makedocs(
     sitename = "Loraine",
