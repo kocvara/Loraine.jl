@@ -22,7 +22,7 @@ W=W_0+UU^T
 ``
 and
 ```math
-H={\cal A}^T(W_0\otimes W_0){\cal A}+\underbrace{{\cal A}^T(U\otimes Z)}_V\underbrace{(U\otimes Z)^T{\cal A}}_{V^T}+ D^T X_{\rm lin}S^{-1}_{\rm lin} D\,.
+H={\cal A}^T(W_0\otimes W_0){\cal A}+{\cal A}^T(U\otimes Z)(U\otimes Z)^T{\cal A}+ D^T X_{\rm lin}S^{-1}_{\rm lin} D\,.
 ```
 
 This leads to the following preconditioner called ``H_{\alpha}``:
@@ -30,7 +30,7 @@ This leads to the following preconditioner called ``H_{\alpha}``:
 H_{\alpha}={\tau^2 I} +{V}{V}^T+ D^T X_{\rm lin}S^{-1}_{\rm lin} D\,.
 ```
 
-Here ``V`` has low rank, so we can use Sherman-Morrison-Woodbury formula to compute ``H_{\alpha}^{-1}``.
+Here ``V = {\cal A}^T(U\otimes Z)`` has low rank, so we can use Sherman-Morrison-Woodbury formula to compute ``H_{\alpha}^{-1}``.
 
 ### Preconditioner ``H_\beta`` (`preconditioner = 2`)
 In many problems, the last term in ... is dominating in the first iterations of the IP algorithm, before the low-rank structure of ``W`` is clearly recognized.
