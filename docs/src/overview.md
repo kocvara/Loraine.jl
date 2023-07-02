@@ -40,7 +40,7 @@ Dual problem
 	& \min_{y\in\mathbb{R}^n,\,S\in\mathbb{S}^m,\,s_{\text{lin}}\in\mathbb{R}^m~} c^\top y \\
 	& \text{subject to}\\
 	&\qquad \sum_{i=1}^{{n}} y_i A_i + S = C,\ \ S\succeq 0\\
-	&\qquad Dy+s_{\text{lin}}=d,\ \	s_{\text{lin}}\geq 0
+	&\qquad Dy+s_{\text{lin}}=d,\ \ s_{\text{lin}}\geq 0
 	\end{aligned}
     \end{equation*}
 ```
@@ -60,11 +60,11 @@ Main assumption
 
 Further assumptions
 
-- **Sparsity:** Define the matrix ``{\cal A}=[\text{svec}\,A_1,\dots, \text{svec}\,A_n].`` We assume that matrix-vector products with ``{\cal A}`` and ``{\cal A}^\top`` may each be applied in ``O(n)`` flops and memory.
+- **Sparsity of ``A_i``:** Define the matrix ``{\cal A}=[\text{svec}\,A_1,\dots, \text{svec}\,A_n].`` We assume that matrix-vector products with ``{\cal A}`` and ``{\cal A}^\top`` may each be applied in ``O(n)`` flops and memory.
 - **Sparsity of ``D``:** The inverse ``(D^\top D)^{-1}`` and matrix-vector product with ``(D^\top D)^{-1}`` may each be computed in ``\mathcal{O}(n)`` flops and memory.
 
 ## Low-rank data
-- *At the moment, Lorain can only handle rank-one data.*
+- *At the moment, Loraine can only handle rank-one data.*
 - *This feature is only relevant for Loraine used with the **direct solver**.*
 
 If you know (or strongly suspect) that *all* data matrices ``A_i`` have rank one, select the option `datarank = -1`. Loraine will factorize the matrices as ``A_i = b_i b_i^\top`` and use only the vectors ``b_i`` in the interior point algorithm. This will gravely reduce the complexity (and the elapsed time) of Loraine.
