@@ -7,7 +7,20 @@ H={\cal A}^T(W\otimes W){\cal A}+ D^T X_{\rm lin}S^{-1}_{\rm lin} D\,.
 \end{equation}
 ```
 
-The complexity of interior point method can be significantly reduced by solving the Schur complement equation ``H d = r`` by an iterative method, rather than Cholesky solver, a standard choice of most IP-based software. 
+The complexity of interior point method can be significantly reduced by solving the Schur complement equation ``H y = r`` by an iterative method, rather than Cholesky solver, a standard choice of most IP-based software. 
+
+## Iterative solver
+
+Loraine uses preconditioned conjugate gradient (CG) method.
+	
+- What can be gained:
+    - ``H`` assembly: lower complexity, ``H`` does not have to be stored in memory
+	- ``Hy=r`` can only be solved approximately, one CG iteration has very low complexity (matrix-vector multiplication)
+	
+- Drawback:	
+    - ``H`` getting (very) ill-conditioned, CG may need very many iterations and may not work at all
+
+*We need a good preconditioner!*
 
 ## Low-rank preconditioners for Interior-Point method
 
