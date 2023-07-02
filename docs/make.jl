@@ -20,7 +20,6 @@ makedocs(
 
 deploydocs(
     repo   = "github.com/kocvara/Loraine.jl.git",
-    branch = "gh-pages",
     target = "build",
     push_preview = true,
 )
