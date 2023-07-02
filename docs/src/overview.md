@@ -54,9 +54,9 @@ The following assumptions are only needed when the user want to usilize the iter
 
 ### Assumptions:
 Main assumption
-- We assume that the solution ``X^*`` (the solution of (P)) has very low rank.
+- We assume that ``X^*``, the solution of (P)(!!), has very low rank.
 	
-**Be sure about your problem formulation:** If ``X^*`` has low rank then ``S^*`` has almost full rank and vice versa. Hence if, in your problem, you assume that ``S^*`` has low rank, then you may need to dualize your formulation using JuMP's `dualize`.
+**Be sure about your problem formulation:** If ``X^*`` has low rank then ``S^*``, the solution of the dual problem, has almost full rank and vice versa. Hence if, in your problem, you assume that ``S^*`` has low rank, you cannot use Loraine with iterative solver directly; rather you may need to dualize your formulation using JuMP's `dualize`.
 
 Further assumptions
 
