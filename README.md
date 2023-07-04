@@ -63,7 +63,7 @@ use the option `datarank = -1` to get a significant reduction in the complexity
 `SDPLIB` collection.
 
 ## Documentation
-[Loraine documentation](https://kocvara.github.io/Loraine.jl/index.html)
+[Loraine documentation](https://kocvara.github.io/Loraine.jl/)
 
 ## Options
 
