@@ -21,5 +21,5 @@ makedocs(
 deploydocs(
     repo   = "github.com/kocvara/Loraine.jl.git",
     target = "build",
-    # push_preview = true,
+    push_preview = true,
 )
