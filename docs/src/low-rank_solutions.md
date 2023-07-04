@@ -59,4 +59,4 @@ in which $\tau$ is defined as in the previous section.
 This matrix is easy to invert; in fact, the matrix is diagonal in many problems. It is therefore an extremely cheap preconditioner that is efficient in the first iterations of the IP algorithm.
 
 ### Hybrid preconditioner (`preconditioner = 4`)
-For relevant problems, we therefore recommend to use a *hybrid preconditioner*: we start the IP iterations with ``H_\beta`` and, once it becomes inefficient, switch to the more expensive but more efficient ``H_\alpha``.  
+For relevant problems, we recommend to use a *hybrid preconditioner*: we start the IP iterations with ``H_\beta`` and, once it becomes inefficient, switch to the more expensive but more efficient ``H_\alpha``.  
