@@ -15,7 +15,7 @@ Loraine uses preconditioned conjugate gradient (CG) method.
 	
 - What can be gained:
     - ``H`` assembly: lower complexity, ``H`` does not have to be stored in memory
-	- ``Hy=r`` can only be solved approximately, one CG iteration has very low complexity (matrix-vector multiplication)
+	- ``Hy = r`` can only be solved approximately, one CG iteration has very low complexity (matrix-vector multiplication)
 	
 - Drawback:	
     - ``H`` getting (very) ill-conditioned, CG may need very many iterations and may not work at all
@@ -26,8 +26,7 @@ Loraine uses preconditioned conjugate gradient (CG) method.
 
 ### Preconditioner ``H_\alpha`` (`preconditioner = 1`)
 
-Critical observation (due to Richard Y. Zhang and Javad Lavaei, IEEE, 2017) reveals that
-*if the solution ``X^*`` is low-rank then ``W`` will be low-rank.*
+Critical observation (due to Richard Y. Zhang and Javad Lavaei, IEEE, 2017) reveals that if the solution ``X^*`` is low-rank then ``W`` will be low-rank.
 
 Hence 
 ``
