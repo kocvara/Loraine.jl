@@ -62,6 +62,9 @@ use the option `datarank = -1` to get a significant reduction in the complexity
 (and CPU time). Examples of such problems are `maxG11` and `thetaG11` from the 
 `SDPLIB` collection.
 
+## Documentation
+[Loraine documentation](https://kocvara.github.io/Loraine.jl/low-rank_solutions.html)
+
 ## Options
 
 The list of options:
