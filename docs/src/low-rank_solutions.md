@@ -26,8 +26,7 @@ Loraine uses preconditioned conjugate gradient (CG) method.
 
 ### Preconditioner ``H_\alpha`` (`preconditioner = 1`)
 
-Critical observation (due to Richard Y. Zhang and Javad Lavaei, IEEE, 2017) reveals that
-*if the solution ``X^*`` is low-rank then ``W`` will be low-rank.*
+Critical observation (due to Richard Y. Zhang and Javad Lavaei, IEEE, 2017) reveals that *if the solution ``X^*`` is low-rank then ``W`` will be low-rank.*
 
 Hence 
 ``

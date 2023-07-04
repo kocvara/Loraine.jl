@@ -12,6 +12,7 @@ makedocs(
         "Overview" => "overview.md",
         "Loraine Options" => "Loraine_options.md",
         "Low-rank Solutions" => "low-rank_solutions.md",
+        "Low-rank Data" => "low-rank_data.md",
     ],
     # The following ensures that we only include the docstrings from
     # this module for functions define in Base that we overwrite.
