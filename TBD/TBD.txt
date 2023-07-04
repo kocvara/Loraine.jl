@@ -1,0 +1,5 @@
+To be done in version 0.2.0 (apart from speed-ups, bug fixing, more checks on input)
+- assembling BBBB, sparsity by Kojima paper
+- linear eq. constraints by penalty
+- DONE improve low-rank input, option setting
+- erank for several LMIs (possibly different, estimate, update, check)
