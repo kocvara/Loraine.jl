@@ -28,7 +28,7 @@ maxit           # maximal number of global iterations [200]
 
 - `preconditioner`
     - **per CG iteration**, 0 is faster (lower complexity) than 2 which is faster than 1
-    - **as a preconditioner**, 1 is better than 2 is better than 0, in the sence of CG iterations needed to solve the linear system
+    - **as a preconditioner**, 1 is better than 2 is better than 0, in the sense of CG iterations needed to solve the linear system
     - some  SDP problems are "easy", meaning that CG always converges without preconditioner (i.e., `preconditioner = 0'), so it's always worth trying this option
     - hybrid (`preconditioner = 4`) starts with (cheaper) `H_beta` and once it gets into difficulties, switches to `H_alpha`
 
