@@ -14,10 +14,8 @@ The complexity of interior point method can be significantly reduced by solving 
 Loraine uses preconditioned conjugate gradient (CG) method.
 	
 - What can be gained:
-    - a
-    - b
-    - ``H`` assembly: lower complexity, ``H`` does not have to be stored in memory
-	- ``Hy = r`` can only be solved approximately, one CG iteration has very low complexity (only matrix-vector multiplication)
+    - matrix ``H`` assembly: lower complexity, ``H`` does not have to be stored in memory
+    - system ``Hy = r`` can only be solved approximately, one CG iteration has very low complexity (only matrix-vector multiplication)
     - and more
 	
 - Drawback:	
