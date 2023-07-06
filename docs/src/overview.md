@@ -46,7 +46,7 @@ Dual problem
 ```
 
 
-## General assumptions (for the IP algorithm to converge)
+### General assumptions (for the IP algorithm to converge)
 Slater constraint qualification and strict complementarity
 
 ## Low-rank solution
