@@ -3,9 +3,7 @@ function makeBBBB_rank1(n,nlmi,B,G)
     # @timeit to "BBBB" begin
     BBBB = zeros(Float64, n, n)
     for ilmi = 1:nlmi
-        Gilmi = G[ilmi]
-        Bilmi = B[ilmi]
-        BB = Bilmi * Gilmi
+        BB = B[ilmi] * G[ilmi]
         BBBB += (BB * BB') .^ 2
     end     
     # end

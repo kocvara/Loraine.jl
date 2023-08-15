@@ -5,8 +5,8 @@ using JuMP
 import Loraine 
 import CSDP
 # import SCS
-using Mosek
-using MosekTools
+# using Mosek
+# using MosekTools
 # import Hypatia
 using Dualization
 
@@ -40,8 +40,8 @@ optimize!(model)
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient
 
-set_optimizer(model, CSDP.Optimizer)
-dual_model = dualize(model, CSDP.Optimizer)
-optimize!(dual_model)
+# set_optimizer(model, CSDP.Optimizer)
+# dual_model = dualize(model, CSDP.Optimizer)
+# optimize!(dual_model)
 
 # termination_status(model)

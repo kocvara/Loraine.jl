@@ -22,6 +22,9 @@ mutable struct MyModel
     myA::Vector{SpMa{Float64}}
     B::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
+    nzA::Matrix{Int64}
+    sigmaA::Matrix{Int64}
+    qA::Vector{Int64}
     b::Vector{Float64}
     b_const::Float64
     d_lin::SparseArrays.SparseVector{Float64, Int64}
@@ -37,6 +40,9 @@ mutable struct MyModel
         myA::Vector{SpMa{Float64}},
         B::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
+        nzA::Matrix{Int64},
+        sigmaA::Matrix{Int64},
+        qA::Vector{Int64},
         b::Vector{Float64},
         b_const::Float64,
         d_lin::SparseArrays.SparseVector{Float64, Int64},
@@ -44,7 +50,7 @@ mutable struct MyModel
         n::Int64,
         msizes::Vector{Int64},
         nlin::Int64,
-        nlmi::Int64    
+        nlmi::Int64
         ) 
 
         model = new()
@@ -53,6 +59,9 @@ mutable struct MyModel
         model.myA = myA
         model.B = B
         model.C = C
+        model.nzA = nzA
+        model.sigmaA = sigmaA
+        model.qA = qA
         model.b = b
         model.b_const = b_const
         model.d_lin = d_lin
@@ -105,6 +114,9 @@ function _prepare_A(A, datarank)
     myA = SpMa{Float64}[]
     B = SparseMatrixCSC{Float64}[]
     C = SparseMatrixCSC{Float64}[]
+    nzA = zeros(Int64,n,nlmi)
+    sigmaA = zeros(Int64,n,nlmi)
+    qA = zeros(Int64,3)
 
     for i = 1:nlmi
         
@@ -120,9 +132,55 @@ function _prepare_A(A, datarank)
             push!(B, Btmp)
         end
 
+        prep_sparse!(A,n,i,nzA,sigmaA,qA)
+
     end
 
-    return AA, myA, B, C
+    return AA, myA, B, C, nzA, sigmaA, qA
+end
+
+function prep_sparse!(A,n,i,nzA,sigmaA,qA)
+    d1 = zeros(Int64,n)
+    d2 = zeros(Int64,n)
+    d3 = zeros(Int64,n)
+
+    kappa = 1.5
+    for j = 1:n
+        nzA[j,i] = nnz(A[i,j+1])
+    end
+    sisi = sort(nzA[:,i], rev = true)
+    cs = cumsum(sisi[end:-1:1])
+    cs = cs[n:-1:1]
+    sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
+
+    for j = 1:n
+        d1[j] = kappa * n * nzA[sigmaA[j,i]] + n^3 + kappa * cs[i]
+        d2[j] = kappa * n * nzA[sigmaA[j,i]] + kappa * (n+1) * cs[i]
+        d3[j] = kappa * (2 * kappa * nzA[sigmaA[j,i]] + 1) * cs[i]
+    end
+
+    qA[1] = 0
+    for j = 1:n
+        if d1[j] <= min(d2[j],d3[j])
+            qA[1] = j
+            break
+        end
+    end
+    qA[2] = 0
+    for j = max(1,qA[1]):n
+        if d2[j] < d1[j] && d2[j] <= d3[j]
+            qA[2] = j
+            break
+        end
+    end
+    qA[3] = 0
+    for j = max(1,qA[2]):n
+        if d3[j] < d1[j] && d3[j] < d2[j]
+            qA[3] = j
+            break
+        end
+    end
+
 end
 
 function prep_B!(A,n,i)
@@ -136,7 +194,7 @@ function prep_B!(A,n,i)
             tmp = Matrix(A[i, k + 1][bidx, bidx])
             # utmp, vtmp = eigen(Hermitian(tmp))
             utmp, vtmp = eigen((tmp + tmp') ./ 2)
-            bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
+            bbb = sigmaAn.(vtmp[:, end]) .* sqrt.(diag(tmp))
             tmp2 = bbb * bbb'
             if norm(tmp - tmp2) > 5.0e-6
                 drank = 0
