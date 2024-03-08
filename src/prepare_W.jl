@@ -3,7 +3,7 @@ using FameSVD
 # using MKL
 
 
-function _try_cholesky(X, i::Integer, name::String)
+function _try_cholesky(solver, X, i::Integer, name::String)
     try
         return cholesky(X[i])
     catch
@@ -13,8 +13,7 @@ function _try_cholesky(X, i::Integer, name::String)
         icount = 0
         while isposdef(X[i]) == false
             X[i] += 1e-5 .* I(size(X[i], 1))
-            icount = icount + 1
-            # @show icount
+            icount += 1
             if icount > 1000
                 if solver.verb > 0
                     println("WARNING: $name cannot be made positive definite, giving up")
@@ -32,8 +31,8 @@ function prepare_W(solver)
     # @timeit solver.to "prpr" begin
         for i = 1:solver.model.nlmi
             # @timeit to "prpr1" begin
-            Ctmp = _try_cholesky(solver.X, i, "X")
-            CtmpS = _try_cholesky(solver.S, i, "S")
+            Ctmp = _try_cholesky(solver, solver.X, i, "X")
+            CtmpS = _try_cholesky(solver, solver.S, i, "S")
             @timeit solver.to "prep W SVD" begin
                 CCtmp = Matrix{Float64}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
