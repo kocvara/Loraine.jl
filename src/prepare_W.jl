@@ -3,7 +3,7 @@ using FameSVD
 # using MKL
 
 
-function _try_cholesky(X, i::Int, name::String)
+function _try_cholesky(X, i::Integer, name::String)
     try
         return cholesky(X[i])
     catch
