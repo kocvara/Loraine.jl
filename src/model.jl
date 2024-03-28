@@ -116,7 +116,7 @@ function _prepare_A(A, datarank)
     C = SparseMatrixCSC{Float64}[]
     nzA = zeros(Int64,n,nlmi)
     sigmaA = zeros(Int64,n,nlmi)
-    qA = zeros(Int64,3)
+    qA = zeros(Int64,2)
 
     for i = 1:nlmi
         
@@ -133,6 +133,8 @@ function _prepare_A(A, datarank)
         end
 
         prep_sparse!(A,n,i,nzA,sigmaA,qA)
+        @show nzA[1:10]
+        @show nzA[end-9:end]
 
     end
 
@@ -140,11 +142,11 @@ function _prepare_A(A, datarank)
 end
 
 function prep_sparse!(A,n,i,nzA,sigmaA,qA)
-    d1 = zeros(Int64,n)
-    d2 = zeros(Int64,n)
-    d3 = zeros(Int64,n)
+    d1 = zeros(Float64,n)
+    d2 = zeros(Float64,n)
+    d3 = zeros(Float64,n)
 
-    kappa = 1.5
+    kappa = 100.5
     for j = 1:n
         nzA[j,i] = nnz(A[i,j+1])
     end
@@ -159,27 +161,38 @@ function prep_sparse!(A,n,i,nzA,sigmaA,qA)
         d3[j] = kappa * (2 * kappa * nzA[sigmaA[j,i]] + 1) * cs[i]
     end
 
+    # @show d1[1:10]
+    # @show d1[end-9:end]
+    # @show d2[1:10]
+    # @show d2[end-9:end]
+    # @show d3[1:10]
+    # @show d3[end-9:end]
+
+
     qA[1] = 0
+    ktmp = 0
     for j = 1:n
-        if d1[j] <= min(d2[j],d3[j])
-            qA[1] = j
+        if d1[j] > min(d2[j],d3[j])
+            qA[1] = j-1
+            ktmp = 1
             break
         end
     end
-    qA[2] = 0
-    for j = max(1,qA[1]):n
-        if d2[j] < d1[j] && d2[j] <= d3[j]
-            qA[2] = j
-            break
+    if ktmp == 0
+        qA[1] = n
+        qA[2] = n
+    else
+        qA[2] = 0
+        for j = max(1,qA[1]):n
+            if d2[j] >= d1[j] || d2[j] > d3[j]
+                qA[2] = j-1
+                break
+            end
         end
     end
-    qA[3] = 0
-    for j = max(1,qA[2]):n
-        if d3[j] < d1[j] && d3[j] < d2[j]
-            qA[3] = j
-            break
-        end
-    end
+    qA[2] = max(qA[2],qA[1])
+
+    @show qA
 
 end
 

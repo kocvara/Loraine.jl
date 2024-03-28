@@ -39,7 +39,7 @@ options["fig_ev"]   = 0  # 0...no figure; 1.1.figure with eigenvalues of H; H_ti
 
 options["verb"]     = 1   # 2..full output; 1..short output; 0..no output
 options["initpoint"]    = 1
-options["maxit"]    = 200
+options["maxit"]    = 100
 
 ## CALLING Loraine
 
