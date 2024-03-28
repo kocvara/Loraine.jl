@@ -2,61 +2,37 @@ using TimerOutputs
 using FameSVD
 # using MKL
 
+
+function _try_cholesky(solver, X, i::Integer, name::String)
+    try
+        return cholesky(X[i])
+    catch
+        if solver.verb > 0
+            println("Matrix $name not positive definite, trying to regularize")
+        end
+        icount = 0
+        while isposdef(X[i]) == false
+            X[i] += 1e-5 .* I(size(X[i], 1))
+            icount += 1
+            if icount > 1000
+                if solver.verb > 0
+                    println("WARNING: $name cannot be made positive definite, giving up")
+                end
+                solver.status = 4
+                return I(size(X[i], 1))
+            end
+        end
+        return cholesky(X[i])
+    end
+end
+
 function prepare_W(solver)
 
     # @timeit solver.to "prpr" begin
         for i = 1:solver.model.nlmi
             # @timeit to "prpr1" begin
-                try
-                    Ctmp = cholesky(solver.X[i])
-                catch
-                    if solver.verb > 0
-                        println("Matrix X not positive definite, trying to regularize")
-                    end
-                    icount = 0
-                    while isposdef(solver.X[i]) == false
-                        solver.X[i] = solver.X[i] + 1e-5 .* I(size(solver.X[i], 1))
-                        icount = icount + 1
-                        # @show icount
-                        if icount > 1000
-                            if solver.verb > 0
-                                println("WARNING: X cannot be made positive definite, giving up")
-                            end
-                            Ctmp = I(size(solver.X[i], 1))
-                            solver.status = 4
-                            return
-                        end
-                    end
-                    Ctmp = cholesky(solver.X[i])
-                else
-                    Ctmp = copy(Ctmp)
-                end
-
-                try
-                    CtmpS = cholesky(solver.S[i])
-                catch
-                    if solver.verb > 0
-                        println("Matrix S not positive definite, trying to regularize")
-                    end
-                    icount = 0
-                    while isposdef(solver.S[i]) == false
-                        solver.S[i] = solver.S[i] + 1e-5 .* I(size(solver.S[i], 1))
-                        icount = icount + 1
-                        # @show icount
-                        if icount > 1000
-                            if solver.verb > 0
-                                println("WARNING: S cannot be made positive definite, giving up")
-                            end
-                            CtmpS = I(size(solver.S[i], 1))
-                            solver.status = 4
-                            return
-                        end
-                    end
-                    CtmpS = cholesky(solver.S[i])
-                else
-                    CtmpS = copy(CtmpS)
-                end
-
+                Ctmp = _try_cholesky(solver, solver.X, i, "X")
+            CtmpS = _try_cholesky(solver, solver.S, i, "S")
             @timeit solver.to "prep W SVD" begin
                 CCtmp = Matrix{Float64}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
@@ -66,15 +42,12 @@ function prepare_W(solver)
             end
 
             solver.D[i] = copy(Dtmp)
-            try
-                Di2 = Diagonal(1 ./ sqrt.(Dtmp))
+            Di2 = try
+                Diagonal(1 ./ sqrt.(Dtmp))
             catch err
                 println("WARNING: Numerical difficulties, giving up")
-                Di2 = Diagonal(I(size(solver.Dtmp, 1)))
-                solver.status = 4
-                return
-            else 
-                Di2 = copy(Di2)
+                                solver.status = 4
+                Diagonal(I(size(solver.Dtmp, 1)))
             end
 
             # @timeit to "prpr3a" begin
