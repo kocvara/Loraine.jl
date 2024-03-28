@@ -15,8 +15,8 @@ using Dualization
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/thetaG51.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib3.dat-s")
 
-model=read_from_file("examples/data/theta1.dat-s")
-# model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
+# model=read_from_file("examples/data/theta1.dat-s")
+model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
 set_optimizer(model, Loraine.Optimizer)
 
