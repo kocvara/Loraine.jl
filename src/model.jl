@@ -135,6 +135,9 @@ function _prepare_A(A, datarank)
         prep_sparse!(A,n,i,nzA,sigmaA,qA)
         @show nzA[1:10]
         @show nzA[end-9:end]
+        @show sigmaA[1:10]
+        @show sigmaA[end-9:end]
+
 
     end
 
@@ -146,7 +149,7 @@ function prep_sparse!(A,n,i,nzA,sigmaA,qA)
     d2 = zeros(Float64,n)
     d3 = zeros(Float64,n)
 
-    kappa = 100.5
+    kappa = 900.
     for j = 1:n
         nzA[j,i] = nnz(A[i,j+1])
     end
@@ -207,7 +210,7 @@ function prep_B!(A,n,i)
             tmp = Matrix(A[i, k + 1][bidx, bidx])
             # utmp, vtmp = eigen(Hermitian(tmp))
             utmp, vtmp = eigen((tmp + tmp') ./ 2)
-            bbb = sigmaAn.(vtmp[:, end]) .* sqrt.(diag(tmp))
+            bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
             tmp2 = bbb * bbb'
             if norm(tmp - tmp2) > 5.0e-6
                 drank = 0

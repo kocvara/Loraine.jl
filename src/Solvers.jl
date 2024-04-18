@@ -277,6 +277,8 @@ function solve(solver::MySolver,halpha::Halpha)
         else
             if solver.kit == 0
                 @printf(" it        obj         error      err1      err2      err3      err4      err5      err6     CPU/it\n")
+                @printf("                                p-eq-con   p-feas   d-eq-con   d-feas     d-gap  slackness         \n")
+                @printf("---------------------------------------------------------------------------------------------------\n")
             else
                 @printf(" it        obj         error      err1      err2      err3      err4      err5      err6    cg_pre  cg_cor  CPU/it\n")
             end
@@ -425,6 +427,7 @@ function setup_solver(solver::MySolver,halpha::Halpha)
 end
 
 function myIPstep(solver::MySolver,halpha::Halpha)
+    mmm = Matrix{Float64}(undef, solver.model.n, solver.model.n)
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
@@ -443,14 +446,14 @@ function myIPstep(solver::MySolver,halpha::Halpha)
 
     ## predictor
     @timeit solver.to "predictor" begin
-    predictor(solver::MySolver,halpha::Halpha)
+    mmm = predictor(solver::MySolver,halpha::Halpha)
     end
 
     sigma_update(solver)
 
     ## corrector
     @timeit solver.to "corrector" begin
-    corrector(solver,halpha)
+    corrector(solver,halpha,mmm)
     end
 
 end

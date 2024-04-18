@@ -1,5 +1,6 @@
 
 using ConjugateGradients
+using MultiFloats
 
 function predictor(solver::MySolver,halpha::Halpha)
     
@@ -25,23 +26,25 @@ function predictor(solver::MySolver,halpha::Halpha)
         if solver.model.nlmi > 0
             if solver.datarank == -1
             # if 1 == 0
-                BBBB = makeBBBB_rank1(solver.model.n,solver.model.nlmi,solver.model.B,solver.G)
+                BBBB = makeBBBB_rank1(solver.model.n, solver.model.nlmi, solver.model.B, solver.G, solver.to)
             else
-                # BBBB = makeBBBB(n,nlmi,A,G)   
+                # BBBB = makeBBBB(solver.model.n,solver.model.nlmi,solver.model.A,solver.G)   
                 # BBBB = makeBBBBalt(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W,solver.to)    
-                # BBBB = makeBBBBalt1(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W)  
+                # BBBB = makeBBBBalt1(solver.model.n÷,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W)  
                 # BBBB = makeBBBBsp(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
                 # BBBB = makeBBBBsp2(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
-                BBBB = makeBBBBs(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.model.myA,solver.W,solver.to,solver.model.qA,solver.model.sigmaA)
+                BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.model.myA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
+                # @show norm(BBBB-Hermitian(BBBB, :L))
             end
         else
             BBBB = zeros(Float64, solver.model.n, solver.model.n)
         end
         if solver.model.nlin > 0
             BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
-            # BBBB = Hermitian(BBBB)
-            BBBB = (BBBB + BBBB') ./ 2
+            # BBBB = Hermitian(BBBB, :L)
+            # BBBBlin = (BBBBlin + BBBBlin') ./ 2
         end
+        BBBB = Hermitian(BBBB, :L)
     end
     end
 
@@ -58,36 +61,60 @@ function predictor(solver::MySolver,halpha::Halpha)
     if solver.kit == 0   # direct solver
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
-            try
-                solver.cholBBBB = cholesky(BBBB)
-            catch err
-                if solver.verb > 0
-                    println("Matrix H not positive definite, trying to regularize")
-                end
-                icount = 0
-                while isposdef(BBBB) == false
-                    BBBB = BBBB + 1e-5 .* I(size(BBBB, 1))
-                    icount = icount + 1
-                    if icount > 1000
-                        if solver.verb > 0
-                            println("WARNING: H cannot be made positive definite, giving up")
-                        end
-                        solver.cholBBBB = I(size(BBBB, 1))
-                        solver.status = 4
-                        return
-                    end
-                end
-                solver.cholBBBB = cholesky(BBBB)
-            else
-                solver.cholBBBB = copy(solver.cholBBBB)
-            end
-            solver.dely = solver.cholBBBB \ h
+            # try
+                BBBB1 = Float64x2.(BBBB)
+                cholBBBB1, cholBBBB2 = cholesky(BBBB1)
+                solver.cholBBBB = Float64.(cholBBBB1)
+                # @show norm(BBBB[solver.cholBBBB.p,:] - solver.cholBBBB.L * solver.cholBBBB.U)
+            # catch err
+            #     if solver.verb > 0
+            #         println("Matrix H not positive definite, trying to regularize")
+            #     end
+            #     icount = 0
+            #     while isposdef(BBBB) == false
+            #         BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
+            #         icount = icount + 1
+            #         if icount > 1000
+            #             if solver.verb > 0
+            #                 println("WARNING: H cannot be made positive definite, giving up")
+            #             end
+            #             solver.cholBBBB = I(size(BBBB, 1))
+            #             solver.status = 4
+            #             return
+            #         end
+            #     end
+            #     solver.cholBBBB = cholesky(BBBB)
+            # else
+            #     solver.cholBBBB = copy(solver.cholBBBB)
+            # end
+            # solver.dely = solver.cholBBBB \ h
+            solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+            # delyy = solver.dely
         else
             @warn("System matrix not Hermitian, stopping Loraine")
             solver.maxit = 1e10
             solver.status = 2
             solver.cholBBBB = 0
         end
+        # # Iterative refinement
+        # resid = h - BBBB * solver.dely;
+        # # @show norm(resid - (h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely))
+        # if norm(resid)/(1+norm(h)) > 1e-15
+        #     coco = 1
+        #     while coco <= 200
+        #         deldely = solver.cholBBBB \ resid
+        #         w = BBBB * deldely;
+        #         alphaIR = resid' * w / (w' * w)
+        #         solver.dely = solver.dely + alphaIR * deldely
+        #         resid = resid - alphaIR * w
+        #         coco = coco + 1
+        #         if norm(resid)/(1+norm(h)) < 1e-50
+        #             break
+        #         end
+        #     end
+        # end
+        # @show norm(delyy-solver.dely)
+
     #     end
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
@@ -113,6 +140,8 @@ function predictor(solver::MySolver,halpha::Halpha)
     @timeit solver.to "find step predictor" begin
     find_step(solver)
     end
+
+    return BBBB
 
 end
 
@@ -147,7 +176,7 @@ function sigma_update(solver)
     return solver.sigma
 end   
 
-function corrector(solver,halpha)
+function corrector(solver,halpha,BBBB)
     solver.predict = false
     h = solver.Rp #RHS for the linear system()
     if solver.model.nlmi > 0
@@ -163,7 +192,33 @@ function corrector(solver,halpha)
     # solving the linear system()
     if solver.kit == 0   # direct solver
     # @timeit to "corrector backsl" begin
-        solver.dely = solver.cholBBBB \ h
+        # solver.cholBBBB = cholesky(BBBB)
+        # solver.dely = solver.cholBBBB \ h
+        solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+        # # Iterative refinement
+        # resid = h - BBBB * solver.dely;
+        # # resid = h - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
+        # # resid = h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
+        # if norm(resid)/(1+norm(h)) > 1e-15
+        #     coco = 1
+        #     while coco <= 200
+        #         deldely = solver.cholBBBB \ resid
+        #         w = BBBB * deldely;
+        #         # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
+        #         # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
+        #         # w[solver.cholBBBB.p] = w
+        #         alphaIR = resid' * w / (w' * w)
+        #         solver.dely = solver.dely + alphaIR .* deldely
+        #         resid = resid - alphaIR .* w
+        #         coco = coco + 1
+        #         # @show norm(resid)/(1+norm(h)) 
+        #         if norm(resid)/(1+norm(h)) < 1e-50
+        #             # @show norm(resid)/(1+norm(h)) 
+        #             # @show coco
+        #             break
+        #         end
+        #     end
+        # end
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
         if solver.preconditioner == 0
@@ -278,13 +333,13 @@ function find_step_lin(solver)
     end
     mimiX_lin = minimum(solver.delX_lin ./ solver.X_lin)
     if mimiX_lin .> -1e-6
-        solver.alpha_lin = 0.79
+        solver.alpha_lin = 0.99
     else
         solver.alpha_lin = min(1, -solver.tau / mimiX_lin)
     end
     mimiS_lin = minimum(solver.delS_lin ./ solver.S_lin)
     if mimiS_lin .> -1e-6
-        solver.beta_lin = 0.79
+        solver.beta_lin = 0.99
     else
         solver.beta_lin = min(1, -solver.tau / mimiS_lin)
     end
