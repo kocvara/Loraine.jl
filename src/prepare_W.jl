@@ -34,23 +34,13 @@ function prepare_W(solver)
             # @timeit to "prpr1" begin
                 # Ctmp = _try_cholesky(solver, solver.X, i, "X")
                 # CtmpS = _try_cholesky(solver, solver.S, i, "S")
-                X1 = Float64x2.(solver.X[i])
-                Ctmp1,Ctmp2 = cholesky(X1)
-                CtmpL = Float64.(Ctmp1)
-                # Ctmp = cholesky(solver.X[i])
-                S1 = Float64x2.(solver.S[i])
-                Ctmp1,Ctmp2 = cholesky(S1)
-                CtmpSL = Float64.(Ctmp1)
-                # CtmpS = cholesky(solver.S[i])
+                Ctmp = cholesky(solver.X[i])
+                CtmpS = cholesky(solver.S[i])
             @timeit solver.to "prep W SVD" begin
-                CCtmp = Matrix{Float64}(undef,size(CtmpSL,1),size(CtmpSL,1))
-                mul!(CCtmp, (CtmpSL)' , CtmpL)
+                CCtmp = Matrix{Float64}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
+                mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
                 @timeit solver.to "prep W SVD svd" begin
-                CCtmp1=Float64.(CCtmp)
-                U1, Dtmp1, V1 = svd(CCtmp1)
-                U = Float64.(U1)
-                V = Float64.(V1)
-                Dtmp = Float64.(Dtmp1)
+                U, Dtmp, V = svd(CCtmp)
                 end
             end
 
@@ -65,7 +55,7 @@ function prepare_W(solver)
             end
 
             # @timeit to "prpr3a" begin
-                solver.G[i] = CtmpL * V * Di2
+                solver.G[i] = Ctmp.L * V * Di2
             # end
             # @timeit to "prpr3" begin
                 solver.Gi[i] = inv(solver.G[i])
@@ -73,7 +63,7 @@ function prepare_W(solver)
             # end
             # @timeit to "prpr4" begin
                 # solver.Si[i] = inv(solver.S[i])
-                solver.Si[i] = (CtmpSL)' \ ((CtmpSL) \ (I(size(solver.Si[i],1))))  # S[i] inverse
+                solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ (I(size(solver.Si[i],1))))  # S[i] inverse
                 # DDtmp = (CtmpS.U * solver.G[i])
                 # DDtmp = DDtmp' * DDtmp
                 DDtmp = solver.G[i]' * solver.S[i] * solver.G[i]

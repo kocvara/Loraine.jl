@@ -1,6 +1,6 @@
 
 using ConjugateGradients
-using MultiFloats
+using GenericLinearAlgebra
 
 function predictor(solver::MySolver,halpha::Halpha)
     
@@ -22,7 +22,7 @@ function predictor(solver::MySolver,halpha::Halpha)
     end
 
     if solver.kit .== 0   # if direct solver; compute the Hessian matrix
-    @timeit solver.to "BBBB" begin
+    # @timeit solver.to "BBBB" begin
         if solver.model.nlmi > 0
             if solver.datarank == -1
             # if 1 == 0
@@ -46,7 +46,7 @@ function predictor(solver::MySolver,halpha::Halpha)
         end
         BBBB = Hermitian(BBBB, :L)
     end
-    end
+    # end
 
     if solver.model.nlmi > 0
         h = makeRHS(solver.model.nlmi,solver.model.AA,solver.W,solver.S,solver.Rp,solver.Rd)
@@ -62,9 +62,9 @@ function predictor(solver::MySolver,halpha::Halpha)
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
             # try
-                BBBB1 = Float64x2.(BBBB)
+                BBBB1 = BBBB
                 cholBBBB1, cholBBBB2 = cholesky(BBBB1)
-                solver.cholBBBB = Float64.(cholBBBB1)
+                solver.cholBBBB = cholBBBB1
                 # @show norm(BBBB[solver.cholBBBB.p,:] - solver.cholBBBB.L * solver.cholBBBB.U)
             # catch err
             #     if solver.verb > 0
@@ -113,7 +113,7 @@ function predictor(solver::MySolver,halpha::Halpha)
         #         end
         #     end
         # end
-        # @show norm(delyy-solver.dely)
+        # # @show norm(delyy-solver.dely)
 
     #     end
     else
@@ -128,20 +128,18 @@ function predictor(solver::MySolver,halpha::Halpha)
             M = MyM_beta(solver.model.AA, halpha.AAAATtau)
         end
 
-        @timeit solver.to "CG predictor" begin
+        # @timeit solver.to "CG predictor" begin
         solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 10000, precon = M)
-        end
+        # end
 
         # print(num_iters, exit_code)
         solver.cg_iter_pre += num_iters
         solver.cg_iter_tot += num_iters
     end
 
-    @timeit solver.to "find step predictor" begin
+    # @timeit solver.to "find step predictor" begin
     find_step(solver)
-    end
-
-    return BBBB
+    # end
 
 end
 
@@ -170,13 +168,15 @@ function sigma_update(solver)
                 tmp2 = 0
         end
         tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + solver.model.nlin)
-        solver.sigma = min(1, ((tmp12) / solver.mu)^expon_used)
+        tmp12 = convert(Float64, tmp12)
+        mu = Float64(solver.mu)
+        solver.sigma = min(1, ((tmp12) / mu) ^ Float64(expon_used))
     end
 
     return solver.sigma
 end   
 
-function corrector(solver,halpha,BBBB)
+function corrector(solver,halpha)
     solver.predict = false
     h = solver.Rp #RHS for the linear system()
     if solver.model.nlmi > 0
@@ -196,15 +196,15 @@ function corrector(solver,halpha,BBBB)
         # solver.dely = solver.cholBBBB \ h
         solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
         # # Iterative refinement
-        # resid = h - BBBB * solver.dely;
-        # # resid = h - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
+        # # resid = h - BBBB * solver.dely;
+        # resid = h - solver.cholBBBB * solver.cholBBBB' * solver.dely
         # # resid = h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
         # if norm(resid)/(1+norm(h)) > 1e-15
         #     coco = 1
         #     while coco <= 200
         #         deldely = solver.cholBBBB \ resid
-        #         w = BBBB * deldely;
-        #         # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
+        #         # w = BBBB * deldely;
+        #         w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
         #         # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
         #         # w[solver.cholBBBB.p] = w
         #         alphaIR = resid' * w / (w' * w)
@@ -267,7 +267,7 @@ function find_step(solver)
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiX = eigmin(XXX)
+            mimiX = eigmin(Float64x2.(XXX))
             end
             if mimiX .> -1e-6
                 solver.alpha[i] = 0.99
@@ -280,7 +280,7 @@ function find_step(solver)
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiS = eigmin(XXX)
+            mimiS = eigmin(Float64x2.(XXX))
             end
             if mimiS .> -1e-6
                 solver.beta[i] = 0.99

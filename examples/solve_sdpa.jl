@@ -11,9 +11,10 @@ import Hypatia
 using Dualization
 
 # Select your semidefinite optimization problem in SDPA input format
-model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto4.dat-s")
+# model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto4.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/theta6.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/tru7.dat-s")
+model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/trto1.dat-s")
 
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"

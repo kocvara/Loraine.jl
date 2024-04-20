@@ -40,7 +40,7 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi,n,to,qA,sigmaA)
     tmp1 = Matrix{Float64x2}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
     # tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
     tmp2 = Matrix{Float64x2}(undef,size(AAilmi, 1), 1)
-    tmp3 = Vector{Float64x2}(undef,size(Wilmi, 1))
+    tmp3 = Vector{Float64}(undef,size(Wilmi, 1))
     ilmi1 = (ilmi-1)*n
 
     # @show qA
