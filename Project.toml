@@ -6,6 +6,8 @@ version = "0.1.2"
 [deps]
 CSDP = "0a46da34-8e4b-519e-b418-48813639ff34"
 ConjugateGradients = "f59de78d-195d-4e7b-a078-2e47da4c3ad6"
+DoubleBLAS = "17f6ae15-4096-5e65-bb53-f02caa04851c"
+DoubleFloats = "497a8b3b-efae-58df-a0af-a86822472b78"
 Dualization = "191a621a-6537-11e9-281d-650236a99e60"
 FameSVD = "9ba2d756-9ce3-11e9-1a71-0ffcb019784d"
 GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
