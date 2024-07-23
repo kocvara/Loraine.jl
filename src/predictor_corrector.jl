@@ -243,7 +243,7 @@ function corrector(solver,halpha)
     end
 end
 
-function find_step(solver)
+function find_step(solver::MySolver{T}) where {T}
     if solver.model.nlmi > 0
         for i = 1:solver.model.nlmi
             @timeit solver.to "find_step_A" begin
@@ -267,7 +267,7 @@ function find_step(solver)
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiX = eigmin(Float64x2.(XXX))
+            mimiX = eigmin(T.(XXX))
             end
             if mimiX .> -1e-6
                 solver.alpha[i] = 0.99
@@ -280,7 +280,7 @@ function find_step(solver)
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiS = eigmin(Float64x2.(XXX))
+            mimiS = eigmin(T.(XXX))
             end
             if mimiS .> -1e-6
                 solver.beta[i] = 0.99

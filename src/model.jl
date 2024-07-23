@@ -133,11 +133,6 @@ function _prepare_A(A, datarank)
         end
 
         prep_sparse!(A,n,i,nzA,sigmaA,qA)
-        @show nzA[1:10]
-        @show nzA[end-9:end]
-        @show sigmaA[1:10]
-        @show sigmaA[end-9:end]
-
 
     end
 

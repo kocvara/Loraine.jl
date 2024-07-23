@@ -39,8 +39,8 @@ const OptimizerCache = MOI.Utilities.GenericModel{
     },
 }
 
-mutable struct Optimizer <: MOI.AbstractOptimizer
-    solver::Union{Nothing,MySolver}
+mutable struct Optimizer{T} <: MOI.AbstractOptimizer
+    solver::Union{Nothing,MySolver{T}}
     halpha::Union{Nothing,Halpha}
     lmi_id::Dict{MOI.ConstraintIndex{VAF,PSD},Int64}
     lin_cones::Union{Nothing,NNGCones{Float64}}
@@ -49,8 +49,8 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     silent::Bool
     options::Dict{String,Any}
 
-    function Optimizer()
-        return new(
+    function Optimizer{T}() where {T}
+        return new{T}(
             nothing,
             nothing,
             Dict{MOI.ConstraintIndex{VAF,PSD},Int64}(),
@@ -62,6 +62,8 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         )
     end
 end
+
+Optimizer() = Optimizer{Float64}()
 
 function MOI.default_cache(::Optimizer, ::Type{Float64})
     return MOI.Utilities.UniversalFallback(OptimizerCache())
@@ -137,7 +139,7 @@ function MOI.optimize!(optimizer::Optimizer)
     return
 end
 
-function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
+function MOI.copy_to(dest::Optimizer{T}, src::OptimizerCache) where {T}
     MOI.empty!(dest)
     psd_AC = MOI.Utilities.constraints(src.constraints, VAF, PSD)
     Cd_lin = MOI.Utilities.constraints(src.constraints, VAF, NNG)
@@ -224,7 +226,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         options["verb"] = 0
     end
     dest.lin_cones = Cd_lin.sets
-    dest.solver, dest.halpha = load(model, options)
+    dest.solver, dest.halpha = load(model, options; T)
     return MOI.Utilities.identity_index_map(src)
 end
 

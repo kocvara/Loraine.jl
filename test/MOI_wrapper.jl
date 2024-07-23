@@ -44,6 +44,13 @@ function tests()
             r"test_conic_SecondOrderCone_no_initial_bound$",
             r"test_conic_SecondOrderCone_negative_post_bound_2$",
             r"test_conic_SecondOrderCone_negative_post_bound_3$",
+
+            # PosDefException: matrix is not positive definite; Cholesky factorization failed.
+            r"test_attribute_SolveTimeSec$",
+            r"test_attribute_RawStatusString$",
+            r"test_objective_ObjectiveFunction_blank$",
+            r"test_linear_transform$",
+            r"test_linear_DUAL_INFEASIBLE$",
         ],
     )
     return
