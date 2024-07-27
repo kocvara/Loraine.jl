@@ -23,7 +23,7 @@ didi["name"] = get(tmp, "name", 1)
 didi["type"] = get(tmp, "type", 1)
 nvar = get(tmp, "nvar", 1)
 didi["nvar"] = convert(Int64,nvar)
-didi["c"] = Vector{Float64}(get(tmp, "objective", 1)[:])
+didi["c"] = Vector{Float64x8}(get(tmp, "objective", 1)[:])
 
 tmpcon = get(tmp, "constraints",1)
 nlmi = get(tmpcon, "nlmi", 1)
@@ -43,10 +43,10 @@ for i in eachindex(tmpA)
     BB[tmpA[i][3],tmpA[i][2]+1,tmpA[i][4],tmpA[i][5]] = tmpA[i][1]
 end
 
-A = SparseMatrixCSC{Float64}[]
+A = SparseMatrixCSC{Float64x8}[]
 # A = Matrix{Any}
 if nlmi == 1  
-    Btmp = SparseMatrixCSC{Float64}[]
+    Btmp = SparseMatrixCSC{Float64x8}[]
     Ctmp = sparse(BB[1,1,:,:])
     Ctmp = Ctmp + Ctmp' - spdiagm(diag(Ctmp))
     push!(Btmp,Ctmp)
@@ -55,7 +55,7 @@ if nlmi == 1
     end
 else
     for ilmi = 1:nlmi
-        Btmp = SparseMatrixCSC{Float64}[]
+        Btmp = SparseMatrixCSC{Float64x8}[]
         for j = 1:nvar+1
             push!(Btmp,sparse(BB[ilmi,j,:,:]))
         end
@@ -77,13 +77,13 @@ for i = 1:nlsi
 end
 didi["C"] = sparse(iii,jjj,vvv,nlsi,nvar)
 dtmp = sparse(get(tmpcon, "lsi_vec", 1)[:])
-didi["d"] = convert(SparseVector{Float64},dtmp)
+didi["d"] = convert(SparseVector{Float64x8},dtmp)
 didi["lsi_op"] = convert(Vector{Int64},get(tmpcon, "lsi_op", 1)[:])
 
 @show didi
 
 # OPTIONS FOR myIP
-options = Dict{String,Float64}()
+options = Dict{String,Float64x8}()
 options["kit"]          = 1         # kit = 0 for direct solver; kit = 1 for CG
 options["tol_cg"]       = 1e-1      # tolerance for CG solver [1e-2]
 options["tol_cg_up"]    = 0.5       # tolerance update [0.5]

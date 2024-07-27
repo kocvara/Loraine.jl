@@ -1,7 +1,7 @@
 using MathOptInterface
 const MOI = MathOptInterface
 
-const VAF = MOI.VectorAffineFunction{Float64}
+const VAF = MOI.VectorAffineFunction{Float64x8}
 const PSD = MOI.PositiveSemidefiniteConeTriangle
 const NNG = MOI.Nonnegatives
 
@@ -12,29 +12,29 @@ MOI.Utilities.@product_of_sets(PSDCones, PSD)
 MOI.Utilities.@struct_of_constraints_by_set_types(PSDOrNot, PSD, NNG)
 
 const OptimizerCache = MOI.Utilities.GenericModel{
-    Float64,
-    MOI.Utilities.ObjectiveContainer{Float64},
-    MOI.Utilities.VariablesContainer{Float64},
-    PSDOrNot{Float64}{
+    Float64x8,
+    MOI.Utilities.ObjectiveContainer{Float64x8},
+    MOI.Utilities.VariablesContainer{Float64x8},
+    PSDOrNot{Float64x8}{
         MOI.Utilities.MatrixOfConstraints{
-            Float64,
+            Float64x8,
             MOI.Utilities.MutableSparseMatrixCSC{
-                Float64,
+                Float64x8,
                 Int64,
                 MOI.Utilities.OneBasedIndexing,
             },
-            Vector{Float64},
-            PSDCones{Float64},
+            Vector{Float64x8},
+            PSDCones{Float64x8},
         },
         MOI.Utilities.MatrixOfConstraints{
-            Float64,
+            Float64x8,
             MOI.Utilities.MutableSparseMatrixCSC{
-                Float64,
+                Float64x8,
                 Int64,
                 MOI.Utilities.OneBasedIndexing,
             },
-            Vector{Float64},
-            NNGCones{Float64},
+            Vector{Float64x8},
+            NNGCones{Float64x8},
         },
     },
 }
@@ -43,9 +43,9 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     solver::Union{Nothing,MySolver}
     halpha::Union{Nothing,Halpha}
     lmi_id::Dict{MOI.ConstraintIndex{VAF,PSD},Int64}
-    lin_cones::Union{Nothing,NNGCones{Float64}}
+    lin_cones::Union{Nothing,NNGCones{Float64x8}}
     max_sense::Bool
-    objective_constant::Float64
+    objective_constant::Float64x8
     silent::Bool
     options::Dict{String,Any}
 
@@ -63,7 +63,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     end
 end
 
-function MOI.default_cache(::Optimizer, ::Type{Float64})
+function MOI.default_cache(::Optimizer, ::Type{Float64x8})
     return MOI.Utilities.UniversalFallback(OptimizerCache())
 end
 
@@ -120,7 +120,7 @@ end
 
 function MOI.supports(
     ::Optimizer,
-    ::Union{MOI.ObjectiveSense,MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}},
+    ::Union{MOI.ObjectiveSense,MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64x8}}},
 )
     return true
 end
@@ -141,13 +141,13 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
     MOI.empty!(dest)
     psd_AC = MOI.Utilities.constraints(src.constraints, VAF, PSD)
     Cd_lin = MOI.Utilities.constraints(src.constraints, VAF, NNG)
-    SM = SparseMatrixCSC{Float64,Int64}
+    SM = SparseMatrixCSC{Float64x8,Int64}
     psd_A = convert(SM, psd_AC.coefficients)
     C_lin = convert(SM, Cd_lin.coefficients)
     C_lin = -convert(SM, C_lin')
     n = MOI.get(src, MOI.NumberOfVariables())
     nlmi = MOI.get(src, MOI.NumberOfConstraints{VAF,PSD}())
-    A = Matrix{Tuple{Vector{Int64},Vector{Int64},Vector{Float64},Int64,Int64}}(undef, nlmi, n + 1)
+    A = Matrix{Tuple{Vector{Int64},Vector{Int64},Vector{Float64x8},Int64,Int64}}(undef, nlmi, n + 1)
     back = Vector{Tuple{Int64,Int64,Int64}}(undef, size(psd_A, 1))
     empty!(dest.lmi_id)
     row = 0
@@ -158,7 +158,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         d = set.side_dimension
         push!(msizes, d)
         for k = 1:(n+1)
-            A[lmi_id, k] = (Int64[], Int64[], Float64[], d, d)
+            A[lmi_id, k] = (Int64[], Int64[], Float64x8[], d, d)
         end
         for j = 1:d
             for i = 1:j
@@ -193,7 +193,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         end
     end
     dest.max_sense = MOI.get(src, MOI.ObjectiveSense()) == MOI.MAX_SENSE
-    obj = MOI.get(src, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}())
+    obj = MOI.get(src, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64x8}}())
     # objective_constant = MOI.constant(obj) # TODO # MK: done(?)
     b_const = obj.constant
     b_const = dest.max_sense ? -b_const : b_const
@@ -211,7 +211,7 @@ function MOI.copy_to(dest::Optimizer, src::OptimizerCache)
         Solvers._prepare_A(AA,drank)...,
         b,
         b_const,
-        convert(SparseVector{Float64,Int64}, sparsevec(Cd_lin.constants)),
+        convert(SparseVector{Float64x8,Int64}, sparsevec(Cd_lin.constants)),
         C_lin,
         n,
         msizes,

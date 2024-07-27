@@ -6,11 +6,11 @@ function tests()
     optimizer = Loraine.Optimizer()
     # MOI.set(optimizer, MOI.RawOptimizerAttribute("eDIMACS"), 1e-6) # comment this to enable output
     MOI.set(optimizer, MOI.Silent(), false) # comment this to enable output
-    bridged = MOI.instantiate(Loraine.Optimizer, with_bridge_type = Float64)
+    bridged = MOI.instantiate(Loraine.Optimizer, with_bridge_type = Float64x8)
     # Fix for `Unable to query the dual of a variable bound that was reformulated using `ZerosBridge`.
-    MOI.Bridges.remove_bridge(bridged, MOI.Bridges.Variable.ZerosBridge{Float64})
+    MOI.Bridges.remove_bridge(bridged, MOI.Bridges.Variable.ZerosBridge{Float64x8})
     model = MOI.Utilities.CachingOptimizer(
-        MOI.Utilities.UniversalFallback(MOI.Utilities.Model{Float64}()),
+        MOI.Utilities.UniversalFallback(MOI.Utilities.Model{Float64x8}()),
         bridged,
     )
     # MOI.set(model, MOI.RawOptimizerAttribute("eDIMACS"), 1e-5)

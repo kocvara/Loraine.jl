@@ -18,17 +18,17 @@ end
 
 mutable struct MyModel
     A::Matrix{Any}
-    AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
-    myA::Vector{SpMa{Float64}}
-    B::Vector{SparseArrays.SparseMatrixCSC{Float64}}
-    C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
+    AA::Vector{SparseArrays.SparseMatrixCSC{Float64x8}}
+    myA::Vector{SpMa{Float64x8}}
+    B::Vector{SparseArrays.SparseMatrixCSC{Float64x8}}
+    C::Vector{SparseArrays.SparseMatrixCSC{Float64x8}}
     nzA::Matrix{Int64}
     sigmaA::Matrix{Int64}
     qA::Vector{Int64}
-    b::Vector{Float64}
-    b_const::Float64
-    d_lin::SparseArrays.SparseVector{Float64, Int64}
-    C_lin::SparseArrays.SparseMatrixCSC{Float64, Int64}
+    b::Vector{Float64x8}
+    b_const::Float64x8
+    d_lin::SparseArrays.SparseVector{Float64x8, Int64}
+    C_lin::SparseArrays.SparseMatrixCSC{Float64x8, Int64}
     n::Int64
     msizes::Vector{Int64}
     nlin::Int64
@@ -36,17 +36,17 @@ mutable struct MyModel
 
     function MyModel(
         A::Matrix{Any},
-        AA::Vector{SparseArrays.SparseMatrixCSC{Float64}},
-        myA::Vector{SpMa{Float64}},
-        B::Vector{SparseArrays.SparseMatrixCSC{Float64}},
-        C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
+        AA::Vector{SparseArrays.SparseMatrixCSC{Float64x8}},
+        myA::Vector{SpMa{Float64x8}},
+        B::Vector{SparseArrays.SparseMatrixCSC{Float64x8}},
+        C::Vector{SparseArrays.SparseMatrixCSC{Float64x8}},
         nzA::Matrix{Int64},
         sigmaA::Matrix{Int64},
         qA::Vector{Int64},
-        b::Vector{Float64},
-        b_const::Float64,
-        d_lin::SparseArrays.SparseVector{Float64, Int64},
-        C_lin::SparseArrays.SparseMatrixCSC{Float64, Int64},
+        b::Vector{Float64x8},
+        b_const::Float64x8,
+        d_lin::SparseArrays.SparseVector{Float64x8, Int64},
+        C_lin::SparseArrays.SparseMatrixCSC{Float64x8, Int64},
         n::Int64,
         msizes::Vector{Int64},
         nlin::Int64,
@@ -101,7 +101,7 @@ else
 end
 
 drank = 0
-model = MyModel(A, _prepare_A(A,drank)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
+model = MyModel(A, _prepare_A(A,drank)..., Float64x8.(b), Float64x8.(b_const), Float64x8.(d_lin), Float64x8.(C_lin), n, msizes, nlin, nlmi)
 
 return model
 end
@@ -110,10 +110,10 @@ function _prepare_A(A, datarank)
 
     nlmi = size(A, 1)
     n = size(A, 2) - 1
-    AA = SparseMatrixCSC{Float64}[]
-    myA = SpMa{Float64}[]
-    B = SparseMatrixCSC{Float64}[]
-    C = SparseMatrixCSC{Float64}[]
+    AA = SparseMatrixCSC{Float64x8}[]
+    myA = SpMa{Float64x8}[]
+    B = SparseMatrixCSC{Float64x8}[]
+    C = SparseMatrixCSC{Float64x8}[]
     nzA = zeros(Int64,n,nlmi)
     sigmaA = zeros(Int64,n,nlmi)
     qA = zeros(Int64,2)
@@ -133,10 +133,10 @@ function _prepare_A(A, datarank)
         end
 
         prep_sparse!(A,n,i,nzA,sigmaA,qA)
-        @show nzA[1:10]
-        @show nzA[end-9:end]
-        @show sigmaA[1:10]
-        @show sigmaA[end-9:end]
+        # @show nzA[1:10]
+        # @show nzA[end-9:end]
+        # @show sigmaA[1:10]
+        # @show sigmaA[end-9:end]
 
 
     end
@@ -145,9 +145,9 @@ function _prepare_A(A, datarank)
 end
 
 function prep_sparse!(A,n,i,nzA,sigmaA,qA)
-    d1 = zeros(Float64,n)
-    d2 = zeros(Float64,n)
-    d3 = zeros(Float64,n)
+    d1 = zeros(Float64x8,n)
+    d2 = zeros(Float64x8,n)
+    d3 = zeros(Float64x8,n)
 
     kappa = 900.
     for j = 1:n
@@ -237,13 +237,13 @@ function prep_AA!(myA,Ai,n)
     nnz = 0
     @inbounds for j = 1:n
         ii,jj,vv = findnz(-(Ai[j+1]))
-        push!(myA,SpMa(Int64(length(ii)),ii,jj,float(vv)))
+        push!(myA,SpMa(Int64(length(ii)),ii,jj,Float64x8.(vv)))
         nnz += length(ii)
     end
 
     iii = zeros(Int64, nnz)
     jjj = zeros(Int64, nnz)
-    vvv = zeros(Float64, nnz)
+    vvv = zeros(Float64x8, nnz)
     AAA1 = spzeros(ntmp, n)
     lb = 1
     @inbounds for j = 1:n      
@@ -251,7 +251,7 @@ function prep_AA!(myA,Ai,n)
         lf = lb+length(ii)-1
         iii[lb:lf] = ii
         jjj[lb:lf] = j .* ones(Int64,length(ii))
-        vvv[lb:lf] = float(vv)
+        vvv[lb:lf] = Float64x8.(vv)
         lb = lf+1
     end
     AAA = sparse(iii,jjj,vvv,ntmp,n)

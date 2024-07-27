@@ -14,14 +14,12 @@ using Dualization
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto4.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/theta6.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/tru3.dat-s")
-# model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/hubbard_X4N4p.10000.0.pqg.dat-s")
-model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
-
+model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/hubbard_X4N4p.10000.0.pqg.dat-s")
 
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
-set_optimizer(model, Loraine.Optimizer)
+# set_optimizer(model, Loraine.Optimizer)
 
 # # Loraine options
 
@@ -38,8 +36,8 @@ set_optimizer(model, Loraine.Optimizer)
 # set_attribute(model, "maxit", 100)
 # set_attribute(model, "datarank", 0)
 
-# set_optimizer(model, Loraine.Optimizer)
-optimize!(model)
+# # set_optimizer(model, Loraine.Optimizer)
+# optimize!(model)
 
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient

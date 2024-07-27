@@ -28,7 +28,7 @@ function  find_initial!(solver)
     f = zeros(1,n)
     for i=1:solver.model.nlmi
         if solver.initpoint == 0
-            Eps = 1.0
+            Eps = 1.0e0 #1e5
         else
             f = norm(b2)/(1+norm(solver.model.AA[i]))
             Eps = sqrt.(solver.model.msizes[i]).* max(1,sqrt.(solver.model.msizes[i]).* f)
@@ -36,7 +36,7 @@ function  find_initial!(solver)
         solver.X[i] = Eps * Matrix(1.0I, Int64(solver.model.msizes[i]), Int64(solver.model.msizes[i]))
         
         if solver.initpoint == 0
-            Eta = solver.model.n
+            Eta = 1e0 * solver.model.n #1e-1
         else
             mf = max(f,norm(solver.model.C[i],2))
             mf = (1 + mf)./ sqrt(solver.model.msizes[i])
@@ -73,12 +73,12 @@ function  find_initial!(solver)
         solver.S_lin = 1 .* Etaa * ones(dd,1)
         solver.S_lin_inv = 1 ./ solver.S_lin
     else
-        solver.X_lin = Float64[]; solver.S_lin = Float64[]
+        solver.X_lin = Float64x8[]; solver.S_lin = Float64x8[]
     end
     if solver.model.nlin==0
-        solver.X_lin=Float64[]
-        solver.S_lin=Float64[]
-        solver.S_lin_inv=Float64[]
+        solver.X_lin=Float64x8[]
+        solver.S_lin=Float64x8[]
+        solver.S_lin_inv=Float64x8[]
     end
     
 end

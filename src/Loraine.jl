@@ -74,6 +74,9 @@ function loraine(d, options::Dict)
     solve(solver::MySolver,halpha::Halpha)
     end
 
+    # @show solver.y[1]
+    # @show solver.y[2]
+
     tottime = time() - t1
 
     if verb > 0

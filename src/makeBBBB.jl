@@ -36,11 +36,11 @@ end
 
 #####
 function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi,n,to,qA,sigmaA)
-    BBBB = zeros(Float64x2, n, n)
-    tmp1 = Matrix{Float64x2}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
+    BBBB = zeros(Float64x8, n, n)
+    tmp1 = Matrix{Float64x8}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
     # tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
-    tmp2 = Matrix{Float64x2}(undef,size(AAilmi, 1), 1)
-    tmp3 = Vector{Float64}(undef,size(Wilmi, 1))
+    tmp2 = Matrix{Float64x8}(undef,size(AAilmi, 1), 1)
+    tmp3 = Vector{Float64x8}(undef,size(Wilmi, 1))
     ilmi1 = (ilmi-1)*n
 
     # @show qA
@@ -48,7 +48,7 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi,n,to,qA,sigmaA)
 
     @inbounds for ii = 1:n
         # tmp1 = zeros(Float64,size(Wilmi, 2), size(Ailmi[1], 1))
-        tmp  = zeros(Float64x2,size(Wilmi, 2), size(Ailmi[1], 1))
+        tmp  = zeros(Float64x8,size(Wilmi, 2), size(Ailmi[1], 1))
         i = sigmaA[ii,ilmi]
         # if ii <= qA[1]
         if 1==1
@@ -220,24 +220,25 @@ end
 
 ###########################################################################
 function makeBBBB(n,nlmi,A,G)
-    BBBB = zeros(Float64, n, n)
+    BBBB = zeros(Float64x8, n, n)
     @inbounds for ilmi = 1:nlmi
         m = size(G[ilmi],1)
         nn = Int(m*m)
-        BB = zeros(Float64, nn, n)
+        BB = zeros(Float64x8, nn, n)
         Gilmi = G[ilmi]
         for i = 1:n
             BB[:,i] = vec(Gilmi' * A[ilmi,i+1] * Gilmi);
         end
         BBBB += BB' * BB
     end
+    # @show norm(BBBB-BBBB')
     return BBBB
 end
 
 ###########################################################################
 function makeBBBBalt(n,nlmi,A,AA,W,to)
     # @timeit to "BBBB" begin
-    BBBB = zeros(Float64, n, n)
+    BBBB = zeros(Float64x8, n, n)
     @inbounds for ilmi = 1:nlmi
         Wilmi = W[ilmi]
         AAilmi = AA[ilmi]
@@ -249,7 +250,7 @@ function makeBBBBalt(n,nlmi,A,AA,W,to)
 end
 #####
 function makeBBBBalti(Ailmi,AAilmi,Wilmi,n,to)
-    Hnn = zeros(Float64, n, n)
+    Hnn = zeros(Float64x8, n, n)
     tmp1 = Matrix{Float64}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
     tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
     tmp2 = Matrix{Float64}(undef,size(AAilmi, 1), 1)
@@ -278,7 +279,7 @@ end
 ###########################################################################
 function makeBBBBalt1(n,nlmi,A,AA,W)
     # @timeit to "BBBB" begin
-    BBBB = zeros(Float64, n, n)
+    BBBB = zeros(Float64x8, n, n)
     @inbounds for ilmi = 1:nlmi
         # @timeit to "BBBBkron" begin
         Wilmi = kron(W[ilmi],W[ilmi])
@@ -292,11 +293,11 @@ function makeBBBBalt1(n,nlmi,A,AA,W)
 end
 #####
 function makeBBBBalti1(Ailmi,AAilmi,Wilmi,n)
-    Hnn = zeros(Float64, n, n)
-    tmp1 = Matrix{Float64}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
+    Hnn = zeros(Float64x8, n, n)
+    tmp1 = Matrix{Float64x8}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
     # tmp1 = spzeros(size(Wilmi, 2), size(Ailmi[1], 1))
-    tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
-    tmp2 = Matrix{Float64}(undef,size(AAilmi, 1), 1)
+    tmp = Matrix{Float64x8}(undef,size(Wilmi, 1), size(Wilmi, 1))
+    tmp2 = Matrix{Float64x8}(undef,size(AAilmi, 1), 1)
 
     # @timeit to "BBBB1a" begin
         @inbounds for i = 1:n
@@ -314,7 +315,7 @@ end
 ###########################################################################
 function makeBBBBsp(n,nlmi,A,myA,W)
     # @timeit to "BBBBsp" begin
-    BBBB = zeros(Float64, n, n)
+    BBBB = zeros(Float64x8, n, n)
     for ilmi = 1:nlmi
         Wilmi = W[ilmi]
         Ailmi = A[ilmi,:]
@@ -325,7 +326,7 @@ function makeBBBBsp(n,nlmi,A,myA,W)
 end
 #####
 function makeBBBBspi(ilmi,Ailmi,myA,Wilmi,n)
-    BBBB = zeros(Float64, n, n)
+    BBBB = zeros(Float64x8, n, n)
     ilmi1 = (ilmi-1)*n
     @inbounds for i = 1:n
         if ~isempty(myA[ilmi1+i].iind)
@@ -374,7 +375,7 @@ end
 ###########################################################################
 function makeBBBBsp2(n,nlmi,A,myA,W)
     # @timeit to "BBBBsp" begin
-    BBBB = zeros(Float64, n, n)
+    BBBB = zeros(Float64x8, n, n)
     for ilmi = 1:nlmi
         Wilmi = W[ilmi]
         Ailmi = A[ilmi,:]
@@ -385,7 +386,7 @@ function makeBBBBsp2(n,nlmi,A,myA,W)
 end
 #####
 function makeBBBBsp2i(ilmi,Ailmi,myA,Wilmi,n)
-    BBBB = zeros(Float64, n, n)
+    BBBB = zeros(Float64x8, n, n)
     @inbounds for i = 1:n
         F = Matrix{Float64}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
         # @timeit to "BBBB1a1" begin
