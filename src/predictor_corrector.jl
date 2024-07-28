@@ -62,8 +62,7 @@ function predictor(solver::MySolver,halpha::Halpha)
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
             # try
-                BBBB1 = BBBB
-                cholBBBB1, cholBBBB2 = cholesky(BBBB1)
+                cholBBBB1, cholBBBB2 = cholesky(BBBB)
                 solver.cholBBBB = cholBBBB1
                 # @show norm(BBBB[solver.cholBBBB.p,:] - solver.cholBBBB.L * solver.cholBBBB.U)
             # catch err
@@ -147,15 +146,15 @@ function sigma_update(solver)
     step_pred = min(minimum([solver.alpha; solver.alpha_lin]), minimum([solver.beta; solver.beta_lin]))
     if (solver.mu .> 1e-6)
         if (step_pred .< 1 / sqrt(3))
-                expon_used = 1
+                expon_used = 1.0
         else
-                expon_used = max(solver.expon, 3 * step_pred^2)
+                expon_used = max(solver.expon, Float64(3.0) * step_pred^2)
         end
     else
-            expon_used = max(1, min(solver.expon, 3 * step_pred^2))
+            expon_used = max(1.0, min(solver.expon, Float64(3.0) * step_pred^2))
     end
     if btrace(solver.model.nlmi, solver.Xn, solver.Sn) .< 0
-        solver.sigma = 0.8
+        solver.sigma = Float64(0.8)
     else
         if solver.model.nlmi > 0
             tmp1 = btrace(solver.model.nlmi, solver.Xn, solver.Sn)
@@ -170,7 +169,7 @@ function sigma_update(solver)
         tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + solver.model.nlin)
         tmp12 = convert(Float64, tmp12)
         mu = Float64(solver.mu)
-        solver.sigma = min(1, ((tmp12) / mu) ^ Float64(expon_used))
+        solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
     end
 
     return solver.sigma
@@ -195,30 +194,30 @@ function corrector(solver,halpha)
         # solver.cholBBBB = cholesky(BBBB)
         # solver.dely = solver.cholBBBB \ h
         solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
-        # # Iterative refinement
-        # # resid = h - BBBB * solver.dely;
-        # resid = h - solver.cholBBBB * solver.cholBBBB' * solver.dely
-        # # resid = h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
-        # if norm(resid)/(1+norm(h)) > 1e-15
-        #     coco = 1
-        #     while coco <= 200
-        #         deldely = solver.cholBBBB \ resid
-        #         # w = BBBB * deldely;
-        #         w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
-        #         # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
-        #         # w[solver.cholBBBB.p] = w
-        #         alphaIR = resid' * w / (w' * w)
-        #         solver.dely = solver.dely + alphaIR .* deldely
-        #         resid = resid - alphaIR .* w
-        #         coco = coco + 1
-        #         # @show norm(resid)/(1+norm(h)) 
-        #         if norm(resid)/(1+norm(h)) < 1e-50
-        #             # @show norm(resid)/(1+norm(h)) 
-        #             # @show coco
-        #             break
-        #         end
-        #     end
-        # end
+        # Iterative refinement
+        # resid = h - BBBB * solver.dely;
+        resid = h - solver.cholBBBB * solver.cholBBBB' * solver.dely
+        # resid = h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
+        if norm(resid)/(1+norm(h)) > 1e-30
+            coco = 1
+            while coco <= 200
+                deldely = solver.cholBBBB \ resid
+                # w = BBBB * deldely;
+                w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
+                # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
+                # w[solver.cholBBBB.p] = w
+                alphaIR = resid' * w / (w' * w)
+                solver.dely = solver.dely + alphaIR .* deldely
+                resid = resid - alphaIR .* w
+                coco = coco + 1
+                # @show norm(resid)/(1+norm(h)) 
+                if norm(resid)/(1+norm(h)) < 1e-50
+                    # @show norm(resid)/(1+norm(h)) 
+                    # @show coco
+                    break
+                end
+            end
+        end
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
         if solver.preconditioner == 0
@@ -267,7 +266,7 @@ function find_step(solver)
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiX = eigmin(Float64x2.(XXX))
+            mimiX = eigmin(XXX)
             end
             if mimiX .> -1e-6
                 solver.alpha[i] = 0.99
@@ -280,7 +279,7 @@ function find_step(solver)
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiS = eigmin(Float64x2.(XXX))
+            mimiS = eigmin(XXX)
             end
             if mimiS .> -1e-6
                 solver.beta[i] = 0.99

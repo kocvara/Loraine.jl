@@ -47,7 +47,7 @@ function prepare_W(solver)
             # @show minimum(Dtmp)
             solver.D[i] = copy(Dtmp)
             Di2 = try
-                Diagonal(1 ./ sqrt.(Dtmp))
+                Diagonal(1.0 ./ sqrt.(Dtmp))
             catch err
                 println("WARNING: Numerical difficulties, giving up")
                     solver.status = 4
@@ -67,10 +67,10 @@ function prepare_W(solver)
                 # DDtmp = (CtmpS.U * solver.G[i])
                 # DDtmp = DDtmp' * DDtmp
                 DDtmp = solver.G[i]' * solver.S[i] * solver.G[i]
-                DDtmp = (DDtmp + DDtmp') ./ 2
+                DDtmp = (DDtmp + DDtmp') ./ 2.0
                 # @show minimum(diag(DDtmp,0))
                 try
-                    solver.DDsi[i] = (1 ./ sqrt.(diag(DDtmp,0)))
+                    solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp,0)))
                 catch err
                     println("WARNING: Numerical difficulties, giving up")
                     solver.DDsi[i] = diag(I(size(DDtmp, 1)))
@@ -82,7 +82,7 @@ function prepare_W(solver)
             # end
         end
         if solver.model.nlin > 0
-            solver.Si_lin = 1 ./ solver.S_lin
+            solver.Si_lin = 1.0 ./ solver.S_lin
         else
             solver.Si_lin = []
         end

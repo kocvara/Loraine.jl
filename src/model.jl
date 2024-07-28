@@ -101,7 +101,7 @@ else
 end
 
 drank = 0
-model = MyModel(A, _prepare_A(A,drank)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
+model = MyModel(A, _prepare_A(A,drank)..., Float64.(b), Float64.(b_const), d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model
 end
@@ -133,10 +133,10 @@ function _prepare_A(A, datarank)
         end
 
         prep_sparse!(A,n,i,nzA,sigmaA,qA)
-        @show nzA[1:10]
-        @show nzA[end-9:end]
-        @show sigmaA[1:10]
-        @show sigmaA[end-9:end]
+        # @show nzA[1:10]
+        # @show nzA[end-9:end]
+        # @show sigmaA[1:10]
+        # @show sigmaA[end-9:end]
 
 
     end
@@ -237,7 +237,7 @@ function prep_AA!(myA,Ai,n)
     nnz = 0
     @inbounds for j = 1:n
         ii,jj,vv = findnz(-(Ai[j+1]))
-        push!(myA,SpMa(Int64(length(ii)),ii,jj,float(vv)))
+        push!(myA,SpMa(Int64(length(ii)),ii,jj,Float64.(vv)))
         nnz += length(ii)
     end
 
@@ -251,7 +251,7 @@ function prep_AA!(myA,Ai,n)
         lf = lb+length(ii)-1
         iii[lb:lf] = ii
         jjj[lb:lf] = j .* ones(Int64,length(ii))
-        vvv[lb:lf] = float(vv)
+        vvv[lb:lf] = Float64.(vv)
         lb = lf+1
     end
     AAA = sparse(iii,jjj,vvv,ntmp,n)
