@@ -58,6 +58,7 @@ function predictor(solver::MySolver,halpha::Halpha)
     end
 
     # solving the linear system()
+    BBBB = BBBB + 1e-39 .* I(size(BBBB, 1))
     if solver.kit == 0   # direct solver
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
@@ -194,30 +195,30 @@ function corrector(solver,halpha)
         # solver.cholBBBB = cholesky(BBBB)
         # solver.dely = solver.cholBBBB \ h
         solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
-        # Iterative refinement
-        # resid = h - BBBB * solver.dely;
-        resid = h - solver.cholBBBB * solver.cholBBBB' * solver.dely
-        # resid = h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
-        if norm(resid)/(1+norm(h)) > 1e-30
-            coco = 1
-            while coco <= 200
-                deldely = solver.cholBBBB \ resid
-                # w = BBBB * deldely;
-                w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
-                # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
-                # w[solver.cholBBBB.p] = w
-                alphaIR = resid' * w / (w' * w)
-                solver.dely = solver.dely + alphaIR .* deldely
-                resid = resid - alphaIR .* w
-                coco = coco + 1
-                # @show norm(resid)/(1+norm(h)) 
-                if norm(resid)/(1+norm(h)) < 1e-50
-                    # @show norm(resid)/(1+norm(h)) 
-                    # @show coco
-                    break
-                end
-            end
-        end
+        # # Iterative refinement
+        # # resid = h - BBBB * solver.dely;
+        # resid = h - solver.cholBBBB * solver.cholBBBB' * solver.dely
+        # # resid = h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
+        # if norm(resid)/(1+norm(h)) > 1e-30
+        #     coco = 1
+        #     while coco <= 200
+        #         deldely = solver.cholBBBB \ resid
+        #         # w = BBBB * deldely;
+        #         w = solver.cholBBBB * solver.cholBBBB' * deldely
+        #         # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
+        #         # w[solver.cholBBBB.p] = w
+        #         alphaIR = resid' * w / (w' * w)
+        #         solver.dely = solver.dely + alphaIR .* deldely
+        #         resid = resid - alphaIR .* w
+        #         coco = coco + 1
+        #         # @show norm(resid)/(1+norm(h)) 
+        #         if norm(resid)/(1+norm(h)) < 1e-50
+        #             # @show norm(resid)/(1+norm(h)) 
+        #             # @show coco
+        #             break
+        #         end
+        #     end
+        # end
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
         if solver.preconditioner == 0

@@ -18,10 +18,10 @@ include("model.jl")
 mutable struct MySolver
     # main options
     kit::Int64
-    tol_cg::Float64x8
-    tol_cg_up::Float64x8
-    tol_cg_min::Float64x8
-    eDIMACS::Float64x8
+    tol_cg::Float64x4
+    tol_cg_up::Float64x4
+    tol_cg_min::Float64x4
+    eDIMACS::Float64x4
     preconditioner::Int64
     erank::Int64
     aamat::Int64
@@ -40,22 +40,22 @@ mutable struct MySolver
     predict::Bool
 
     # current iterate
-    sigma::Float64x8
-    tau::Float64x8
-    mu::Float64x8
-    expon::Float64x8
+    sigma::Float64x4
+    tau::Float64x4
+    mu::Float64x4
+    expon::Float64x4
     iter::Int64
-    DIMACS_error::Float64x8
+    DIMACS_error::Float64x4
     cholBBBB
 
     status::Int
 
-    err1::Float64x8
-    err2::Float64x8
-    err3::Float64x8
-    err4::Float64x8
-    err5::Float64x8
-    err6::Float64x8
+    err1::Float64x4
+    err2::Float64x4
+    err3::Float64x4
+    err4::Float64x4
+    err5::Float64x4
+    err6::Float64x4
 
     X
     S
@@ -326,29 +326,29 @@ end
 
 function setup_solver(solver::MySolver,halpha::Halpha)
 
-    solver.X = Matrix{Float64x8}[]
-    solver.S = Matrix{Float64x8}[]
-    solver.y = Vector{Float64x8}[]
+    solver.X = Matrix{Float64x4}[]
+    solver.S = Matrix{Float64x4}[]
+    solver.y = Vector{Float64x4}[]
 
-    solver.delX = Matrix{Float64x8}[]
-    solver.delS = Matrix{Float64x8}[]
+    solver.delX = Matrix{Float64x4}[]
+    solver.delS = Matrix{Float64x4}[]
 
-    solver.D = Vector{Float64x8}[]
-    solver.G = Matrix{Float64x8}[]
-    solver.Gi = Matrix{Float64x8}[]
-    solver.W = Matrix{Float64x8}[]
-    solver.Si = Matrix{Float64x8}[]
-    solver.DDsi = Vector{Float64x8}[]
+    solver.D = Vector{Float64x4}[]
+    solver.G = Matrix{Float64x4}[]
+    solver.Gi = Matrix{Float64x4}[]
+    solver.W = Matrix{Float64x4}[]
+    solver.Si = Matrix{Float64x4}[]
+    solver.DDsi = Vector{Float64x4}[]
 
-    solver.Rd = Matrix{Float64x8}[]
-    solver.Rc = Matrix{Float64x8}[]
+    solver.Rd = Matrix{Float64x4}[]
+    solver.Rc = Matrix{Float64x4}[]
 
     solver.alpha = zeros(solver.model.nlmi)
     solver.beta = zeros(solver.model.nlmi)
 
-    solver.Xn = Matrix{Float64x8}[]
-    solver.Sn = Matrix{Float64x8}[]
-    solver.RNT = Matrix{Float64x8}[]
+    solver.Xn = Matrix{Float64x4}[]
+    solver.Sn = Matrix{Float64x4}[]
+    solver.RNT = Matrix{Float64x4}[]
  
     for i = 1:solver.model.nlmi
         push!(solver.X,zeros(solver.model.msizes[i], solver.model.msizes[i]))
@@ -368,9 +368,9 @@ function setup_solver(solver::MySolver,halpha::Halpha)
         push!(solver.RNT,zeros(solver.model.msizes[i], solver.model.msizes[i]))
     end
 
-    halpha.Umat = Matrix{Float64x8}[]
-    halpha.Z = Matrix{Float64x8}[]
-    halpha.AAAATtau = SparseMatrixCSC{Float64x8}[]
+    halpha.Umat = Matrix{Float64x4}[]
+    halpha.Z = Matrix{Float64x4}[]
+    halpha.AAAATtau = SparseMatrixCSC{Float64x4}[]
 
     # @show solver.model.A
     # @show solver.model.b
@@ -428,7 +428,7 @@ function setup_solver(solver::MySolver,halpha::Halpha)
 end
 
 function myIPstep(solver::MySolver,halpha::Halpha)
-    mmm = Matrix{Float64x8}(undef, solver.model.n, solver.model.n)
+    mmm = Matrix{Float64x4}(undef, solver.model.n, solver.model.n)
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
@@ -545,26 +545,26 @@ end
 ```Functions for the iterative solver follow```
 
 struct MyA
-    W::Vector{Matrix{Float64x8}}
-    AA::Vector{SparseArrays.SparseMatrixCSC{Float64x8}}
+    W::Vector{Matrix{Float64x4}}
+    AA::Vector{SparseArrays.SparseMatrixCSC{Float64x4}}
     nlin::Int64
-    C_lin::SparseArrays.SparseMatrixCSC{Float64x8, Int64}
+    C_lin::SparseArrays.SparseMatrixCSC{Float64x4, Int64}
     X_lin
     S_lin_inv
     to::TimerOutputs.TimerOutput
 end
 
-function (t::MyA)(Ax::Vector{Float64x8}, x::Vector{Float64x8})
+function (t::MyA)(Ax::Vector{Float64x4}, x::Vector{Float64x4})
     @timeit t.to "Ax" begin
     nlmi = length(t.AA)
     m = size(t.AA[1],1)
     ax1 = zeros(m,1)
     if nlmi > 0
         for ilmi = 1:nlmi
-            waxwtmp = Matrix{Float64x8}(undef,size(t.W[ilmi]))
-            waxw = Matrix{Float64x8}(undef,size(t.W[ilmi]))
+            waxwtmp = Matrix{Float64x4}(undef,size(t.W[ilmi]))
+            waxw = Matrix{Float64x4}(undef,size(t.W[ilmi]))
             @timeit t.to "Ax1" begin
-            ax = Vector{Float64x8}(undef,size(t.AA[ilmi],2))
+            ax = Vector{Float64x4}(undef,size(t.AA[ilmi],2))
             end
             @timeit t.to "Ax2" begin
             mul!(ax, transpose(t.AA[ilmi]), x)
@@ -592,7 +592,7 @@ struct MyM_no
     to::TimerOutputs.TimerOutput
 end
 
-function (t::MyM_no)(Mx::Vector{Float64x8}, x::Vector{Float64x8})
+function (t::MyM_no)(Mx::Vector{Float64x4}, x::Vector{Float64x4})
     copy!(Mx,x)
 end
 
@@ -642,7 +642,7 @@ struct MyM_beta
     AAAATtau
 end
 
-function (t::MyM_beta)(Mx::Vector{Float64x8}, x::Vector{Float64x8})
+function (t::MyM_beta)(Mx::Vector{Float64x4}, x::Vector{Float64x4})
     copy!(Mx, x ./ t.AAAATtau)
 end
 
@@ -652,8 +652,8 @@ function Prec_for_CG_tilS_prep(solver,halpha)
     nlmi = solver.model.nlmi
     kk = solver.erank .* ones(Int64,nlmi,1)
     # kk[2] = 3
-    # halpha.Z = SparseMatrixCSC{Float64x8}[]
-    halpha.Z = Matrix{Float64x8}[]
+    # halpha.Z = SparseMatrixCSC{Float64x4}[]
+    halpha.Z = Matrix{Float64x4}[]
 
     nvar = solver.model.n
     
@@ -803,9 +803,9 @@ end
 
 function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
     @timeit solver.to "prec3" begin
-    S = Matrix{Float64x8}(undef,sizeS,sizeS)
+    S = Matrix{Float64x4}(undef,sizeS,sizeS)
     nvar = solver.model.n
-    t = Matrix{Float64x8}(undef,nvar,kk[1]*didi)
+    t = Matrix{Float64x4}(undef,nvar,kk[1]*didi)
     if solver.model.nlmi > 0
         for ilmi = 1:solver.model.nlmi
             if kk[ilmi] == 0
@@ -821,14 +821,14 @@ function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
             ii_, jj_, aa_ = findnz(AAs)
             qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
             pp_ = mod.(jj_ .- 1, n) .+ 1
-            aau = Vector{Float64x8}(undef,length(aa_))
+            aau = Vector{Float64x4}(undef,length(aa_))
             aau .= aa_ .* halpha.Umat[ilmi][qq_]
             AU = sparse(ii_,pp_,aau,nvar,n)
             end
             if solver.model.nlmi>1
                 @timeit solver.to "prec32" begin
                 didi1 = size(solver.W[ilmi],1)
-                ttmp = Matrix{Float64x8}(undef,nvar,kk[ilmi]*didi1)
+                ttmp = Matrix{Float64x4}(undef,nvar,kk[ilmi]*didi1)
                 mul!(ttmp, AU, halpha.Z[ilmi])
                 t[1:nvar,lbt:lbt+k*n-1] = ttmp
                 # t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
@@ -849,13 +849,13 @@ end
 return S, lbt
 end
 
-function (t::MyM)(Mx::Vector{Float64x8}, x::Vector{Float64x8})
+function (t::MyM)(Mx::Vector{Float64x4}, x::Vector{Float64x4})
 
     nvar = size(x,1)
     nlmi = length(t.AA)
 
     yy2 = zeros(nvar,1)
-    y33 = zeros(Float64x8,0)
+    y33 = zeros(Float64x4,0)
 
     AAAAinvx = t.AAAATtau\x
 

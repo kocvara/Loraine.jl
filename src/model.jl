@@ -101,7 +101,7 @@ else
 end
 
 drank = 0
-model = MyModel(A, _prepare_A(A,drank)..., Float64.(b), Float64.(b_const), d_lin, C_lin, n, msizes, nlin, nlmi)
+model = MyModel(A, _prepare_A(A,drank)..., Float64.(b), Float64.(b_const), Float64.(d_lin), Float64.(C_lin), n, msizes, nlin, nlmi)
 
 return model
 end

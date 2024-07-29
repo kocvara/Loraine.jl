@@ -3,8 +3,8 @@
 ###########################################################################
 function my_kron(A, B, C)
     # TMP = B * C * A'
-    TMP1 = Matrix{Float64x8}(undef,size(C,1),size(A,1))
-    TMP = Matrix{Float64x8}(undef,size(B,1),size(C,1))
+    TMP1 = Matrix{Float64x4}(undef,size(C,1),size(A,1))
+    TMP = Matrix{Float64x4}(undef,size(B,1),size(C,1))
     mul!(TMP1,C,A')
     mul!(TMP,B,TMP1)
     return vec(TMP) 

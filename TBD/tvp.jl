@@ -38,7 +38,7 @@ options["aamat"] = 2    # 0 ... A^TA; 1 ... diag(A^TA); 2 ... identity
 options["fig_ev"]   = 0  # 0...no figure; 1.1.figure with eigenvalues of H; H_til; etc in every IP iteration
 
 options["verb"]     = 2   # 2..full output; 1..short output; 0..no output
-options["initpoint"]    = 0
+options["initpoint"]    = 1
 options["maxit"]    = 100
 options["datarank"] = 0
 
