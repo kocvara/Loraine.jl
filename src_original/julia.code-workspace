@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../../j/ICCOPT22_Summer_School/ICCOPT_SummerSchool_2022"
+		}
+	],
+	"settings": {
+		"julia.environmentPath": "/Users/michal/Dropbox/michal/POEMA/julia/Loraine"
+	}
+}

@@ -19,7 +19,7 @@ end
 mutable struct MyModel
     A::Matrix{Any}
     AA::Vector{SparseArrays.SparseMatrixCSC{Float64x8}}
-    myA::Vector{SpMa{Float64}}
+    myA::Vector{SpMa{Float64x8}}
     B::Vector{SparseArrays.SparseMatrixCSC{Float64x8}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64x8}}
     nzA::Matrix{Int64}

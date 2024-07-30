@@ -472,6 +472,7 @@ function find_mu(solver)
         mu = mu + tr(solver.X_lin' * solver.S_lin)
     end
     solver.mu = mu / (sum(solver.model.msizes) + solver.model.nlin)
+    # @show solver.mu
     return solver.mu
 end
 
@@ -516,12 +517,26 @@ function check_convergence(solver)
             end    
     else
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.itertime)
+                @printf("%3.0d %56.48e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.itertime)
             else
                 @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.cg_iter_pre + solver.cg_iter_cor, solver.itertime)
             end
         end
     end
+
+    nono = 0.0
+    nono1 = 0.0
+    for i = 1:solver.model.nlmi
+        nono1 = nono1 + (1 + norm(solver.model.C[1]))
+        nono = nono + eigmax(solver.S[i])
+    end
+    mycond1 = dot(solver.y, solver.model.b')/nono1
+    mycond = nono/dot(solver.y, solver.model.b')
+    @show nono
+    # @show mycond1
+    @show mycond
+    # @show nono
+    # @show dot(solver.y, solver.model.b')
 
     if DIMACS_error < solver.eDIMACS
         solver.status = 1

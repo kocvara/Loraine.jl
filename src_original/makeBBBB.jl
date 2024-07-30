@@ -1,8 +1,8 @@
 # using SuiteSparseGraphBLAS
 function makeBBBB_rank1(n,nlmi,B,G,to)
     @timeit to "BBBB_rank1" begin
-    tmp = zeros(Float64x8, n, n)
-    BBBB = zeros(Float64x8, n, n)
+    tmp = zeros(Float64, n, n)
+    BBBB = zeros(Float64, n, n)
     for ilmi = 1:nlmi
         @timeit to "BBBB_rank1_a" begin
             BB = transpose(B[ilmi] * G[ilmi])
@@ -23,7 +23,7 @@ end
 #########################
 
 function makeBBBBs(n,nlmi,A,AA,myA,W,to,qA,sigmaA)
-    BBBB = zeros(Float64x8, n, n)
+    BBBB = zeros(Float64, n, n)
     @inbounds for ilmi = 1:nlmi
         Wilmi = W[ilmi]
         AAilmi = AA[ilmi]
@@ -38,7 +38,7 @@ end
 function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi,n,to,qA,sigmaA)
     BBBB = zeros(Float64x8, n, n)
     tmp1 = Matrix{Float64x8}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
-    # tmp = Matrix{Float64x8}(undef,size(Wilmi, 1), size(Wilmi, 1))
+    # tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
     tmp2 = Matrix{Float64x8}(undef,size(AAilmi, 1), 1)
     tmp3 = Vector{Float64x8}(undef,size(Wilmi, 1))
     ilmi1 = (ilmi-1)*n
@@ -47,7 +47,7 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi,n,to,qA,sigmaA)
     # @show sigmaA[1:9,1]
 
     @inbounds for ii = 1:n
-        # tmp1 = zeros(Float64x8,size(Wilmi, 2), size(Ailmi[1], 1))
+        # tmp1 = zeros(Float64,size(Wilmi, 2), size(Ailmi[1], 1))
         tmp  = zeros(Float64x8,size(Wilmi, 2), size(Ailmi[1], 1))
         i = sigmaA[ii,ilmi]
         # if ii <= qA[1]
@@ -224,13 +224,14 @@ function makeBBBB(n,nlmi,A,G)
     @inbounds for ilmi = 1:nlmi
         m = size(G[ilmi],1)
         nn = Int(m*m)
-        BB = zeros(Float64, nn, n)
+        BB = zeros(Float64x8, nn, n)
         Gilmi = G[ilmi]
         for i = 1:n
             BB[:,i] = vec(Gilmi' * A[ilmi,i+1] * Gilmi);
         end
         BBBB += BB' * BB
     end
+    # @show norm(BBBB-BBBB')
     return BBBB
 end
 
@@ -250,9 +251,9 @@ end
 #####
 function makeBBBBalti(Ailmi,AAilmi,Wilmi,n,to)
     Hnn = zeros(Float64x8, n, n)
-    tmp1 = Matrix{Float64x8}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
-    tmp = Matrix{Float64x8}(undef,size(Wilmi, 1), size(Wilmi, 1))
-    tmp2 = Matrix{Float64x8}(undef,size(AAilmi, 1), 1)
+    tmp1 = Matrix{Float64}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
+    tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
+    tmp2 = Matrix{Float64}(undef,size(AAilmi, 1), 1)
 
     @timeit to "BBBB1a" begin
         @inbounds for i = 1:n
@@ -387,7 +388,7 @@ end
 function makeBBBBsp2i(ilmi,Ailmi,myA,Wilmi,n)
     BBBB = zeros(Float64x8, n, n)
     @inbounds for i = 1:n
-        F = Matrix{Float64x8}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
+        F = Matrix{Float64}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
         # @timeit to "BBBB1a1" begin
             mul!(F,Wilmi,transpose(Ailmi[i+1]))
         # end
