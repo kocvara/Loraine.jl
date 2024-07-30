@@ -523,6 +523,21 @@ function check_convergence(solver)
         end
     end
 
+    # nono = 0.0
+    # nono1 = 0.0
+    # for i = 1:solver.model.nlmi
+    #     nono1 = nono1 + (1 + norm(solver.model.C[1]))
+    #     nono = nono + eigmax(solver.S[i])
+    # end
+    # mycond1 = dot(solver.y, solver.model.b')/nono1
+    # mycond = nono/dot(solver.y, solver.model.b')
+    # @show nono
+    # # @show mycond1
+    # @show mycond
+    # # @show nono
+    # # @show dot(solver.y, solver.model.b')
+
+
     if DIMACS_error < solver.eDIMACS
         solver.status = 1
         solver.y = solver.y
