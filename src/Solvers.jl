@@ -510,7 +510,7 @@ function check_convergence(solver)
         # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
             if solver.kit == 0
-                @printf("%3.0d %56.48e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6,solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6,solver.itertime)
             else
                 @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
             end    
@@ -531,9 +531,11 @@ function check_convergence(solver)
     # end
     # mycond1 = dot(solver.y, solver.model.b')/nono1
     # mycond = nono/dot(solver.y, solver.model.b')
-    # @show nono
+    # @printf("nono: %9.2e\n", nono)
+    # # @show nono
     # # @show mycond1
-    # @show mycond
+    # @printf("mycond: %9.2e\n", mycond)
+    # # @show mycond
     # # @show nono
     # # @show dot(solver.y, solver.model.b')
 
@@ -541,6 +543,8 @@ function check_convergence(solver)
     if DIMACS_error < solver.eDIMACS
         solver.status = 1
         solver.y = solver.y
+        @printf("Primal objective: %56.48e\n", -dot(solver.y, solver.model.b') + solver.model.b_const)
+        # @show -dot(solver.y, solver.model.b') + solver.model.b_const    
     end
 
     if DIMACS_error > 1e25 
