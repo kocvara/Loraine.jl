@@ -195,7 +195,7 @@ function prep_sparse!(A,n,i,nzA,sigmaA,qA)
     end
     qA[2] = max(qA[2],qA[1])
 
-    @show qA
+    # @show qA
 
 end
 

@@ -9,6 +9,7 @@ using Mosek
 using MosekTools
 import Hypatia
 using Dualization
+using MultiFloats
 
 # Select your semidefinite optimization problem in SDPA input format
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto4.dat-s")
@@ -42,8 +43,8 @@ set_attribute(model, "datarank", 0)
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient
 
-set_optimizer(model, CSDP.Optimizer)
-dual_model = dualize(model, CSDP.Optimizer)
+set_optimizer(model, Loraine.Optimizer)
+dual_model = dualize(model, Loraine.Optimizer)
 @time optimize!(dual_model)
 
 # termination_status(model)
