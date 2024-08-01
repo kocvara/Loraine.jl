@@ -63,7 +63,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     end
 end
 
-Optimizer() = Optimizer{Float64}()
+Optimizer() = Optimizer{Float64x2}()
 
 function MOI.default_cache(::Optimizer, ::Type{Float64})
     return MOI.Utilities.UniversalFallback(OptimizerCache())
