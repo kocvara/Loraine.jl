@@ -447,7 +447,7 @@ function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
 
     ## predictor
     @timeit solver.to "predictor" begin
-    predictor(solver::MySolver,halpha::Halpha)
+    predictor(solver,halpha::Halpha)
     end
 
     sigma_update(solver)

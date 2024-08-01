@@ -2,7 +2,7 @@
 using ConjugateGradients
 using GenericLinearAlgebra
 
-function predictor(solver::MySolver,halpha::Halpha)
+function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     
     solver.predict = true
     solver.Rp = solver.model.b
@@ -37,7 +37,7 @@ function predictor(solver::MySolver,halpha::Halpha)
                 # @show norm(BBBB-Hermitian(BBBB, :L))
             end
         else
-            BBBB = zeros(Float64, solver.model.n, solver.model.n)
+            BBBB = zeros(T, solver.model.n, solver.model.n)
         end
         if solver.model.nlin > 0
             BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
@@ -62,8 +62,7 @@ function predictor(solver::MySolver,halpha::Halpha)
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
             # try
-                BBBB1 = BBBB
-                cholBBBB1, cholBBBB2 = cholesky(BBBB1)
+                cholBBBB1, cholBBBB2 = cholesky(BBBB)
                 solver.cholBBBB = cholBBBB1
                 # @show norm(BBBB[solver.cholBBBB.p,:] - solver.cholBBBB.L * solver.cholBBBB.U)
             # catch err
@@ -143,19 +142,19 @@ function predictor(solver::MySolver,halpha::Halpha)
 
 end
 
-function sigma_update(solver)
+function sigma_update(solver::MySolver{T}) where {T}
     step_pred = min(minimum([solver.alpha; solver.alpha_lin]), minimum([solver.beta; solver.beta_lin]))
     if (solver.mu .> 1e-6)
         if (step_pred .< 1 / sqrt(3))
-                expon_used = 1
+                expon_used = 1.0
         else
-                expon_used = max(solver.expon, 3 * step_pred^2)
+                expon_used = max(solver.expon, T(3) * step_pred^2)
         end
     else
-            expon_used = max(1, min(solver.expon, 3 * step_pred^2))
+            expon_used = max(1, min(solver.expon, T(3) * step_pred^2))
     end
     if btrace(solver.model.nlmi, solver.Xn, solver.Sn) .< 0
-        solver.sigma = 0.8
+        solver.sigma = T(0.8)
     else
         if solver.model.nlmi > 0
             tmp1 = btrace(solver.model.nlmi, solver.Xn, solver.Sn)
@@ -170,7 +169,7 @@ function sigma_update(solver)
         tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + solver.model.nlin)
         tmp12 = convert(Float64, tmp12)
         mu = Float64(solver.mu)
-        solver.sigma = min(1, ((tmp12) / mu) ^ Float64(expon_used))
+        solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
     end
 
     return solver.sigma
