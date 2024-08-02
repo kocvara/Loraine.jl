@@ -32,10 +32,10 @@ function prepare_W(solver::MySolver{T}) where {T}
     # @timeit solver.to "prpr" begin
         for i = 1:solver.model.nlmi
             # @timeit to "prpr1" begin
-                # Ctmp = _try_cholesky(solver, solver.X, i, "X")
-                # CtmpS = _try_cholesky(solver, solver.S, i, "S")
-                Ctmp = cholesky(solver.X[i])
-                CtmpS = cholesky(solver.S[i])
+                Ctmp = _try_cholesky(solver, solver.X, i, "X")
+                CtmpS = _try_cholesky(solver, solver.S, i, "S")
+                # Ctmp = cholesky(solver.X[i])
+                # CtmpS = cholesky(solver.S[i])
             @timeit solver.to "prep W SVD" begin
                 CCtmp = Matrix{T}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)

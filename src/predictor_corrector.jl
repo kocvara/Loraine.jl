@@ -61,32 +61,32 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     if solver.kit == 0   # direct solver
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
-            # try
+            try
                 cholBBBB1, cholBBBB2 = cholesky(BBBB)
                 solver.cholBBBB = cholBBBB1
                 # @show norm(BBBB[solver.cholBBBB.p,:] - solver.cholBBBB.L * solver.cholBBBB.U)
-            # catch err
-            #     if solver.verb > 0
-            #         println("Matrix H not positive definite, trying to regularize")
-            #     end
-            #     icount = 0
-            #     while isposdef(BBBB) == false
-            #         BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
-            #         icount = icount + 1
-            #         if icount > 1000
-            #             if solver.verb > 0
-            #                 println("WARNING: H cannot be made positive definite, giving up")
-            #             end
-            #             solver.cholBBBB = I(size(BBBB, 1))
-            #             solver.status = 4
-            #             return
-            #         end
-            #     end
-            #     solver.cholBBBB = cholesky(BBBB)
-            # else
-            #     solver.cholBBBB = copy(solver.cholBBBB)
-            # end
-            # solver.dely = solver.cholBBBB \ h
+            catch err
+                if solver.verb > 0
+                    println("Matrix H not positive definite, trying to regularize")
+                end
+                icount = 0
+                while isposdef(BBBB) == false
+                    BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
+                    icount = icount + 1
+                    if icount > 1000
+                        if solver.verb > 0
+                            println("WARNING: H cannot be made positive definite, giving up")
+                        end
+                        solver.cholBBBB = I(size(BBBB, 1))
+                        solver.status = 4
+                        return
+                    end
+                end
+                solver.cholBBBB = cholesky(BBBB)
+            else
+                solver.cholBBBB = copy(solver.cholBBBB)
+            end
+            solver.dely = solver.cholBBBB \ h
             solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
             # delyy = solver.dely
         else
