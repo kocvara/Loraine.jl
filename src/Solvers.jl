@@ -648,7 +648,7 @@ function (t::MyM_beta)(Mx::Vector{T}, x::Vector{T}) where {T}
     copy!(Mx, x ./ t.AAAATtau)
 end
 
-function Prec_for_CG_tilS_prep(solver,halpha)    
+function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T} 
     
     @timeit solver.to "prec" begin
     nlmi = solver.model.nlmi
@@ -803,7 +803,7 @@ struct MyM
     cholS
 end
 
-function prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
+function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) where {T}
     @timeit solver.to "prec3" begin
     S = Matrix{T}(undef,sizeS,sizeS)
     nvar = solver.model.n
