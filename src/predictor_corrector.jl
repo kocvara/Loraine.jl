@@ -70,6 +70,15 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                     println("Matrix H not positive definite, trying to regularize")
                 end
                 icount = 0
+                solver.regcount += 1
+                if solver.regcount > 5
+                    if solver.verb > 0
+                        println("WARNING: too many regularizations of H, giving up")
+                    end
+                    solver.cholBBBB = I(size(BBBB, 1))
+                    solver.status = 4
+                    return
+                end
                 while isposdef(BBBB) == false
                     BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
                     icount = icount + 1

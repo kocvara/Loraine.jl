@@ -50,6 +50,8 @@ mutable struct MySolver{T}
 
     status::Int
 
+    regcount::Int
+
     err1::T
     err2::T
     err3::T
@@ -349,6 +351,8 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Xn = Matrix{T}[]
     solver.Sn = Matrix{T}[]
     solver.RNT = Matrix{T}[]
+
+    solver.regcount = 0
  
     for i = 1:solver.model.nlmi
         push!(solver.X,zeros(solver.model.msizes[i], solver.model.msizes[i]))
