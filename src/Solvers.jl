@@ -177,7 +177,7 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
     "datarank" => 0,
     "initpoint" => 0,
     "timing" => 1,
-    "maxit" => 20,
+    "maxit" => 100,
 )
 
 function load(model, options::Dict; T = Float64)
