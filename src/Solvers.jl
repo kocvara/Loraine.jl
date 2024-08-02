@@ -530,7 +530,7 @@ function check_convergence(solver)
     if DIMACS_error < solver.eDIMACS
         solver.status = 1
         solver.y = solver.y
-        if solver.verb > 1
+        if solver.verb > 0
             println("Primal objective: ", -dot(solver.y, solver.model.b') + solver.model.b_const)
             println("Dual objective:   ", -btrace(solver.model.nlmi, solver.model.C, solver.X) - dot(solver.model.d_lin', solver.X_lin))
         end

@@ -76,7 +76,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                         println("WARNING: too many regularizations of H, giving up")
                     end
                     solver.cholBBBB = I(size(BBBB, 1))
-                    solver.status = 4
+                    solver.status = 3
                     return
                 end
                 while isposdef(BBBB) == false
@@ -87,7 +87,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                             println("WARNING: H cannot be made positive definite, giving up")
                         end
                         solver.cholBBBB = I(size(BBBB, 1))
-                        solver.status = 4
+                        solver.status = 3
                         return
                     end
                 end
