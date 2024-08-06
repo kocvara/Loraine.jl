@@ -3,12 +3,12 @@
 
 using JuMP
 import Loraine 
-import CSDP
-import SCS
-using Mosek
-using MosekTools
-import Hypatia
-using Dualization
+# import CSDP
+# import SCS
+# using Mosek
+# using MosekTools
+# import Hypatia
+# using Dualization
 using MultiFloats
 
 # model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer)
@@ -17,13 +17,14 @@ using MultiFloats
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto4.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/theta6.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/tru7.dat-s")
-model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/trto1.dat-s")
-model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
+# model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/trto1.dat-s")
+# model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 
-# model=read_from_file("examples/data/theta1.dat-s")
+model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
-set_optimizer(model, Loraine.Optimizer{Float64})
+# set_optimizer(model, Loraine.Optimizer{Float64})
+set_optimizer(model, Loraine.Optimizer{Float64x2})
 
 # Loraine options
 

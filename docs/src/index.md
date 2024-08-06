@@ -4,11 +4,11 @@ Loraine.jl is a Julia implementation of an interior point method algorithm for l
 
 Special features of Loraine:
 
-- The iterative solver for linear systems. This is to be used for problems with (very) low rank solution matrix.
+- Use of an iterative solver for linear systems. This is to be used for problems with (very) low rank solution matrix. Standard (non-low-rank) problems and linear programs can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
 - Use of high-precision arithmetic (by means of MultiFloats.jl). Only to be used with a direct solver (and relatively small problems). *(New in version 0.2.0.)*
 
 
-Standard (non-low-rank, double-precision) problems and linear programs can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
+
 
 ## Installation 
 
@@ -20,7 +20,7 @@ Pkg.add("Loraine")
 
 ## Use with JuMP
 
-To use Loraine with JuMP, use `Loraine.Optimizer` (for a standard double-precision solver) or `Loraine.Optimizer{Float64xN}`, with N = 2,$\ldots$,8 ; for instance:
+To use Loraine with JuMP, use `Loraine.Optimizer` (for a standard double-precision solver) or `Loraine.Optimizer{Float64xN}`, with N = 2,...,8 ; for instance:
 ```julia
 using JuMP, Loraine
 model = Model(Loraine.Optimizer)
@@ -47,8 +47,6 @@ set_optimizer(model, Loraine.Optimizer)
 # set_optimizer(model, Loraine.Optimizer{Float64x8})
 optimize!(model)
 ```
-
-To 
 
 ## License and Original Contributors
 
