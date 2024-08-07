@@ -554,9 +554,9 @@ end
 
 struct MyA{T}
     W::Vector{Matrix{T}}
-    AA::Vector{SparseArrays.SparseMatrixCSC{T}}
+    AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     nlin::Int64
-    C_lin::SparseArrays.SparseMatrixCSC{T, Int64}
+    C_lin::SparseArrays.SparseMatrixCSC{Float64,Int64}
     X_lin
     S_lin_inv
     to::TimerOutputs.TimerOutput
