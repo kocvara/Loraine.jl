@@ -6,7 +6,6 @@ using Documenter
 makedocs(
     sitename = "Loraine",
     format = Documenter.HTML(prettyurls = get(ENV, "CI", nothing) == "true"),
-    strict = true,
     pages = [
         "Index" => "index.md",
         "Overview" => "overview.md",

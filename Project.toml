@@ -1,11 +1,12 @@
 name = "Loraine"
 uuid = "df0521af-66a0-42b3-822e-f30debbfe642"
 authors = ["Michal Kocvara <kocvara@penopt.com>"]
-version = "0.1.2"
+version = "0.2.0"
 
 [deps]
 CSDP = "0a46da34-8e4b-519e-b418-48813639ff34"
 ConjugateGradients = "f59de78d-195d-4e7b-a078-2e47da4c3ad6"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 Dualization = "191a621a-6537-11e9-281d-650236a99e60"
 FameSVD = "9ba2d756-9ce3-11e9-1a71-0ffcb019784d"
 GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
