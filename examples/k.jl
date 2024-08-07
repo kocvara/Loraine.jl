@@ -5,8 +5,8 @@ import Loraine
 using MultiFloats
 
 # model = Model(Loraine.Optimizer)
-# model = Model(Loraine.Optimizer{Float64x2})
-model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer{Float64x2})
+model = Model(Loraine.Optimizer{Float64x2})
+# model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer{Float64x2})
 
 # @variable(model, x >= 0)
 # @variable(model, 0 <= y <= 3)
