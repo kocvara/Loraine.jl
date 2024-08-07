@@ -11,6 +11,17 @@ import Loraine
 # using Dualization
 using MultiFloats
 
+function read_sdpa(
+    filename::String,
+    T::Type = Float64,
+)
+    src = MOI.FileFormats.SDPA.Model{T}()
+    MOI.read_from_file(src, filename)
+    model = GenericModel{T}()
+    MOI.copy_to(model, src)
+    return model
+end
+
 # model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer)
 
 # Select your semidefinite optimization problem in SDPA input format
@@ -20,7 +31,8 @@ using MultiFloats
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/trto1.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 
-model=read_from_file("examples/data/theta1.dat-s")
+model=read_sdpa("examples/data/theta1.dat-s")
+# model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
 # set_optimizer(model, Loraine.Optimizer{Float64})
