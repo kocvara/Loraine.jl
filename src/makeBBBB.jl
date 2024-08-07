@@ -1,55 +1,237 @@
 # using SuiteSparseGraphBLAS
-function makeBBBB_rank1(n,nlmi,B,G)
-    # @timeit to "BBBB" begin
+function makeBBBB_rank1(n,nlmi,B,G,to)
+    @timeit to "BBBB_rank1" begin
+    tmp = zeros(Float64, n, n)
     BBBB = zeros(Float64, n, n)
     for ilmi = 1:nlmi
-        Gilmi = G[ilmi]
-        Bilmi = B[ilmi]
-        BB = Bilmi * Gilmi
-        BBBB += (BB * BB') .^ 2
+        @timeit to "BBBB_rank1_a" begin
+            BB = transpose(B[ilmi] * G[ilmi])
+        end
+        @timeit to "BBBB_rank1_b" begin
+            mul!(tmp,BB',BB)
+            if ilmi == 1
+                BBBB = tmp .^ 2
+            else
+                BBBB += tmp .^ 2
+            end
+        end
     end     
-    # end
+    end
     return BBBB
 end
 
 #########################
 
-function makeBBBB(n,nlmi,A,G)
-    # BBBB = Matrix{Float64}(zeros, n, n)
-    # @timeit to "BBBB" begin
+function makeBBBBs(n,nlmi,A,AA,myA,W,to,qA,sigmaA)
     BBBB = zeros(Float64, n, n)
-    for ilmi = 1:nlmi
-        Gilmi = G[ilmi]
+    @inbounds for ilmi = 1:nlmi
+        Wilmi = W[ilmi]
+        AAilmi = AA[ilmi]
         Ailmi = A[ilmi,:]
-        BBBB += makeBBBBi(Ailmi,Gilmi,n)
-    end     
-# end
+        BBBB += makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi,n,to,qA,sigmaA)
+    end
+
     return BBBB
 end
+
 #####
-function makeBBBBi(Ailmi,Gilmi,n)
-    # BBBB = Matrix{Float64}(zeros, n, n)
-    BBBB = zeros(Float64, n, n)
-    BB = Matrix{Float64}(undef,size(Gilmi, 1)^2, n)
-    # BB = zeros(Float64, size(Gilmi, 1)^2, n)
-    gugu1 = Matrix{Float64}(undef,size(Gilmi, 1), size(Ailmi[1], 2))
-    gugu = Matrix{Float64}(undef,size(Gilmi, 1), size(Gilmi, 1))
-    @inbounds @fastmath for i = 1:n
-        # @timeit to "BBBB1a" begin
-            mul!(gugu1,Gilmi',transpose(Ailmi[i+1]))
-        # end
-        # @timeit to "BBBB1b" begin
-            mul!(gugu,gugu1,Gilmi)
-        # end
-        # @timeit to "BBBB1c" begin
-            BB[:, i] = vec(gugu)
-        # end
-        # BB[:, i] = vec((Gilmi' * A[ilmi, i+1]) * Gilmi)
+function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi::Matrix{T},n,to,qA,sigmaA) where {T}
+    BBBB = zeros(T, n, n)
+    tmp1 = Matrix{T}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
+    # tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
+    tmp2 = Matrix{T}(undef,size(AAilmi, 1), 1)
+    tmp3 = Vector{Float64}(undef,size(Wilmi, 1))
+    ilmi1 = (ilmi-1)*n
+
+    # @show qA
+    # @show sigmaA[1:9,1]
+
+    @inbounds for ii = 1:n
+        # tmp1 = zeros(Float64,size(Wilmi, 2), size(Ailmi[1], 1))
+        tmp  = zeros(T,size(Wilmi, 2), size(Ailmi[1], 1))
+        i = sigmaA[ii,ilmi]
+        # if ii <= qA[1]
+        if 1==1
+             # @show "one"
+            # @show ii
+            @timeit to "BBBBone" begin
+                @timeit to "BBBBone1" begin
+                    mul!(tmp1,Wilmi,Ailmi[i+1])
+                end
+                @timeit to "BBBBone2" begin
+                    mul!(tmp,tmp1,Wilmi)
+                end
+                @timeit to "BBBBone3" begin
+                    # tmp2 = AAilmi * vec(tmp)
+                    mul!(tmp2,AAilmi,vec(tmp))
+                end
+                @timeit to "BBBBone4" begin
+                    BBBB[i:end,i] .= -tmp2[i:end]
+                end
+            end
+        elseif 1==0
+            if ~isempty(myA[ilmi1+i].iind)
+                @timeit to "BBBBone1a" begin
+                    myAiii = myA[ilmi1+i]
+                    iii = myAiii.iind
+                    jjj = myAiii.jind
+                    vvv = myAiii.nzval
+                    for j in eachindex(iii)
+                        @timeit to "BBBBone1aaa" begin
+                            tmptmp = Wilmi[:,iii[j]] * vvv[j]
+                        end
+                        @timeit to "BBBBone1abb" begin
+                            mul!(tmp1,tmptmp,(Wilmi[:,jjj[j]])')
+                        end
+                        @timeit to "BBBBone1acc" begin
+                            tmp += tmp1
+                        end
+                    end
+                end
+                # @show norm(tmp - tmp1*Wilmi)
+                @timeit to "BBBBone3a" begin
+                    mul!(tmp2,AAilmi,vec(tmp))
+                end
+                @timeit to "BBBBone4a" begin
+                    BBBB[i:end,i] .= tmp2[i:end]
+                end
+            end
+        # elseif ii <= qA[2]
+         elseif 1==0
+            @timeit to "BBBBtwo" begin
+            mul!(tmp1,Ailmi[i+1],Wilmi)
+            @inbounds for jj = ii:n
+                j = sigmaA[jj,ilmi]
+                
+                if ~isempty(myA[ilmi1+j].iind)               
+                    row = Ailmi[j+1].rowval
+                    # @timeit to "BBBBtwo_i_A" begin
+                    myAjjj = myA[ilmi1+j]
+                    colval = myAjjj.jind
+                    rowval = myAjjj.iind
+                    # end
+                    # @show row
+                    # @show colval
+                    ttt = 0.0
+                    # @timeit to "BBBBtwo_i_B" begin
+                    for iAj = 1:length(row)
+                        # @timeit to "BBBBtwo_i_C" begin
+                        ttt1 = dot(Wilmi[:,rowval[iAj]],tmp1[colval[iAj],:])
+                        # end
+                        ttt += ttt1 * Ailmi[j+1].nzval[iAj]
+                    end
+                    # end
+
+                    BBBB[i,j] = ttt
+                    if !=(i,j)
+                        BBBB[j,i] = ttt
+                    end
+                end
+
+                # if ~isempty(myA[ilmi1+j].iind)
+                #     myAjjj = myA[ilmi1+j]
+                #     iii_j = myAjjj.iind
+                #     jjj_j = myAjjj.jind
+                #     vvv_j = myAjjj.nzval
+                #     ttt = 0.0
+                #     # @timeit to "BBBBtwo_i" begin
+                #     @inbounds for iAj in eachindex(iii_j)
+                #         # @timeit to "BBBBtwo_ii_A" begin
+                #         iiijAj = iii_j[iAj]
+                #         jjjjAj = jjj_j[iAj]
+                #         # end
+                #         # vvvj = -vvv_j[iAj]    
+                #         # @show size(tmp1[1,:])
+                #         # @show size(Wilmi[:,1]')
+                #         # @timeit to "BBBBtwo_i_B" begin
+                #         ttt1 = dot(tmp1[:,iiijAj],Wilmi[:,jjjjAj])
+                #         # end
+                #         # @timeit to "BBBBtwo_i_C" begin
+                #         ttt -= ttt1 * vvv_j[iAj]
+                #         # end
+                #     end
+                #     # end
+                #     BBBB[i,j] = ttt
+                #     if !=(i,j)
+                #         BBBB[j,i] = ttt
+                #     end
+                end  
+            end       
+            # end
+        else
+            @timeit to "BBBBthree" begin
+            # @show "three"
+            # @show ii
+            if ~isempty(myA[ilmi1+i].iind)
+                myAiii = myA[ilmi1+i]
+                iii_i = myAiii.iind
+                jjj_i = myAiii.jind
+                vvv_i = myAiii.nzval
+                @inbounds for jj = ii:n
+                    j = sigmaA[jj,ilmi]
+                    if ~isempty(myA[ilmi1+j].iind)
+                        myAjjj = myA[ilmi1+j]
+                        iii_j = myAjjj.iind
+                        jjj_j = myAjjj.jind
+                        vvv_j = myAjjj.nzval
+                        ttt = 0.0
+                        # @timeit to "inner_a" begin
+                        @inbounds for iAj in eachindex(iii_j)
+                            ttt1 = 0.0
+                            iiijAj = iii_j[iAj]
+                            jjjjAj = jjj_j[iAj]
+                            vvvj = vvv_j[iAj]    
+                            # @timeit to "inner" begin
+                            @inbounds for iAi in eachindex(iii_i)
+                                # @timeit to "BBBBinner_a" begin
+                                iiiiAi = iii_i[iAi]
+                                jjjiAi = jjj_i[iAi]
+                                vvvi = vvv_i[iAi]    
+                                # end
+                                # @timeit to "BBBBinner_b" begin
+                                ttt1 += vvvi * Wilmi[iiiiAi,iiijAj] * Wilmi[jjjiAi,jjjjAj]
+                                # ttt1 -= vvv_i[iAi] * Wilmi[iii_i[iAi],iiijAj] * Wilmi[jjj_i[iAi],jjjjAj]
+                                # end
+                            end
+                            # mul!(tmp3,Ailmi[i+1], Wilmi[:,jjjjAj])
+                            # ttt1 = dot(Wilmi[:,iiijAj],tmp3)
+                            # end
+                            ttt += ttt1 * vvvj
+                        end
+                        # end
+                        # BBBB[i,j] = ttt
+                        # if !=(i,j)
+                        #     BBBB[j,i] = ttt
+                        # end
+                        if i >= j
+                            BBBB[i,j] = ttt
+                        else
+                            BBBB[j,i] = ttt
+                        end
+                    end  
+                end       
+            end
+            end
+        end
     end
-    # @timeit to "BBBB1d" begin
-    mul!(BBBB,BB',BB)
-    # end
-    return BBBB 
+    # BBBB = (BBBB + BBBB') ./ 2
+    return BBBB
+end
+
+###########################################################################
+function makeBBBB(n,nlmi,A,G)
+    BBBB = zeros(Float64, n, n)
+    @inbounds for ilmi = 1:nlmi
+        m = size(G[ilmi],1)
+        nn = Int(m*m)
+        BB = zeros(Float64, nn, n)
+        Gilmi = G[ilmi]
+        for i = 1:n
+            BB[:,i] = vec(Gilmi' * A[ilmi,i+1] * Gilmi);
+        end
+        BBBB += BB' * BB
+    end
+    return BBBB
 end
 
 ###########################################################################

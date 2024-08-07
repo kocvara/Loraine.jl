@@ -1,10 +1,12 @@
 # Loraine - LOw-RAnk INtErior point method
 	
 Primal-dual predictor-corrector interior-point method together with (optional) iterative solution of the resulting linear systems.
-
 The iterative solver is a preconditioned Krylov-type method with a preconditioner utilizing low rank of the solution.
 
-Loraine is a general purpose SDP solver, particularly efficient for SDP problems with low-rank data and/or very-low-rank solutions.
+Loraine is a general purpose SDP solver, particularly suitable for either 
+
+- large-scale SDP problems with low-rank data and/or very-low-rank solutions, or
+- difficult small-scale problems where high precision of the solution is required.
 
 
 ## Linear SDP problem

@@ -7,7 +7,7 @@ function initial_point(solver)
     solver.sigma = 3
 
     # These two parameters may influence convergence:
-    solver.tau = 0.9  #lower value; such as 0.9 leads to more iterations but more robust algo
+    solver.tau = 0.95  #lower value; such as 0.9 leads to more iterations but more robust algo
     solver.expon = 3.0
 
     solver.DIMACS_error = 1.0

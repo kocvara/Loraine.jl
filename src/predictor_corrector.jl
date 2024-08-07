@@ -1,7 +1,8 @@
 
 using ConjugateGradients
+using GenericLinearAlgebra
 
-function predictor(solver::MySolver,halpha::Halpha)
+function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     
     solver.predict = true
     solver.Rp = solver.model.b
@@ -21,28 +22,31 @@ function predictor(solver::MySolver,halpha::Halpha)
     end
 
     if solver.kit .== 0   # if direct solver; compute the Hessian matrix
-    @timeit solver.to "BBBB" begin 
+    # @timeit solver.to "BBBB" begin
         if solver.model.nlmi > 0
             if solver.datarank == -1
             # if 1 == 0
-                BBBB = makeBBBB_rank1(solver.model.n,solver.model.nlmi,solver.model.B,solver.G)
+                BBBB = makeBBBB_rank1(solver.model.n, solver.model.nlmi, solver.model.B, solver.G, solver.to)
             else
-                # BBBB = makeBBBB(n,nlmi,A,G)   
-                BBBB = makeBBBBalt(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W,solver.to)    
-                # BBBB = makeBBBBalt1(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W)  
+                # BBBB = makeBBBB(solver.model.n,solver.model.nlmi,solver.model.A,solver.G)   
+                # BBBB = makeBBBBalt(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W,solver.to)    
+                # BBBB = makeBBBBalt1(solver.model.n÷,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W)  
                 # BBBB = makeBBBBsp(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
                 # BBBB = makeBBBBsp2(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
+                BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.model.myA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
+                # @show norm(BBBB-Hermitian(BBBB, :L))
             end
         else
-            BBBB = zeros(Float64, solver.model.n, solver.model.n)
+            BBBB = zeros(T, solver.model.n, solver.model.n)
         end
         if solver.model.nlin > 0
             BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
-            # BBBB = Hermitian(BBBB)
-            BBBB = (BBBB + BBBB') ./ 2
+            # BBBB = Hermitian(BBBB, :L)
+            # BBBBlin = (BBBBlin + BBBBlin') ./ 2
         end
+        BBBB = Hermitian(BBBB, :L)
     end
-    end
+    # end
 
     if solver.model.nlmi > 0
         h = makeRHS(solver.model.nlmi,solver.model.AA,solver.W,solver.S,solver.Rp,solver.Rd)
@@ -58,21 +62,32 @@ function predictor(solver::MySolver,halpha::Halpha)
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
             try
-                solver.cholBBBB = cholesky(BBBB)
+                cholBBBB1, cholBBBB2 = cholesky(BBBB)
+                solver.cholBBBB = cholBBBB1
+                # @show norm(BBBB[solver.cholBBBB.p,:] - solver.cholBBBB.L * solver.cholBBBB.U)
             catch err
                 if solver.verb > 0
                     println("Matrix H not positive definite, trying to regularize")
                 end
                 icount = 0
+                solver.regcount += 1
+                if solver.regcount > 5
+                    if solver.verb > 0
+                        println("WARNING: too many regularizations of H, giving up")
+                    end
+                    solver.cholBBBB = I(size(BBBB, 1))
+                    solver.status = 3
+                    return
+                end
                 while isposdef(BBBB) == false
-                    BBBB = BBBB + 1e-5 .* I(size(BBBB, 1))
+                    BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
                     icount = icount + 1
                     if icount > 1000
                         if solver.verb > 0
                             println("WARNING: H cannot be made positive definite, giving up")
                         end
                         solver.cholBBBB = I(size(BBBB, 1))
-                        solver.status = 4
+                        solver.status = 3
                         return
                     end
                 end
@@ -81,12 +96,33 @@ function predictor(solver::MySolver,halpha::Halpha)
                 solver.cholBBBB = copy(solver.cholBBBB)
             end
             solver.dely = solver.cholBBBB \ h
+            solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+            # delyy = solver.dely
         else
             @warn("System matrix not Hermitian, stopping Loraine")
             solver.maxit = 1e10
             solver.status = 2
             solver.cholBBBB = 0
         end
+        # # Iterative refinement
+        # resid = h - BBBB * solver.dely;
+        # # @show norm(resid - (h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely))
+        # if norm(resid)/(1+norm(h)) > 1e-15
+        #     coco = 1
+        #     while coco <= 200
+        #         deldely = solver.cholBBBB \ resid
+        #         w = BBBB * deldely;
+        #         alphaIR = resid' * w / (w' * w)
+        #         solver.dely = solver.dely + alphaIR * deldely
+        #         resid = resid - alphaIR * w
+        #         coco = coco + 1
+        #         if norm(resid)/(1+norm(h)) < 1e-50
+        #             break
+        #         end
+        #     end
+        # end
+        # # @show norm(delyy-solver.dely)
+
     #     end
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
@@ -100,34 +136,37 @@ function predictor(solver::MySolver,halpha::Halpha)
             M = MyM_beta(solver.model.AA, halpha.AAAATtau)
         end
 
-        @timeit solver.to "CG predictor" begin
-        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = solver.tol_cg, maxIter = 10000, precon = M)
-        end
+        # @timeit solver.to "CG predictor" begin
+        # ConjugateGradients.jl needs `tol` to be `Float64`,
+        # maybe we can fix this in that package but in the mean time, we just
+        # convert the tolerance to `Float64`
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = 10000, precon = M)
+        # end
 
         # print(num_iters, exit_code)
         solver.cg_iter_pre += num_iters
         solver.cg_iter_tot += num_iters
     end
 
-    @timeit solver.to "find step predictor" begin
+    # @timeit solver.to "find step predictor" begin
     find_step(solver)
-    end
+    # end
 
 end
 
-function sigma_update(solver)
+function sigma_update(solver::MySolver{T}) where {T}
     step_pred = min(minimum([solver.alpha; solver.alpha_lin]), minimum([solver.beta; solver.beta_lin]))
     if (solver.mu .> 1e-6)
         if (step_pred .< 1 / sqrt(3))
-                expon_used = 1
+                expon_used = 1.0
         else
-                expon_used = max(solver.expon, 3 * step_pred^2)
+                expon_used = max(solver.expon, T(3) * step_pred^2)
         end
     else
-            expon_used = max(1, min(solver.expon, 3 * step_pred^2))
+            expon_used = max(1, min(solver.expon, T(3) * step_pred^2))
     end
     if btrace(solver.model.nlmi, solver.Xn, solver.Sn) .< 0
-        solver.sigma = 0.8
+        solver.sigma = T(0.8)
     else
         if solver.model.nlmi > 0
             tmp1 = btrace(solver.model.nlmi, solver.Xn, solver.Sn)
@@ -140,7 +179,9 @@ function sigma_update(solver)
                 tmp2 = 0
         end
         tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + solver.model.nlin)
-        solver.sigma = min(1, ((tmp12) / solver.mu)^expon_used)
+        tmp12 = convert(Float64, tmp12)
+        mu = Float64(solver.mu)
+        solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
     end
 
     return solver.sigma
@@ -162,7 +203,33 @@ function corrector(solver,halpha)
     # solving the linear system()
     if solver.kit == 0   # direct solver
     # @timeit to "corrector backsl" begin
-        solver.dely = solver.cholBBBB \ h
+        # solver.cholBBBB = cholesky(BBBB)
+        # solver.dely = solver.cholBBBB \ h
+        solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+        # # Iterative refinement
+        # # resid = h - BBBB * solver.dely;
+        # resid = h - solver.cholBBBB * solver.cholBBBB' * solver.dely
+        # # resid = h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely
+        # if norm(resid)/(1+norm(h)) > 1e-15
+        #     coco = 1
+        #     while coco <= 200
+        #         deldely = solver.cholBBBB \ resid
+        #         # w = BBBB * deldely;
+        #         w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
+        #         # w = solver.cholBBBB.L * solver.cholBBBB.U * deldely
+        #         # w[solver.cholBBBB.p] = w
+        #         alphaIR = resid' * w / (w' * w)
+        #         solver.dely = solver.dely + alphaIR .* deldely
+        #         resid = resid - alphaIR .* w
+        #         coco = coco + 1
+        #         # @show norm(resid)/(1+norm(h)) 
+        #         if norm(resid)/(1+norm(h)) < 1e-50
+        #             # @show norm(resid)/(1+norm(h)) 
+        #             # @show coco
+        #             break
+        #         end
+        #     end
+        # end
     else
         A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
         if solver.preconditioner == 0
@@ -187,7 +254,7 @@ function corrector(solver,halpha)
     end
 end
 
-function find_step(solver)
+function find_step(solver::MySolver{T}) where {T}
     if solver.model.nlmi > 0
         for i = 1:solver.model.nlmi
             @timeit solver.to "find_step_A" begin
@@ -211,7 +278,7 @@ function find_step(solver)
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiX = eigmin(XXX)
+            mimiX = eigmin(T.(XXX))
             end
             if mimiX .> -1e-6
                 solver.alpha[i] = 0.99
@@ -224,7 +291,7 @@ function find_step(solver)
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiS = eigmin(XXX)
+            mimiS = eigmin(T.(XXX))
             end
             if mimiS .> -1e-6
                 solver.beta[i] = 0.99
@@ -277,13 +344,13 @@ function find_step_lin(solver)
     end
     mimiX_lin = minimum(solver.delX_lin ./ solver.X_lin)
     if mimiX_lin .> -1e-6
-        solver.alpha_lin = 0.79
+        solver.alpha_lin = 0.99
     else
         solver.alpha_lin = min(1, -solver.tau / mimiX_lin)
     end
     mimiS_lin = minimum(solver.delS_lin ./ solver.S_lin)
     if mimiS_lin .> -1e-6
-        solver.beta_lin = 0.79
+        solver.beta_lin = 0.99
     else
         solver.beta_lin = min(1, -solver.tau / mimiS_lin)
     end

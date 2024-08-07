@@ -2,9 +2,13 @@
 
 Loraine.jl is a Julia implementation of an interior point method algorithm for linear semidefinite optimization problems. 
 
-The special feature of Loraine is the iterative solver for linear systems. This is to be used for problems with (very) low rank solution matrix.
+Special features of Loraine:
 
-Standard (non-low-rank) problems and linear programs can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
+- Use of an iterative solver for linear systems. This is to be used for problems with (very) low rank solution matrix. Standard (non-low-rank) problems and linear programs can be solved using the direct solver; then the user gets a standard IP method akin SDPT3.
+- Use of high-precision arithmetic (by means of MultiFloats.jl). Only to be used with a direct solver (and relatively small problems). *(New in version 0.2.0.)*
+
+
+
 
 ## Installation 
 
@@ -12,6 +16,36 @@ Install `Loraine` using `Pkg.add`:
 ```julia
 import Pkg
 Pkg.add("Loraine")
+```
+
+## Use with JuMP
+
+To use Loraine with JuMP, use `Loraine.Optimizer` (for a standard double-precision solver) or `Loraine.Optimizer{Float64xN}`, with N = 2,...,8 ; for instance:
+```julia
+using JuMP, Loraine
+model = Model(Loraine.Optimizer)
+set_attribute(model, "maxit", 100)
+```
+or, for high-precision arithmetics,
+```julia
+using JuMP, Loraine
+using MultiFloats
+model = Model(Loraine.Optimizer{Float64x2})
+```
+or, for high-precision arithmetics with high-precision input,
+```julia
+using JuMP, Loraine
+using MultiFloats
+model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer{Float64x2})
+```
+To solve an SDP problem stored in SDPA format, do
+```julia
+using JuMP, Loraine
+# using MultiFloats
+model = read_from_file("examples/data/theta1.dat-s")
+set_optimizer(model, Loraine.Optimizer)
+# set_optimizer(model, Loraine.Optimizer{Float64x8})
+optimize!(model)
 ```
 
 ## License and Original Contributors

@@ -2,8 +2,12 @@ using JuMP
 import MathOptInterface as MOI
 import Loraine
 # import SCS
+using MultiFloats
 
-model = Model(Loraine.Optimizer)
+# model = Model(Loraine.Optimizer)
+# model = Model(Loraine.Optimizer{Float64x2})
+model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer{Float64x2})
+
 # @variable(model, x >= 0)
 # @variable(model, 0 <= y <= 3)
 # @objective(model, Min, 12x + 20y)
@@ -19,9 +23,9 @@ print(model)
 
 optimize!(model)
 
-# solution_summary(model)
+solution_summary(model)
 
-termination_status(model)
+# termination_status(model)
 
 # primal_status(model)
 

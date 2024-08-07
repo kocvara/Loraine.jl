@@ -1,10 +1,10 @@
 ###########################################################################
 #   SUPPORTING FUNCTIONS for Loraine
 ###########################################################################
-function my_kron(A, B, C)
+function my_kron(A::Matrix{T}, B, C) where {T}
     # TMP = B * C * A'
-    TMP1 = Matrix{Float64}(undef,size(C,1),size(A,1))
-    TMP = Matrix{Float64}(undef,size(B,1),size(C,1))
+    TMP1 = Matrix{T}(undef,size(C,1),size(A,1))
+    TMP = Matrix{T}(undef,size(B,1),size(C,1))
     mul!(TMP1,C,A')
     mul!(TMP,B,TMP1)
     return vec(TMP) 
@@ -36,9 +36,3 @@ end
 # a=sparse([7 0;0 5])
 # push!(v,copy(a))
 # v[2]
-
-
-
-
-
-
