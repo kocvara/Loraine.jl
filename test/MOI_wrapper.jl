@@ -4,12 +4,14 @@ import Loraine
 
 function tests()
     optimizer = Loraine.Optimizer()
+    # optimizer = Loraine.Optimizer{Float64x2}()
+    
     # MOI.set(optimizer, MOI.RawOptimizerAttribute("eDIMACS"), 1e-6) # comment this to enable output
     MOI.set(optimizer, MOI.Silent(), false) # comment this to enable output
     bridged = MOI.instantiate(Loraine.Optimizer, with_bridge_type = Float64)
     # Fix for `Unable to query the dual of a variable bound that was reformulated using `ZerosBridge`.
     MOI.Bridges.remove_bridge(bridged, MOI.Bridges.Variable.ZerosBridge{Float64})
-    model = MOI.Utilities.CachingOptimizer(
+    model = MOI.Utilities.CachingOptimizer
         MOI.Utilities.UniversalFallback(MOI.Utilities.Model{Float64}()),
         bridged,
     )

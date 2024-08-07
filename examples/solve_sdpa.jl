@@ -28,7 +28,9 @@ end
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto3.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/thetaG51.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib3.dat-s")
+model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 
+# model=read_sdpa("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
@@ -37,7 +39,7 @@ set_optimizer(model, Loraine.Optimizer{Float64x2})
 
 # Loraine options
 
-set_attribute(model, "kit", 1)
+set_attribute(model, "kit", 0)
 set_attribute(model, "tol_cg", 1.0e-2)
 set_attribute(model, "tol_cg_min", 1.0e-6)
 set_attribute(model, "eDIMACS", 1e-7)
