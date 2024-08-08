@@ -50,9 +50,9 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi::Matrix{T},n,to,qA,sigmaA) where
         # tmp1 = zeros(Float64,size(Wilmi, 2), size(Ailmi[1], 1))
         tmp  = zeros(T,size(Wilmi, 2), size(Ailmi[1], 1))
         i = sigmaA[ii,ilmi]
-        # if ii <= qA[1]
-        if 1==1
-             # @show "one"
+        if ii <= qA[1]
+        # if 1==0
+            # @show "one"
             # @show ii
             @timeit to "BBBBone" begin
                 @timeit to "BBBBone1" begin
@@ -98,6 +98,7 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi::Matrix{T},n,to,qA,sigmaA) where
             end
         # elseif ii <= qA[2]
          elseif 1==0
+        # @show "two"
             @timeit to "BBBBtwo" begin
             mul!(tmp1,Ailmi[i+1],Wilmi)
             @inbounds for jj = ii:n
@@ -162,12 +163,14 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi::Matrix{T},n,to,qA,sigmaA) where
             @timeit to "BBBBthree" begin
             # @show "three"
             # @show ii
+            
             if ~isempty(myA[ilmi1+i].iind)
                 myAiii = myA[ilmi1+i]
                 iii_i = myAiii.iind
                 jjj_i = myAiii.jind
                 vvv_i = myAiii.nzval
-                @inbounds for jj = ii:n
+                # @inbounds for jj = ii:n
+                @inbounds for jj = 1:n
                     j = sigmaA[jj,ilmi]
                     if ~isempty(myA[ilmi1+j].iind)
                         myAjjj = myA[ilmi1+j]

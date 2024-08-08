@@ -144,7 +144,7 @@ function prep_sparse!(A,n,i,nzA,sigmaA,qA)
     d2 = zeros(Float64,n)
     d3 = zeros(Float64,n)
 
-    kappa = 900.
+    kappa = 100.
     for j = 1:n
         nzA[j,i] = nnz(A[i,j+1])
     end

@@ -34,8 +34,8 @@ model=read_sdpa("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
-# set_optimizer(model, Loraine.Optimizer{Float64})
-set_optimizer(model, Loraine.Optimizer{Float64x2})
+set_optimizer(model, Loraine.Optimizer{Float64})
+# set_optimizer(model, Loraine.Optimizer{Float64x2})
 
 # Loraine options
 
