@@ -62,8 +62,8 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi::Matrix{T},n,to,qA,sigmaA) where
                     mul!(tmp,tmp1,Wilmi)
                 end
                 @timeit to "BBBBone3" begin
-                    # tmp2 = AAilmi * vec(tmp)
-                    mul!(tmp2,AAilmi,vec(tmp))
+                    tmp2 = AAilmi * vec(tmp)
+                    # mul!(tmp2,AAilmi,vec(tmp))
                 end
                 @timeit to "BBBBone4" begin
                     BBBB[i:end,i] .= -tmp2[i:end]
