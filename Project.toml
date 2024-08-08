@@ -1,7 +1,7 @@
 name = "Loraine"
 uuid = "df0521af-66a0-42b3-822e-f30debbfe642"
 authors = ["Michal Kocvara <kocvara@penopt.com>"]
-version = "0.2.3"
+version = "0.2.4"
 
 [deps]
 ConjugateGradients = "f59de78d-195d-4e7b-a078-2e47da4c3ad6"
