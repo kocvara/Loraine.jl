@@ -4,28 +4,28 @@ using MultiFloats
 # using MKL
 
 
-function _try_cholesky(solver, X, i::Integer, name::String)
-    try
-        return cholesky(X[i])
-    catch
-        if solver.verb > 0
-            println("Matrix $name not positive definite, trying to regularize")
-        end
-        icount = 0
-        while isposdef(X[i]) == false
-            X[i] += 1e-5 .* I(size(X[i], 1))
-            icount += 1
-            if icount > 1000
-                if solver.verb > 0
-                    println("WARNING: $name cannot be made positive definite, giving up")
-                end
-                solver.status = 4
-                return I(size(X[i], 1))
-            end
-        end
-        return cholesky(X[i])
-    end
-end
+# function _try_cholesky(solver, X, i::Integer, name::String)
+#     try
+#         return cholesky(X[i])
+#     catch
+#         if solver.verb > 0
+#             println("Matrix $name not positive definite, trying to regularize")
+#         end
+#         icount = 0
+#         while isposdef(X[i]) == false
+#             X[i] += 1e-5 .* I(size(X[i], 1))
+#             icount += 1
+#             if icount > 1000
+#                 if solver.verb > 0
+#                     println("WARNING: $name cannot be made positive definite, giving up")
+#                 end
+#                 solver.status = 4
+#                 return I(size(X[i], 1))
+#             end
+#         end
+#         return cholesky(X[i])
+#     end
+# end
 
 
 function _try_cholesky(solver, X, i::Integer, name::String)
