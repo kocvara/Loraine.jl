@@ -24,7 +24,7 @@ mutable struct MyModel
     C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     nzA::Matrix{Int64}
     sigmaA::Matrix{Int64}
-    qA::Vector{Int64}
+    qA::Matrix{Int64}
     b::Vector{Float64}
     b_const::Float64
     d_lin::SparseArrays.SparseVector{Float64, Int64}
@@ -42,7 +42,7 @@ mutable struct MyModel
         C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         nzA::Matrix{Int64},
         sigmaA::Matrix{Int64},
-        qA::Vector{Int64},
+        qA::Matrix{Int64},
         b::Vector{Float64},
         b_const::Float64,
         d_lin::SparseArrays.SparseVector{Float64, Int64},
@@ -116,13 +116,14 @@ function _prepare_A(A, datarank)
     C = SparseMatrixCSC{Float64}[]
     nzA = zeros(Int64,n,nlmi)
     sigmaA = zeros(Int64,n,nlmi)
-    qA = zeros(Int64,2)
+    qA = zeros(Int64,2,nlmi)
 
     for i = 1:nlmi
         
         push!(C, copy(-A[i, 1]))
 
         Ai = A[i,:]
+        m = size(Ai,1)
         AAA = prep_AA!(myA,Ai,n)
         push!(AA, copy(AAA'))
 
@@ -132,67 +133,98 @@ function _prepare_A(A, datarank)
             push!(B, Btmp)
         end
 
-        prep_sparse!(A,n,i,nzA,sigmaA,qA)
+        prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
 
     end
 
     return AA, myA, B, C, nzA, sigmaA, qA
 end
 
-function prep_sparse!(A,n,i,nzA,sigmaA,qA)
-    d1 = zeros(Float64,n)
-    d2 = zeros(Float64,n)
-    d3 = zeros(Float64,n)
+# function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
+#     d1 = zeros(Float64,n)
+#     d2 = zeros(Float64,n)
+#     d3 = zeros(Float64,n)
 
-    kappa = 100.
+#     kappa = 100
+#     kappa = 500000/m
+#     for j = 1:n
+#         nzA[j,i] = nnz(A[i,j+1])
+#     end
+#     sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
+#     @show nzA[:,i]
+#     # @show nzA[sigmaA[:,i],i]
+#     sisi = sort(nzA[sigmaA[:,i],i], rev = true)
+#     # @show sigmaA[:,i]
+#     # @show sisi
+#     cs = cumsum(sisi[end:-1:1])
+#     cs = cs[n:-1:1]
+#     # @show cs
+
+#     for j = 1:n
+#         d1[j] = kappa * m * nzA[sigmaA[j,i],i] + m^3 + kappa * cs[j]
+#         d2[j] = kappa * m * nzA[sigmaA[j,i],i] + kappa * (n+1) * cs[j]
+#         d3[j] = kappa * (2 * kappa * nzA[sigmaA[j,i],i] + 1) * cs[j]
+#     end
+
+#     # @show d1[1:10]
+#     # @show d1[end-9:end]
+#     # @show d2[1:10]
+#     # @show d2[end-9:end]
+#     # @show d3[1:10]
+#     # @show d3[end-9:end]
+
+
+#     qA[1,i] = 0
+#     ktmp = 0
+#     for j = 1:n
+#         if d1[j] > min(d2[j],d3[j])
+#             qA[1,i] = j-1
+#             ktmp = 1
+#             break
+#         end
+#     end
+#     if ktmp == 0
+#         qA[1,i] = n
+#         qA[2,i] = n
+#     else
+#         qA[2,i] = 0
+#         for j = max(1,qA[1,i]):n
+#             if d2[j] >= d1[j] || d2[j] > d3[j]
+#                 qA[2,i] = j-1
+#                 break
+#             end
+#         end
+#     end
+#     qA[2,i] = max(qA[2,i],qA[1,i])
+
+#     @show qA
+
+# end
+
+function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
+
     for j = 1:n
         nzA[j,i] = nnz(A[i,j+1])
     end
-    sisi = sort(nzA[:,i], rev = true)
-    cs = cumsum(sisi[end:-1:1])
-    cs = cs[n:-1:1]
     sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
+    sisi = sort(nzA[sigmaA[:,i],i], rev = true)
+    # @show sisi
 
+    qA[1,i] = n
+    # kappa = max(n * n * 1e-5 , 1)
+    kappa = 16
     for j = 1:n
-        d1[j] = kappa * n * nzA[sigmaA[j,i]] + n^3 + kappa * cs[i]
-        d2[j] = kappa * n * nzA[sigmaA[j,i]] + kappa * (n+1) * cs[i]
-        d3[j] = kappa * (2 * kappa * nzA[sigmaA[j,i]] + 1) * cs[i]
-    end
-
-    # @show d1[1:10]
-    # @show d1[end-9:end]
-    # @show d2[1:10]
-    # @show d2[end-9:end]
-    # @show d3[1:10]
-    # @show d3[end-9:end]
-
-
-    qA[1] = 0
-    ktmp = 0
-    for j = 1:n
-        if d1[j] > min(d2[j],d3[j])
-            qA[1] = j-1
-            ktmp = 1
+        if sisi[j] <= kappa
+            qA[1,i] = j-1
             break
         end
     end
-    if ktmp == 0
-        qA[1] = n
-        qA[2] = n
-    else
-        qA[2] = 0
-        for j = max(1,qA[1]):n
-            if d2[j] >= d1[j] || d2[j] > d3[j]
-                qA[2] = j-1
-                break
-            end
-        end
-    end
-    qA[2] = max(qA[2],qA[1])
+    qA[2,i] = qA[1,i]
 
-    # @show qA
+    @show qA
 
 end
+
 
 function prep_B!(A,n,i)
     m = size(A[i, 1],1)

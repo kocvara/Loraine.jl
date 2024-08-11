@@ -44,14 +44,15 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi::Matrix{T},n,to,qA,sigmaA) where
     ilmi1 = (ilmi-1)*n
 
     # @show qA
-    # @show sigmaA[1:9,1]
+    # @show sigmaA[:,ilmi]
 
     @inbounds for ii = 1:n
         # tmp1 = zeros(Float64,size(Wilmi, 2), size(Ailmi[1], 1))
         tmp  = zeros(T,size(Wilmi, 2), size(Ailmi[1], 1))
         i = sigmaA[ii,ilmi]
-        if ii <= qA[1]
-        # if 1==0
+        if nnz(Ailmi[i+1]) > 0
+        if ii <= qA[1,ilmi]
+        # if 1==1
             # @show "one"
             # @show ii
             @timeit to "BBBBone" begin
@@ -59,44 +60,48 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi::Matrix{T},n,to,qA,sigmaA) where
                     mul!(tmp1,Wilmi,Ailmi[i+1])
                 end
                 @timeit to "BBBBone2" begin
-                    mul!(tmp,tmp1,Wilmi)
+                    # mul!(tmp,tmp1,Wilmi)
+                    tmp = tmp1 * Wilmi
                 end
                 @timeit to "BBBBone3" begin
                     tmp2 = AAilmi * vec(tmp)
                     # mul!(tmp2,AAilmi,vec(tmp))
                 end
                 @timeit to "BBBBone4" begin
-                    BBBB[i:end,i] .= -tmp2[i:end]
+                    indi = sigmaA[ii:end,ilmi]
+                    BBBB[indi,i] .= -tmp2[indi]
+                    BBBB[i,indi] .= -tmp2[indi]
+                    # @show BBBB[1:2,1:2]
                 end
             end
-        elseif 1==0
-            if ~isempty(myA[ilmi1+i].iind)
-                @timeit to "BBBBone1a" begin
-                    myAiii = myA[ilmi1+i]
-                    iii = myAiii.iind
-                    jjj = myAiii.jind
-                    vvv = myAiii.nzval
-                    for j in eachindex(iii)
-                        @timeit to "BBBBone1aaa" begin
-                            tmptmp = Wilmi[:,iii[j]] * vvv[j]
-                        end
-                        @timeit to "BBBBone1abb" begin
-                            mul!(tmp1,tmptmp,(Wilmi[:,jjj[j]])')
-                        end
-                        @timeit to "BBBBone1acc" begin
-                            tmp += tmp1
-                        end
-                    end
-                end
-                # @show norm(tmp - tmp1*Wilmi)
-                @timeit to "BBBBone3a" begin
-                    mul!(tmp2,AAilmi,vec(tmp))
-                end
-                @timeit to "BBBBone4a" begin
-                    BBBB[i:end,i] .= tmp2[i:end]
-                end
-            end
-        # elseif ii <= qA[2]
+        # elseif 1==0
+        #     if ~isempty(myA[ilmi1+i].iind)
+        #         @timeit to "BBBBone1a" begin
+        #             myAiii = myA[ilmi1+i]
+        #             iii = myAiii.iind
+        #             jjj = myAiii.jind
+        #             vvv = myAiii.nzval
+        #             for j in eachindex(iii)
+        #                 @timeit to "BBBBone1aaa" begin
+        #                     tmptmp = Wilmi[:,iii[j]] * vvv[j]
+        #                 end
+        #                 @timeit to "BBBBone1abb" begin
+        #                     mul!(tmp1,tmptmp,(Wilmi[:,jjj[j]])')
+        #                 end
+        #                 @timeit to "BBBBone1acc" begin
+        #                     tmp += tmp1
+        #                 end
+        #             end
+        #         end
+        #         # @show norm(tmp - tmp1*Wilmi)
+        #         @timeit to "BBBBone3a" begin
+        #             mul!(tmp2,AAilmi,vec(tmp))
+        #         end
+        #         @timeit to "BBBBone4a" begin
+        #             BBBB[i:end,i] .= tmp2[i:end]
+        #         end
+        #     end
+        # elseif ii <= qA[2,ilmi]
          elseif 1==0
         # @show "two"
             @timeit to "BBBBtwo" begin
@@ -104,118 +109,142 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,myA,Wilmi::Matrix{T},n,to,qA,sigmaA) where
             @inbounds for jj = ii:n
                 j = sigmaA[jj,ilmi]
                 
-                if ~isempty(myA[ilmi1+j].iind)               
-                    row = Ailmi[j+1].rowval
-                    # @timeit to "BBBBtwo_i_A" begin
+                # if ~isempty(myA[ilmi1+j].iind)               
+                #     row = Ailmi[j+1].rowval
+                #     # @timeit to "BBBBtwo_i_A" begin
+                #     myAjjj = myA[ilmi1+j]
+                #     colval = myAjjj.jind
+                #     rowval = myAjjj.iind
+                #     # end
+                #     # @show row
+                #     # @show colval
+                #     ttt = 0.0
+                #     # @timeit to "BBBBtwo_i_B" begin
+                #     for iAj = 1:length(row)
+                #         # @timeit to "BBBBtwo_i_C" begin
+                #         ttt1 = dot(Wilmi[:,rowval[iAj]],tmp1[colval[iAj],:])
+                #         # end
+                #         ttt += ttt1 * Ailmi[j+1].nzval[iAj]
+                #     end
+                #     # end
+
+                #     BBBB[i,j] = ttt
+                #     if !=(i,j)
+                #         BBBB[j,i] = ttt
+                #     end
+                # end
+
+                if ~isempty(myA[ilmi1+j].iind)
                     myAjjj = myA[ilmi1+j]
-                    colval = myAjjj.jind
-                    rowval = myAjjj.iind
-                    # end
-                    # @show row
-                    # @show colval
+                    iii_j = myAjjj.iind
+                    jjj_j = myAjjj.jind
+                    vvv_j = myAjjj.nzval
                     ttt = 0.0
-                    # @timeit to "BBBBtwo_i_B" begin
-                    for iAj = 1:length(row)
-                        # @timeit to "BBBBtwo_i_C" begin
-                        ttt1 = dot(Wilmi[:,rowval[iAj]],tmp1[colval[iAj],:])
+                    # @timeit to "BBBBtwo_i" begin
+                    @inbounds for iAj in eachindex(iii_j)
+                        # @timeit to "BBBBtwo_ii_A" begin
+                        iiijAj = iii_j[iAj]
+                        jjjjAj = jjj_j[iAj]
                         # end
-                        ttt += ttt1 * Ailmi[j+1].nzval[iAj]
+                        # vvvj = -vvv_j[iAj]    
+                        # @show size(tmp1[1,:])
+                        # @show size(Wilmi[:,1]')
+                        # @timeit to "BBBBtwo_i_B" begin
+                        ttt1 = dot(tmp1[:,iiijAj],Wilmi[:,jjjjAj])
+                        # end
+                        # @timeit to "BBBBtwo_i_C" begin
+                        ttt -= ttt1 * vvv_j[iAj]
+                        # end
                     end
                     # end
-
                     BBBB[i,j] = ttt
                     if !=(i,j)
                         BBBB[j,i] = ttt
                     end
                 end
-
-                # if ~isempty(myA[ilmi1+j].iind)
-                #     myAjjj = myA[ilmi1+j]
-                #     iii_j = myAjjj.iind
-                #     jjj_j = myAjjj.jind
-                #     vvv_j = myAjjj.nzval
-                #     ttt = 0.0
-                #     # @timeit to "BBBBtwo_i" begin
-                #     @inbounds for iAj in eachindex(iii_j)
-                #         # @timeit to "BBBBtwo_ii_A" begin
-                #         iiijAj = iii_j[iAj]
-                #         jjjjAj = jjj_j[iAj]
-                #         # end
-                #         # vvvj = -vvv_j[iAj]    
-                #         # @show size(tmp1[1,:])
-                #         # @show size(Wilmi[:,1]')
-                #         # @timeit to "BBBBtwo_i_B" begin
-                #         ttt1 = dot(tmp1[:,iiijAj],Wilmi[:,jjjjAj])
-                #         # end
-                #         # @timeit to "BBBBtwo_i_C" begin
-                #         ttt -= ttt1 * vvv_j[iAj]
-                #         # end
-                #     end
-                #     # end
-                #     BBBB[i,j] = ttt
-                #     if !=(i,j)
-                #         BBBB[j,i] = ttt
-                #     end
-                end  
+            end  
             end       
             # end
         else
             @timeit to "BBBBthree" begin
             # @show "three"
+            # @show ilmi
             # @show ii
-            
             if ~isempty(myA[ilmi1+i].iind)
                 myAiii = myA[ilmi1+i]
-                iii_i = myAiii.iind
-                jjj_i = myAiii.jind
-                vvv_i = myAiii.nzval
-                # @inbounds for jj = ii:n
-                @inbounds for jj = 1:n
-                    j = sigmaA[jj,ilmi]
-                    if ~isempty(myA[ilmi1+j].iind)
-                        myAjjj = myA[ilmi1+j]
-                        iii_j = myAjjj.iind
-                        jjj_j = myAjjj.jind
-                        vvv_j = myAjjj.nzval
-                        ttt = 0.0
-                        # @timeit to "inner_a" begin
-                        @inbounds for iAj in eachindex(iii_j)
-                            ttt1 = 0.0
-                            iiijAj = iii_j[iAj]
-                            jjjjAj = jjj_j[iAj]
-                            vvvj = vvv_j[iAj]    
-                            # @timeit to "inner" begin
-                            @inbounds for iAi in eachindex(iii_i)
-                                # @timeit to "BBBBinner_a" begin
-                                iiiiAi = iii_i[iAi]
-                                jjjiAi = jjj_i[iAi]
-                                vvvi = vvv_i[iAi]    
-                                # end
-                                # @timeit to "BBBBinner_b" begin
-                                ttt1 += vvvi * Wilmi[iiiiAi,iiijAj] * Wilmi[jjjiAi,jjjjAj]
-                                # ttt1 -= vvv_i[iAi] * Wilmi[iii_i[iAi],iiijAj] * Wilmi[jjj_i[iAi],jjjjAj]
-                                # end
-                            end
-                            # mul!(tmp3,Ailmi[i+1], Wilmi[:,jjjjAj])
-                            # ttt1 = dot(Wilmi[:,iiijAj],tmp3)
+                if size(myAiii.iind,1) > 1
+                    @timeit to "BBBBthree>1" begin
+                    iii_i = myAiii.iind
+                    iii_is = iii_i[1:Int64(sqrt(length(iii_i)))]
+                    # jjj_i = myAiii.jind
+                    # vvv_i = myAiii.nzval
+                    mya1 = Ailmi[i+1][iii_is,iii_is]
+                    @inbounds for jj = ii:n
+                        j = sigmaA[jj,ilmi]
+                        if ~isempty(myA[ilmi1+j].iind)
+                            # @timeit to "BBBBthree_1>1" begin
+                            myAjjj = myA[ilmi1+j]
+                            iii_j = myAjjj.iind
+                            iii_js = iii_j[1:Int64(sqrt(length(iii_j)))]
+                            # jjj_j = myAjjj.jind
+                            # vvv_j = myAjjj.nzval
+                            # ttt = 0.0
+                            myw = Wilmi[iii_is,iii_js]                            
+                            mya2 = Ailmi[j+1][iii_js,iii_js]
                             # end
-                            ttt += ttt1 * vvvj
-                        end
+                            # @timeit to "BBBBthree_2>1" begin
+                            ttt = transpose(vec(transpose(mya1 * myw))) * vec(mya2 * transpose(myw))
+                            # end
+                            # @inbounds for iAj in eachindex(iii_j)
+                            #     ttt1 = 0.0
+                            #     iiijAj = iii_j[iAj]
+                            #     jjjjAj = jjj_j[iAj]
+                            #     vvvj = vvv_j[iAj]    
+                            #     @inbounds for iAi in eachindex(iii_i)
+                            #         iiiiAi = iii_i[iAi]
+                            #         jjjiAi = jjj_i[iAi]
+                            #         vvvi = vvv_i[iAi]    
+                            #         ttt1 += vvvi * Wilmi[iiiiAi,iiijAj] * Wilmi[jjjiAi,jjjjAj]
+                            #         # ttt1 -= vvv_i[iAi] * Wilmi[iii_i[iAi],iiijAj] * Wilmi[jjj_i[iAi],jjjjAj]
+                            #     end
+                            #     ttt += ttt1 * vvvj
+                            # end
+                            # @timeit to "BBBBthree_3>1" begin
+                            if i >= j
+                                BBBB[i,j] = ttt
+                            else
+                                BBBB[j,i] = ttt
+                            end
                         # end
-                        # BBBB[i,j] = ttt
-                        # if !=(i,j)
-                        #     BBBB[j,i] = ttt
-                        # end
-                        if i >= j
-                            BBBB[i,j] = ttt
-                        else
-                            BBBB[j,i] = ttt
+                        end  
+                    end    
+                    end   
+                else
+                    @timeit to "BBBBthree=1" begin
+                    iiiiAi = myAiii.iind[1]
+                    jjjiAi = myAiii.jind[1]
+                    vvvi = myAiii.nzval[1]
+                    @inbounds for jj = ii:n
+                        j = sigmaA[jj,ilmi]
+                        if ~isempty(myA[ilmi1+j].iind)
+                            myAjjj = myA[ilmi1+j]
+                            iiijAj = myAjjj.iind[1]
+                            jjjjAj = myAjjj.jind[1]
+                            vvvj = myAjjj.nzval[1]
+                            ttt = vvvi * Wilmi[iiiiAi,iiijAj] * Wilmi[jjjiAi,jjjjAj] * vvvj
+                            if i >= j
+                                BBBB[i,j] = ttt
+                            else
+                                BBBB[j,i] = ttt
+                            end
                         end
                     end  
-                end       
+                    end 
+                end   
             end
             end
         end
+    end
     end
     # BBBB = (BBBB + BBBB') ./ 2
     return BBBB

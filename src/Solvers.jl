@@ -167,8 +167,8 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
     "kit" => 0,
     "tol_cg" => 1.0e-2,
     "tol_cg_up" => 0.5,
-    "tol_cg_min" => 1.0e-6,
-    "eDIMACS" => 1e-7,
+    "tol_cg_min" => 1.0e-7,
+    "eDIMACS" => 1.0e-7,
     "preconditioner" => 1,
     "erank" => 1,
     "aamat" => 1,
@@ -185,8 +185,8 @@ function load(model, options::Dict; T = Float64)
     kit = Int64(get(options, "kit", 0))
     tol_cg = get(options, "tol_cg", 1.0e-2)
     tol_cg_up = get(options, "tol_cg_up", 0.5)
-    tol_cg_min = get(options, "tol_cg_min", 1.0e-6)
-    eDIMACS = get(options, "eDIMACS", 1e-7)
+    tol_cg_min = get(options, "tol_cg_min", 1.0e-7)
+    eDIMACS = get(options, "eDIMACS", 1.0e-7)
     preconditioner = Int64(get(options, "preconditioner", 1))
     erank = Int64(get(options, "erank", 1))
     aamat = Int64(get(options, "aamat", 1))
@@ -239,7 +239,6 @@ function load(model, options::Dict; T = Float64)
         @printf(" *** Initialisation STARTS\n")
     end
 
-
     if verb > 0
         @printf(" Number of variables: %5d\n",model.n)
         @printf(" LMI constraints    : %5d\n",model.nlmi)
@@ -254,6 +253,36 @@ function load(model, options::Dict; T = Float64)
         else
             @printf(" Preconditioner     :  none, using direct solver\n")
         end
+    end
+
+    # Input parameters check
+    if kit < 0 || kit > 1
+        solver.kit = 0
+        @printf(" ---Parameter kit out of range, setting kit = %1d\n", solver.kit)
+    end
+    if tol_cg < tol_cg_min
+        solver.tol_cg = tol_cg_min
+        @printf(" ---Parameter tol_cg smaller than tol_cg_min, setting tol_cg = %7.1e\n", solver.tol_cg)
+    end
+    if tol_cg_min > eDIMACS
+        solver.tol_cg_min = eDIMACS
+        @printf(" ---Parameter tol_cg_min switched to eDIMACS = %7.1e\n", eDIMACS)
+    end
+    if kit == 1 && (preconditioner < 0 || preconditioner > 4)
+        solver.preconditioner = 1
+        @printf(" ---Parameter preconditioner out of range, setting preconditioner = %1d\n", solver.preconditioner)
+    end
+    if erank < 0 
+        solver.erank = 1
+        @printf(" ---Parameter erank negative, setting erank = %1d\n", solver.erank)
+    end
+    if datarank < -1 
+        solver.datarank = 0
+        @printf(" ---Parameter datarank out of range, setting datarank = %1d\n", solver.datarank)
+    end
+    if initpoint < 0 || initpoint > 1
+        solver.initpoint = 1
+        @printf(" ---Parameter kit out of range, setting initpoint = %1d\n", solver.initpoint)
     end
 
     # @show model.A
