@@ -75,7 +75,7 @@ mutable struct MyModel
 end
 
 
-function prepare_model_data(d)
+function prepare_model_data(d,drank)
 
 msizes = Vector{Int64}
 n = Int64(get(d, "nvar", 1));
@@ -100,7 +100,7 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-drank = 0
+# drank = 0
 model = MyModel(A, _prepare_A(A,drank)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model
@@ -127,7 +127,6 @@ function _prepare_A(A, datarank)
         AAA = prep_AA!(myA,Ai,n)
         push!(AA, copy(AAA'))
 
-        # if 1 == 0
         if datarank == -1
             Btmp = prep_B!(A,n,i)
             push!(B, Btmp)
@@ -212,7 +211,7 @@ function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
 
     qA[1,i] = n
     # kappa = max(n * n * 1e-5 , 1)
-    kappa = 16
+    kappa = 8
     for j = 1:n
         if sisi[j] <= kappa
             qA[1,i] = j-1

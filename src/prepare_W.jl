@@ -64,7 +64,7 @@ function prepare_W(solver::MySolver{T}) where {T}
                 CCtmp = Matrix{T}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
                 @timeit solver.to "prep W SVD svd" begin
-                U, Dtmp, V = svd(CCtmp)
+                U, Dtmp, V = svd(T.(CCtmp))
                 end
             end
 

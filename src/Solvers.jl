@@ -720,7 +720,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
             n = size(solver.W[ilmi],1);
             k = kk[ilmi];
             
-            F = eigen(solver.W[ilmi]); 
+            F = eigen(Float64.(solver.W[ilmi])); 
             vectf = F.vectors
             lambdaf = F.values 
 
