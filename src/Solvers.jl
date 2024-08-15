@@ -31,6 +31,7 @@ mutable struct MySolver{T}
     initpoint::Int64
     timing::Int64
     maxit::Int64
+    datasparsity::Int64
 
     to::Any
 
@@ -120,6 +121,7 @@ mutable struct MySolver{T}
         initpoint::Int64,
         timing::Int64,
         maxit::Int64, 
+        datasparsity::Int64,
         model::MyModel
         ) where {T}
 
@@ -138,6 +140,7 @@ mutable struct MySolver{T}
         solver.initpoint       = initpoint   
         solver.timing          = timing
         solver.maxit           = maxit 
+        solver.datasparsity    = datasparsity
         solver.model           = model
         return solver
     end
@@ -178,6 +181,7 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
     "initpoint" => 0,
     "timing" => 1,
     "maxit" => 100,
+    "datasparsity" => 8,
 )
 
 function load(model, options::Dict; T = Float64)
@@ -195,7 +199,8 @@ function load(model, options::Dict; T = Float64)
     datarank = Int64(get(options, "datarank", 0))
     initpoint = Int64(get(options, "initpoint", 0))
     timing = Int64(get(options, "timing", 1))
-    maxit = Int64(get(options, "maxit", 20))
+    maxit = Int64(get(options, "maxit", 100))
+    datasparsity = Int64(get(options, "maxit", 8))
 
     solver = MySolver{T}(kit,
         tol_cg,
@@ -211,6 +216,7 @@ function load(model, options::Dict; T = Float64)
         initpoint,
         timing,
         maxit, 
+        datasparsity,
         MyModel(model.A,
             model.AA,
             model.myA,

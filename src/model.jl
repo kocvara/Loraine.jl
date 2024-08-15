@@ -101,12 +101,12 @@ else
 end
 
 # drank = 0
-model = MyModel(A, _prepare_A(A,drank)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
+model = MyModel(A, _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model
 end
 
-function _prepare_A(A, datarank)
+function _prepare_A(A, datarank, κ)
 
     nlmi = size(A, 1)
     n = size(A, 2) - 1
@@ -132,7 +132,7 @@ function _prepare_A(A, datarank)
             push!(B, Btmp)
         end
 
-        prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
+        prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
 
     end
 
@@ -140,6 +140,7 @@ function _prepare_A(A, datarank)
 end
 
 # function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
+# This is the Kojima et al data sparsity handling
 #     d1 = zeros(Float64,n)
 #     d2 = zeros(Float64,n)
 #     d3 = zeros(Float64,n)
@@ -164,13 +165,6 @@ end
 #         d2[j] = kappa * m * nzA[sigmaA[j,i],i] + kappa * (n+1) * cs[j]
 #         d3[j] = kappa * (2 * kappa * nzA[sigmaA[j,i],i] + 1) * cs[j]
 #     end
-
-#     # @show d1[1:10]
-#     # @show d1[end-9:end]
-#     # @show d2[1:10]
-#     # @show d2[end-9:end]
-#     # @show d3[1:10]
-#     # @show d3[end-9:end]
 
 
 #     qA[1,i] = 0
@@ -200,7 +194,8 @@ end
 
 # end
 
-function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
+function prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
+    # Simplified data sparsity handling
 
     for j = 1:n
         nzA[j,i] = nnz(A[i,j+1])
@@ -210,8 +205,7 @@ function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
     # @show sisi
 
     qA[1,i] = n
-    # kappa = max(n * n * 1e-5 , 1)
-    kappa = 8
+    kappa = κ
     for j = 1:n
         if sisi[j] <= kappa
             qA[1,i] = j-1
@@ -220,7 +214,7 @@ function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
     end
     qA[2,i] = qA[1,i]
 
-    @show qA
+    # @show qA
 
 end
 

@@ -28,21 +28,13 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
             # if 1 == 0
                 BBBB = makeBBBB_rank1(solver.model.n, solver.model.nlmi, solver.model.B, solver.G, solver.to)
             else
-                # BBBB = makeBBBB(solver.model.n,solver.model.nlmi,solver.model.A,solver.G)   
-                # BBBB = makeBBBBalt(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W,solver.to)    
-                # BBBB = makeBBBBalt1(solver.model.n÷,solver.model.nlmi,solver.model.A,solver.model.AA,solver.W)  
-                # BBBB = makeBBBBsp(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
-                # BBBB = makeBBBBsp2(solver.model.n,solver.model.nlmi,solver.model.A,solver.model.myA,solver.W) 
                 BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.model.myA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
-                # @show norm(BBBB-Hermitian(BBBB, :L))
             end
         else
             BBBB = zeros(T, solver.model.n, solver.model.n)
         end
         if solver.model.nlin > 0
             BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
-            # BBBB = Hermitian(BBBB, :L)
-            # BBBBlin = (BBBBlin + BBBBlin') ./ 2
         end
         BBBB = Hermitian(BBBB, :L)
     end
@@ -64,7 +56,6 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
             try
                 cholBBBB1, cholBBBB2 = cholesky(BBBB)
                 solver.cholBBBB = cholBBBB1
-                # @show norm(BBBB[solver.cholBBBB.p,:] - solver.cholBBBB.L * solver.cholBBBB.U)
             catch err
                 if solver.verb > 0
                     println("Matrix H not positive definite, trying to regularize")
@@ -367,14 +358,7 @@ function find_step_lin(solver)
         solver.X_lin = solver.X_lin + minimum([solver.alpha; solver.alpha_lin]) .* solver.delX_lin
         solver.S_lin = solver.S_lin + minimum([solver.beta; solver.beta_lin]) .* solver.delS_lin
         solver.S_lin_inv = 1 ./ solver.S_lin
-
-        
-        # @show minimum([solver.alpha; solver.alpha_lin])
-        # @show solver.delX_lin
-        # @show solver.X_lin
-    
     end
-
-
+    
     return 
 end

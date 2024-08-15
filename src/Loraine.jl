@@ -33,6 +33,7 @@ function loraine(d, options::Dict)
     timing = Int64(get(options, "timing", 1))
     kit    = Int64(get(options, "kit", 1))
     drank    = Int64(get(options, "datarank", 1))
+    κ = Int64(get(dest.options,"datasparsity",1))
     if verb > 0
         t1 = time()
         # @printf("\n *** Loraine.jl v0.1 ***\n")
@@ -40,7 +41,7 @@ function loraine(d, options::Dict)
     end
 
     ```PREPARE MODEL```
-    model = prepare_model_data(d,drank)
+    model = prepare_model_data(d,drank,κ)
 
     ```LOAD MODEL```
     solver, halpha = load(model,options)

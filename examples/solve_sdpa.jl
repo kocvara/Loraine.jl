@@ -25,14 +25,15 @@ end
 # model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer)
 
 # Select your semidefinite optimization problem in SDPA input format
-model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto2.dat-s")
+# model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto2.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/control3.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib5.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 
 # model=read_sdpa("examples/data/theta1.dat-s")
+model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/theta1.dat-s")
-model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
+# model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
 set_optimizer(model, Loraine.Optimizer{Float64})
 # set_optimizer(model, Loraine.Optimizer{Float64x2})
@@ -50,6 +51,7 @@ set_attribute(model, "verb", 1)
 set_attribute(model, "datarank", 0)
 set_attribute(model, "initpoint", 1)
 set_attribute(model, "maxit", 100)
+set_attribute(model, "datasparsity", 8)
 
 # set_optimizer(model, CSDP.Optimizer)
 optimize!(model)
@@ -61,8 +63,8 @@ optimize!(model)
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient
 
-set_optimizer(model, CSDP.Optimizer)
-dual_model = dualize(model, CSDP.Optimizer)
-@time optimize!(dual_model)
+# set_optimizer(model, CSDP.Optimizer)
+# dual_model = dualize(model, CSDP.Optimizer)
+# @time optimize!(dual_model)
 
 # termination_status(model)

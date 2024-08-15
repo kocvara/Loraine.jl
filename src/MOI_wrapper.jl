@@ -208,9 +208,10 @@ function MOI.copy_to(dest::Optimizer{T}, src::OptimizerCache) where {T}
 
     AA = Any[sparse(IJV...) for IJV in A]
     drank = get(dest.options,"datarank",1)
+    κ = get(dest.options,"datasparsity",1)
     model = MyModel(
         AA,
-        Solvers._prepare_A(AA,drank)...,
+        Solvers._prepare_A(AA,drank,κ)...,
         b,
         b_const,
         convert(SparseVector{Float64,Int64}, sparsevec(Cd_lin.constants)),
