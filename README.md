@@ -96,6 +96,8 @@ datarank        # 0..full rank matrices expected [0]
 initpoint       # 0..Loraine heuristics, 1..SDPT3-like heuristics [0]
 timing          # 1..yes, 0..no
 maxit           # maximal number of global iterations [200]
+datasparsity    # data matrices treated as sparse when number of their 
+                # non-zero elements is below this parameter [8]
 ```
 
 ## Citing

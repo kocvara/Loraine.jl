@@ -17,6 +17,8 @@ datarank        # 0..full rank matrices expected [0]
 initpoint       # 0..Loraine heuristics, 1..SDPT3-like heuristics [0]
 timing          # 1..yes, 0..no
 maxit           # maximal number of global iterations [200]
+datasparsity    # data matrices treated as sparse when number of their 
+                # non-zero elements is below this parameter [8]
 ```
 
 ## Comments
@@ -44,3 +46,10 @@ maxit           # maximal number of global iterations [200]
 - `timing` is not used when Loraine is called from JuMP
 
 - `tol_cg, tol_cg_up, aamat`: it is not recommended to change values of these options, unless you really want to
+
+- `datasparsity` 
+    - data matrices treated as sparse when number of their non-zero elements is below `datasparsity` as as    dense otherwise; used when computing the Schur complement matrix
+    - when set to zero, all matrices treated as dense
+    - set to high number to treat all matrices as sparse
+    - recommended setting between 1-16, default value is 8
+    - wrong setting can very significantly influence the CPU time

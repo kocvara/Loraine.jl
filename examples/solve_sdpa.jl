@@ -3,7 +3,7 @@
 
 using JuMP
 import Loraine 
-import CSDP
+# import CSDP
 # import SCS
 # using Mosek
 # using MosekTools
