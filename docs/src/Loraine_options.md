@@ -35,7 +35,7 @@ datasparsity    # data matrices treated as sparse when number of their
     - hybrid (`preconditioner = 4`) starts with (cheaper) `H_beta` and once it gets into difficulties, switches to `H_alpha`
 
 - `erank` (only used when `kit = 1` and `preconditioner > 0`)
-    - if you are not sure what the actual rank of the solution is, **always choose** `erank = 1`; with inreasing value of `erank`, the complexity of the preconditioner grows and the whole code could be slower, despite neding fewer CG iterations
+    - if you are not sure what the actual rank of the solution is, **always choose** `erank = 1`; with inreasing value of `erank`, the complexity of the preconditioner grows and the whole code could be slower, despite needing fewer CG iterations
     - only if you are sure about the rank of the solution, set `erank` to this value (but you should always compare it to `erank = 1`)
 
 - `datarank` (only used with the direct solver `kit = 0`)
