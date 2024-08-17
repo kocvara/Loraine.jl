@@ -1,7 +1,7 @@
 name = "Loraine"
 uuid = "df0521af-66a0-42b3-822e-f30debbfe642"
 authors = ["Michal Kocvara <kocvara@penopt.com>"]
-version = "0.2.4"
+version = "0.2.5"
 
 [deps]
 CSDP = "0a46da34-8e4b-519e-b418-48813639ff34"

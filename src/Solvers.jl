@@ -241,7 +241,7 @@ function load(model, options::Dict; T = Float64)
 
     if verb > 0
         t1 = time()
-        @printf("\n *** Loraine.jl v0.2.4 ***\n")
+        @printf("\n *** Loraine.jl v0.2.5 ***\n")
         @printf(" *** Initialisation STARTS\n")
     end
 
