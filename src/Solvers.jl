@@ -266,11 +266,11 @@ function load(model, options::Dict; T = Float64)
         solver.kit = 0
         @printf(" ---Parameter kit out of range, setting kit = %1d\n", solver.kit)
     end
-    if tol_cg < tol_cg_min
+    if tol_cg < tol_cg_min && kit == 1
         solver.tol_cg = tol_cg_min
         @printf(" ---Parameter tol_cg smaller than tol_cg_min, setting tol_cg = %7.1e\n", solver.tol_cg)
     end
-    if tol_cg_min > eDIMACS
+    if tol_cg_min > eDIMACS && kit == 1
         solver.tol_cg_min = eDIMACS
         @printf(" ---Parameter tol_cg_min switched to eDIMACS = %7.1e\n", eDIMACS)
     end
@@ -575,12 +575,12 @@ function check_convergence(solver)
             end
     end
 
-    if DIMACS_error > 1e25 
+    if DIMACS_error > 1e55 
         solver.status = 2
         if solver.verb > 0
             println("WARNING: Problem probably infeasible (stopping status = 2)")
         end
-    elseif DIMACS_error > 1e25 || abs(dot(solver.y, solver.model.b')) > 1e25
+    elseif DIMACS_error > 1e55 || abs(dot(solver.y, solver.model.b')) > 1e55
         solver.status = 3
         if solver.verb > 0
             println("WARNING: Problem probably unbounded or infeasible (stopping status = 3)")
