@@ -1,7 +1,3 @@
-# module Model
-
-# NOT WORKING!!!
-
 export prepare_model_data, MyModel, SpMa
 
 using SparseArrays
@@ -100,7 +96,6 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-# drank = 0
 model = MyModel(A, _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
 
 return model

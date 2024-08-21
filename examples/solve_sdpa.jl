@@ -8,7 +8,7 @@ import Loraine
 # using Mosek
 # using MosekTools
 # import Hypatia
-using Dualization
+# using Dualization
 using MultiFloats
 
 function read_sdpa(

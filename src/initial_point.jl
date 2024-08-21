@@ -1,7 +1,5 @@
-# function initial_point(msizes,nlin,nlmi,AA,b,C,C_lin,d_lin)
 function initial_point(solver)
 
-    # @timeit to "initialization" begin
    find_initial!(solver)
 
     solver.sigma = 3
@@ -16,7 +14,6 @@ function initial_point(solver)
 
 end
 
-# function  tvp_initial(msizes,nlmi,A,b,C,nlin,C_lin,d_lin)
 function  find_initial!(solver)
 
     C_lin = solver.model.C_lin'
@@ -54,7 +51,7 @@ function  find_initial!(solver)
         else
             for j=1:n
                 normClin = 1+norm(solver.model.C_lin[j,:])
-                p[j]=b2[j]./normClin;
+                p[j] = b2[j] ./ normClin;
             end
             Epss = max(1, maximum(p))
         end
