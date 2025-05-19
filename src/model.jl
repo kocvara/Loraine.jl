@@ -16,6 +16,32 @@ struct SpMa{Tv,Ti<:Integer}
     nzval::Vector{Tv}
 end
 
+"""
+    MyModel
+
+Model representing the problem:
+```math
+\\begin{aligned}
+\\max {} & b^\\top y - b_\\text{const}
+\\\\
+& \\sum_{j=1}^n y_j A_{i,j} \\preceq C_i
+\\qquad
+\\forall i \\in \\{1,\\ldots,\\text{nlmi}\\}
+\\\\
+& C_\\text{lin} y \\le d_\\text{lin}
+\\end{aligned}
+```
+The fields of the `struct` as related to the arrays of the above formulation as follows:
+
+* The ``i``th PSD constraint is of size `msize[i] × msisze[i]`
+* The matrix ``C_i`` is given by `C[i]` which should be equal to `-A[i,1]`.
+* The matrix ``A_{i,j}`` is given by `-A[i,j+1]` as well as `myA[(i-1)*n + j]`.
+* The vectorization `vec(A[i,j+1])` is also given by `-AA[i][:,j]`
+* If `datarank == -1`, ``A_{i,j}`` is also equal to `-B[i][j,:] * B[i][j,:]'`.
+* The matrix ``A_{i,j}`` has `nzA[j,i]` nonzero entries
+* The index `j = sigmaA[k,i]` is the `k`th matrix ``A_{i,j}`` of the largest number of nonzeros.
+* The first `qA[1,i] = qA[2,i]` matrices are considered as dense in the computation.
+"""
 mutable struct MyModel
     A::Matrix{Any}
     AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
