@@ -227,7 +227,7 @@ function prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
         nzA[j,i] = nnz(A[i,j+1])
     end
     sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
-    sisi = sort(nzA[sigmaA[:,i],i], rev = true)
+    sisi = nzA[sigmaA[:,i],i]
     # @show sisi
 
     qA[1,i] = n
