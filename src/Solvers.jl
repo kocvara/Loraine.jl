@@ -411,26 +411,6 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     halpha.Z = Matrix{T}[]
     halpha.AAAATtau = SparseMatrixCSC{T}[]
 
-    # @show solver.model.A
-    # @show solver.model.b
-    # @show solver.model.b_const
-    # @show solver.model.C
-    # @show solver.model.d_lin
-    # @show solver.model.C_lin
-
-    # model = new()
-    # model.A = A
-    # model.AA = AA
-    # model.myA = myA
-    # model.C = C
-    # model.b = b
-    # model.d_lin = d_lin
-    # model.C_lin = C_lin
-    # model.n = n
-    # model.msizes = msizes
-    # model.nlin = nlin
-    # model.nlmi = nlmi
-
     for i = 1:solver.model.nlmi
         push!(halpha.Umat,zeros(solver.model.msizes[i], solver.erank))
         push!(halpha.Z,zeros(solver.model.msizes[i], solver.model.msizes[i]))
@@ -537,7 +517,6 @@ function check_convergence(solver)
         solver.err5 = (btrace(solver.model.nlmi, solver.model.C, solver.X) + dot(solver.model.d_lin', solver.X_lin) - dot(solver.model.b',solver.y)) / (1 + abs(btrace(solver.model.nlmi, solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
         solver.err6 = solver.err6 + dot(solver.S_lin' , solver.X_lin) / (1 + abs(dot(solver.model.d_lin', solver.X_lin)) + abs(dot(solver.model.b', solver.y)))
     end
-    # @show solver.err1
 
     if solver.model.nlmi > 0
         DIMACS_error = solver.err1 + solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
@@ -610,21 +589,21 @@ function (t::MyA)(Ax::Vector{T}, x::Vector{T}) where {T}
         for ilmi = 1:nlmi
             waxwtmp = Matrix{T}(undef,size(t.W[ilmi]))
             waxw = Matrix{T}(undef,size(t.W[ilmi]))
-            @timeit t.to "Ax1" begin
+            # @timeit t.to "Ax1" begin
             ax = Vector{T}(undef,size(t.AA[ilmi],2))
-            end
-            @timeit t.to "Ax2" begin
+            # end
+            # @timeit t.to "Ax2" begin
             mul!(ax, transpose(t.AA[ilmi]), x)
             # ax = transpose(t.AA[ilmi]) * x
-            end
-            @timeit t.to "Ax3" begin
+            # end
+            # @timeit t.to "Ax3" begin
             # waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
             mul!(waxwtmp,t.W[ilmi], mat(ax))
             mul!(waxw, waxwtmp, t.W[ilmi])
-            end
-            @timeit t.to "Ax4" begin
+            # end
+            # @timeit t.to "Ax4" begin
             ax1 .+= t.AA[ilmi] * waxw[:]
-            end
+            # end
         end
     end
     if t.nlin>0
@@ -665,8 +644,8 @@ function Prec_for_CG_beta(solver,halpha)
             lambdaf = F.values 
             lambda_s = lambdaf[1:n-k]
 
-            if solver.aamat==0
-                ttau = 1.0*minimum(lambda_s)
+            if solver.aamat == 0
+                ttau = 1.0 * minimum(lambda_s)
             else
                 ttau = (minimum(lambda_s) + mean(lambda_s))/2.0 - 1.0e-14
             end
@@ -718,7 +697,6 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
             sizeS += kk[ilmi] * size(solver.W[ilmi],1)
         end
     end
-    # S = zeros(sizeS,sizeS)
     
     lbt = 1; lbs=1;
     if nlmi > 0
@@ -735,39 +713,30 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
             vect_s = vectf[:,1:n-k]
             lambda_s = lambdaf[1:n-k]
 
-            if solver.aamat==0
-                ttau = 1.0*minimum(lambda_s)
+            if solver.aamat == 0
+                ttau = 1.0 * minimum(lambda_s)
             else
                 ttau = (minimum(lambda_s) + mean(lambda_s))/2 - 1.0e-14
             end
             
             halpha.Umat[ilmi] = sqrt.(spdiagm(lambda_l) - ttau .* I(k))
             halpha.Umat[ilmi] = vect_l * halpha.Umat[ilmi]
-            # m = size(halpha.Umat[ilmi],1);
             
-            @timeit solver.to "prec1" begin
+            # @timeit solver.to "prec1" begin
             W0 = [vect_s vect_l]*[spdiagm(lambda_s[:]) spzeros(n-k,k); spzeros(k,n-k) ttau * I(k)] * [vect_s vect_l]'
-            end
+            # end
 
-            @timeit solver.to "prec2" begin
-            # Z = cholesky(2 .* Hermitian(W0) + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
+            # @timeit solver.to "prec2" begin
             W0 = (W0 + W0') ./ 2
             Ztmp = cholesky(2 .* W0 + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
             push!(halpha.Z,Ztmp.L)
-        end
-            
-            # switch aamat
-                # case 0
-                    # ZZZ = solver.model.AAAAT{ilmi};
-                # case 1
-                    # ZZZ = spdiags(diag(AAAAT{ilmi}),0,nvar,nvar);
-                if solver.aamat < 3
-                    ZZZ = spdiagm(ones(nvar))
-                else
-                    ZZZ = spzeros(nvar,nvar)
-                end
             # end
             
+            if solver.aamat < 3
+                ZZZ = spdiagm(ones(nvar))
+            else
+                ZZZ = spzeros(nvar,nvar)
+            end
             halpha.AAAATtau .+= ttau^2 .* ZZZ
         end
     end
@@ -782,7 +751,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
     end
     k = kk[1]
     if k > 1 #slow formula
-        @timeit solver.to "prec3" begin
+        # @timeit solver.to "prec3" begin
         t = zeros(nvar, k*didi)
         if nlmi > 0
             for ilmi = 1:nlmi
@@ -793,7 +762,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
                 lbt = lbt + k*n
             end
         end
-        end
+        # end
         
         @timeit solver.to "prec4" begin
         S = t' * (halpha.AAAATtau\t) 
@@ -864,26 +833,25 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
             @timeit solver.to "prec30" begin
             AAs = AAAATtau_d * solver.model.AA[ilmi]
             end
-            @timeit solver.to "prec31" begin
+            # @timeit solver.to "prec31" begin
             ii_, jj_, aa_ = findnz(AAs)
             qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
             pp_ = mod.(jj_ .- 1, n) .+ 1
             aau = Vector{T}(undef,length(aa_))
             aau .= aa_ .* halpha.Umat[ilmi][qq_]
             AU = sparse(ii_,pp_,aau,nvar,n)
-            end
+            # end
             if solver.model.nlmi>1
-                @timeit solver.to "prec32" begin
+                # @timeit solver.to "prec32" begin
                 didi1 = size(solver.W[ilmi],1)
                 ttmp = Matrix{T}(undef,nvar,kk[ilmi]*didi1)
                 mul!(ttmp, AU, halpha.Z[ilmi])
                 t[1:nvar,lbt:lbt+k*n-1] = ttmp
-                # t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
-                end
+                # end
             else
-                @timeit solver.to "prec32" begin
+                # @timeit solver.to "prec32" begin
                 mul!(t, AU, halpha.Z[1])
-                end
+                # end
             end
             lbt = lbt + k*n
         end 
