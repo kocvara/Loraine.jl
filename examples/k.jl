@@ -25,18 +25,14 @@ optimize!(model)
 
 solution_summary(model)
 
-# termination_status(model)
+using Test
+@test termination_status(model) == MOI.OPTIMAL
+@test primal_status(model) == MOI.FEASIBLE_POINT
+@test dual_status(model) == MOI.FEASIBLE_POINT
+@test objective_value(model) ≈ 4 rtol = 1e-6
 
-# primal_status(model)
+@test value(x) ≈ 2 rtol = 1e-6
 
-# dual_status(model)
+@test shadow_price(c1) ≈ 0 atol = 1e-6
 
-# objective_value(model)
-
-# value(x)
-
-# value(y)
-
-# shadow_price(c1)
-
-# shadow_price(c2)
+@test shadow_price(c2) ≈ 2 rtol = 1e-6
