@@ -5,4 +5,4 @@ Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
 Loraine = "df0521af-66a0-42b3-822e-f30debbfe642"
 
 [compat]
-Documenter = "0.27"
+Documenter = "1"
