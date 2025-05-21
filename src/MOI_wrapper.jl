@@ -312,7 +312,7 @@ function MOI.get(model::Optimizer, ::MOI.ResultCount)
     end
 end
 
-function MOI.get(optimizer::Optimizer, attr::MOI.ObjectiveValue)
+function MOI.get(optimizer::Optimizer, attr::MOI.ObjectiveValue)::Float64
     MOI.check_result_index_bounds(optimizer, attr)
     val = dot(optimizer.solver.model.b, optimizer.solver.y) - optimizer.solver.model.b_const
     return optimizer.max_sense ? val : -val
@@ -335,7 +335,7 @@ function MOI.get(
     optimizer::Optimizer,
     attr::MOI.ConstraintDual,
     ci::MOI.ConstraintIndex{VAF,PSD},
-)
+)::Vector{Float64}
     MOI.check_result_index_bounds(optimizer, attr)
     lmi_id = optimizer.lmi_id[ci]
     X = optimizer.solver.X[lmi_id]
@@ -347,7 +347,7 @@ function MOI.get(
     optimizer::Optimizer,
     attr::MOI.ConstraintDual,
     ci::MOI.ConstraintIndex{VAF,NNG},
-)
+)::Vector{Float64}
     MOI.check_result_index_bounds(optimizer, attr)
     rows = MOI.Utilities.rows(optimizer.lin_cones, ci)
     return optimizer.solver.X_lin[rows]

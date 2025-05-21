@@ -1,6 +1,5 @@
 using JuMP
 import LinearAlgebra
-import Plots
 import Random
 # import SCS
 import Loraine
@@ -29,7 +28,19 @@ function example_minimum_distortion()
     Test.@test primal_status(model) == FEASIBLE_POINT
     Test.@test objective_value(model) ≈ 4 / 3 atol = 1e-4
     # Recover the minimal distorted embedding:
-    X = [zeros(3) sqrt(value.(Q)[2:end, 2:end])]
+    return value(Q)
+end
+
+Q = example_minimum_distortion()
+@test Q ≈ [
+    0  0  0  0
+    0  4 -2 -2
+    0 -2  4 -2
+    0 -2 -2  4
+] / 3 rtol = 1e-6
+
+function plot_distortion(Q)
+    X = [zeros(3) sqrt(Q[2:end, 2:end])]
     return Plots.plot(
         X[1, :],
         X[2, :],
@@ -48,4 +59,5 @@ function example_minimum_distortion()
     )
 end
 
-example_minimum_distortion()
+# import Plots
+# plot_distortion(Q)

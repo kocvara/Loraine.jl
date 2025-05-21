@@ -17,11 +17,15 @@ function example_correlation_problem()
     @objective(model, Max, ρ["A", "C"])
     
     optimize!(model)
-    println("An upper bound for ρ_AC is $(value(ρ["A", "C"]))")
+    upper = value(ρ["A", "C"])
+    println("An upper bound for ρ_AC is $upper")
     @objective(model, Min, ρ["A", "C"])
     optimize!(model)
-    println("A lower bound for ρ_AC is $(value(ρ["A", "C"]))")
-    return
+    lower = value(ρ["A", "C"])
+    println("A lower bound for ρ_AC is $lower")
+    return lower, upper
 end
 
-example_correlation_problem()
+lower, upper = example_correlation_problem()
+@test lower ≈ -0.9779977649 rtol = 1e-6
+@test upper ≈  0.8719210472 rtol = 1e-6
