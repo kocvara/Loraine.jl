@@ -233,9 +233,7 @@ function prep_B!(A,n,i)
             bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
             tmp2 = bbb * bbb'
             if norm(tmp - tmp2) > 5.0e-6
-                drank = 0
-                println("\n WARNING: data conversion problem, switching to datarank = 0")
-                break
+                error("Obtained an error of `$(norm(tmp - tmp2)) > 5e-6` when converting matrix into rank `1`, use `datarank = 0` to disable the rank-1 conversion.")
             end
             Btmp[k, bidx] = bbb
         end
