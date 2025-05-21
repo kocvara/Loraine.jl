@@ -288,7 +288,6 @@ function prep_AA!(myA,Ai,n)
     iii = zeros(Int64, nnz)
     jjj = zeros(Int64, nnz)
     vvv = zeros(Float64, nnz)
-    AAA1 = spzeros(ntmp, n)
     lb = 1
     @inbounds for j = 1:n      
         ii,vv = findnz(-(Ai[j+1])[:])
