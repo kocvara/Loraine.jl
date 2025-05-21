@@ -21,7 +21,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
         Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
     end
 
-    if solver.kit .== 0   # if direct solver; compute the Hessian matrix
+    if solver.kit == 0   # if direct solver; compute the Hessian matrix
     # @timeit solver.to "BBBB" begin
         if solver.model.nlmi > 0
             if solver.datarank == -1
