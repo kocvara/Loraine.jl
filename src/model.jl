@@ -12,6 +12,32 @@ struct SpMa{Tv,Ti<:Integer}
     nzval::Vector{Tv}
 end
 
+"""
+    MyModel
+
+Model representing the problem:
+```math
+\\begin{aligned}
+\\max {} & b^\\top y - b_\\text{const}
+\\\\
+& \\sum_{j=1}^n y_j A_{i,j} \\preceq C_i
+\\qquad
+\\forall i \\in \\{1,\\ldots,\\text{nlmi}\\}
+\\\\
+& C_\\text{lin} y \\le d_\\text{lin}
+\\end{aligned}
+```
+The fields of the `struct` as related to the arrays of the above formulation as follows:
+
+* The ``i``th PSD constraint is of size `msize[i] × msisze[i]`
+* The matrix ``C_i`` is given by `C[i]` which should be equal to `-A[i,1]`.
+* The matrix ``A_{i,j}`` is given by `-A[i,j+1]` as well as `myA[(i-1)*n + j]`.
+* The vectorization `vec(A[i,j+1])` is also given by `-AA[i][:,j]`
+* If `datarank == -1`, ``A_{i,j}`` is also equal to `-B[i][j,:] * B[i][j,:]'`.
+* The matrix ``A_{i,j}`` has `nzA[j,i]` nonzero entries
+* The index `j = sigmaA[k,i]` is the `k`th matrix ``A_{i,j}`` of the largest number of nonzeros.
+* The first `qA[1,i] = qA[2,i]` matrices are considered as dense in the computation.
+"""
 mutable struct MyModel
     A::Matrix{Any}
     AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
@@ -196,7 +222,7 @@ function prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
         nzA[j,i] = nnz(A[i,j+1])
     end
     sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
-    sisi = sort(nzA[sigmaA[:,i],i], rev = true)
+    sisi = nzA[sigmaA[:,i],i]
     # @show sisi
 
     qA[1,i] = n
@@ -228,9 +254,7 @@ function prep_B!(A,n,i)
             bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
             tmp2 = bbb * bbb'
             if norm(tmp - tmp2) > 5.0e-6
-                drank = 0
-                println("\n WARNING: data conversion problem, switching to datarank = 0")
-                break
+                error("Obtained an error of `$(norm(tmp - tmp2)) > 5e-6` when converting matrix into rank `1`, use `datarank = 0` to disable the rank-1 conversion.")
             end
             Btmp[k, bidx] = bbb
         end
@@ -259,7 +283,6 @@ function prep_AA!(myA,Ai,n)
     iii = zeros(Int64, nnz)
     jjj = zeros(Int64, nnz)
     vvv = zeros(Float64, nnz)
-    AAA1 = spzeros(ntmp, n)
     lb = 1
     @inbounds for j = 1:n      
         ii,vv = findnz(-(Ai[j+1])[:])

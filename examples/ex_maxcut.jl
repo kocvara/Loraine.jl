@@ -1,6 +1,6 @@
 using JuMP
 import LinearAlgebra
-import Plots
+# import Plots
 import Random
 # import SCS
 import Loraine
@@ -41,3 +41,7 @@ function solve_max_cut_sdp(weights)
 end
 
 S, T = solve_max_cut_sdp([0 1 5 0; 1 0 0 9; 5 0 0 2; 0 9 2 0])
+
+using Test
+@test S == [1, 4]
+@test T == [2, 3]

@@ -31,7 +31,7 @@ end
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 
 # model=read_sdpa("examples/data/theta1.dat-s")
-model=read_from_file("examples/data/theta1.dat-s")
+model=read_from_file(joinpath(dirname(@__DIR__), "examples/data/theta1.dat-s"))
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
@@ -57,7 +57,8 @@ set_attribute(model, "datasparsity", 8)
 optimize!(model)
 
 # solution_summary(model)
-# # objective_value(model)
+using Test
+@test objective_value(model) ≈ 23 rtol = 1e-6
 # # value.(X)
 
 # Mosek (CSDP, etc) for a comparison
