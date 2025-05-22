@@ -149,7 +149,7 @@ function _prepare_A(A, datarank, κ)
         push!(AA, copy(AAA'))
 
         if datarank == -1
-            Btmp = prep_B!(A,n,i)
+            Btmp = prep_B(A,n,i)
             push!(B, Btmp)
         end
 
@@ -184,7 +184,7 @@ function prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
     # @show qA
 end
 
-function prep_B!(A,n,i)
+function prep_B(A,n,i)
     m = size(A[i, 1],1)
     Btmp = spzeros(n,m)
 
