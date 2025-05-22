@@ -160,60 +160,6 @@ function _prepare_A(A, datarank, κ)
     return AA, myA, B, C, nzA, sigmaA, qA
 end
 
-# function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
-# This is the Kojima et al data sparsity handling
-#     d1 = zeros(Float64,n)
-#     d2 = zeros(Float64,n)
-#     d3 = zeros(Float64,n)
-
-#     kappa = 100
-#     kappa = 500000/m
-#     for j = 1:n
-#         nzA[j,i] = nnz(A[i,j+1])
-#     end
-#     sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
-#     @show nzA[:,i]
-#     # @show nzA[sigmaA[:,i],i]
-#     sisi = sort(nzA[sigmaA[:,i],i], rev = true)
-#     # @show sigmaA[:,i]
-#     # @show sisi
-#     cs = cumsum(sisi[end:-1:1])
-#     cs = cs[n:-1:1]
-#     # @show cs
-
-#     for j = 1:n
-#         d1[j] = kappa * m * nzA[sigmaA[j,i],i] + m^3 + kappa * cs[j]
-#         d2[j] = kappa * m * nzA[sigmaA[j,i],i] + kappa * (n+1) * cs[j]
-#         d3[j] = kappa * (2 * kappa * nzA[sigmaA[j,i],i] + 1) * cs[j]
-#     end
-
-
-#     qA[1,i] = 0
-#     ktmp = 0
-#     for j = 1:n
-#         if d1[j] > min(d2[j],d3[j])
-#             qA[1,i] = j-1
-#             ktmp = 1
-#             break
-#         end
-#     end
-#     if ktmp == 0
-#         qA[1,i] = n
-#         qA[2,i] = n
-#     else
-#         qA[2,i] = 0
-#         for j = max(1,qA[1,i]):n
-#             if d2[j] >= d1[j] || d2[j] > d3[j]
-#                 qA[2,i] = j-1
-#                 break
-#             end
-#         end
-#     end
-#     qA[2,i] = max(qA[2,i],qA[1,i])
-
-#     @show qA
-
-# end
 
 function prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
     # Simplified data sparsity handling
@@ -236,9 +182,7 @@ function prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
     qA[2,i] = qA[1,i]
 
     # @show qA
-
 end
-
 
 function prep_B!(A,n,i)
     m = size(A[i, 1],1)
@@ -298,3 +242,59 @@ function prep_AA!(myA,Ai,n)
 end
 
 # end #module
+
+
+# function prep_sparse!(A,n,m,i,nzA,sigmaA,qA)
+# This is the Kojima et al data sparsity handling
+#     d1 = zeros(Float64,n)
+#     d2 = zeros(Float64,n)
+#     d3 = zeros(Float64,n)
+
+#     kappa = 100
+#     kappa = 500000/m
+#     for j = 1:n
+#         nzA[j,i] = nnz(A[i,j+1])
+#     end
+#     sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
+#     @show nzA[:,i]
+#     # @show nzA[sigmaA[:,i],i]
+#     sisi = sort(nzA[sigmaA[:,i],i], rev = true)
+#     # @show sigmaA[:,i]
+#     # @show sisi
+#     cs = cumsum(sisi[end:-1:1])
+#     cs = cs[n:-1:1]
+#     # @show cs
+
+#     for j = 1:n
+#         d1[j] = kappa * m * nzA[sigmaA[j,i],i] + m^3 + kappa * cs[j]
+#         d2[j] = kappa * m * nzA[sigmaA[j,i],i] + kappa * (n+1) * cs[j]
+#         d3[j] = kappa * (2 * kappa * nzA[sigmaA[j,i],i] + 1) * cs[j]
+#     end
+
+
+#     qA[1,i] = 0
+#     ktmp = 0
+#     for j = 1:n
+#         if d1[j] > min(d2[j],d3[j])
+#             qA[1,i] = j-1
+#             ktmp = 1
+#             break
+#         end
+#     end
+#     if ktmp == 0
+#         qA[1,i] = n
+#         qA[2,i] = n
+#     else
+#         qA[2,i] = 0
+#         for j = max(1,qA[1,i]):n
+#             if d2[j] >= d1[j] || d2[j] > d3[j]
+#                 qA[2,i] = j-1
+#                 break
+#             end
+#         end
+#     end
+#     qA[2,i] = max(qA[2,i],qA[1,i])
+
+#     @show qA
+
+# end
