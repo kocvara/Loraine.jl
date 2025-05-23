@@ -38,8 +38,10 @@ end
 # Computes `⟨A * W, W * B⟩` for symmetric sparse matrices `A` and `B`
 function _dot(A::SparseMatrixCSC, B::SparseMatrixCSC, W::Matrix)
     @assert LinearAlgebra.checksquare(W) == LinearAlgebra.checksquare(A) == LinearAlgebra.checksquare(B)
+    # After these asserts, we know that `A`, `B` and `W` are square and
+    # have the same sizes so we can safely use `@inbounds`
     result = zero(eltype(A))
-    for i in axes(A, 2)
+    @inbounds for i in axes(A, 2)
         nzA = nzrange(A, i)
         if !isempty(nzA)
             for j in axes(B, 2)
