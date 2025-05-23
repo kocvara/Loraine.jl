@@ -1,16 +1,9 @@
-export prepare_model_data, MyModel, SpMa
+export prepare_model_data, MyModel
 
 using SparseArrays
 using Printf
 using TimerOutputs
 using LinearAlgebra
-
-struct SpMa{Tv,Ti<:Integer}
-    n::Int64
-    iind::Vector{Ti}
-    jind::Vector{Ti}
-    nzval::Vector{Tv}
-end
 
 """
     MyModel
