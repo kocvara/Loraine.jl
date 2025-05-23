@@ -28,7 +28,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
             # if 1 == 0
                 BBBB = makeBBBB_rank1(solver.model.n, solver.model.nlmi, solver.model.B, solver.G, solver.to)
             else
-                BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.model.myA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
+                BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
             end
         else
             BBBB = zeros(T, solver.model.n, solver.model.n)

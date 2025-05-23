@@ -219,7 +219,6 @@ function load(model, options::Dict; T = Float64)
         datasparsity,
         MyModel(model.A,
             model.AA,
-            model.myA,
             model.B,
             model.C,
             model.nzA,
