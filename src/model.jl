@@ -41,7 +41,6 @@ The fields of the `struct` as related to the arrays of the above formulation as 
 mutable struct MyModel
     A::Matrix{Any}
     AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
-    myA::Vector{SpMa{Float64}}
     B::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
     nzA::Matrix{Int64}
@@ -59,7 +58,6 @@ mutable struct MyModel
     function MyModel(
         A::Matrix{Any},
         AA::Vector{SparseArrays.SparseMatrixCSC{Float64}},
-        myA::Vector{SpMa{Float64}},
         B::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
         nzA::Matrix{Int64},
@@ -78,7 +76,6 @@ mutable struct MyModel
         model = new()
         model.A = A
         model.AA = AA
-        model.myA = myA
         model.B = B
         model.C = C
         model.nzA = nzA
@@ -132,7 +129,6 @@ function _prepare_A(A, datarank, κ)
     nlmi = size(A, 1)
     n = size(A, 2) - 1
     AA = SparseMatrixCSC{Float64}[]
-    myA = SpMa{Float64}[]
     B = SparseMatrixCSC{Float64}[]
     C = SparseMatrixCSC{Float64}[]
     nzA = zeros(Int64,n,nlmi)
@@ -145,7 +141,7 @@ function _prepare_A(A, datarank, κ)
 
         Ai = A[i,:]
         m = size(Ai,1)
-        AAA = prep_AA!(myA,Ai,n)
+        AAA = prep_AA!(Ai,n)
         push!(AA, copy(AAA'))
 
         if datarank == -1
@@ -157,7 +153,7 @@ function _prepare_A(A, datarank, κ)
 
     end
 
-    return AA, myA, B, C, nzA, sigmaA, qA
+    return AA, B, C, nzA, sigmaA, qA
 end
 
 
@@ -207,7 +203,7 @@ function prep_B(A,n,i)
     return Btmp
 end
 
-function prep_AA!(myA,Ai,n)
+function prep_AA!(Ai,n)
 
     @inbounds Threads.@threads for j = 1:n
         if isempty(Ai[j+1])
@@ -219,9 +215,7 @@ function prep_AA!(myA,Ai,n)
     
     nnz = 0
     @inbounds for j = 1:n
-        ii,jj,vv = findnz(-(Ai[j+1]))
-        push!(myA,SpMa(Int64(length(ii)),ii,jj,float(vv)))
-        nnz += length(ii)
+        nnz += SparseArrays.nnz(Ai[j+1])
     end
 
     iii = zeros(Int64, nnz)
