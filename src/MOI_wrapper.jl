@@ -206,7 +206,7 @@ function MOI.copy_to(dest::Optimizer{T}, src::OptimizerCache) where {T}
     b = dest.max_sense ? b0 : -b0
     # b = max_sense ? -b0 : b0
 
-    AA = Any[sparse(IJV...) for IJV in A]
+    AA = SparseMatrixCSC{Float64,Int}[sparse(IJV...) for IJV in A]
     drank = get(dest.options,"datarank",1)
     κ = get(dest.options,"datasparsity",1)
     model = MyModel(

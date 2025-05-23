@@ -43,10 +43,10 @@ for i in eachindex(tmpA)
     BB[tmpA[i][3],tmpA[i][2]+1,tmpA[i][4],tmpA[i][5]] = tmpA[i][1]
 end
 
-A = SparseMatrixCSC{Float64}[]
+A = SparseMatrixCSC{Float64,Int}[]
 # A = Matrix{Any}
 if nlmi == 1  
-    Btmp = SparseMatrixCSC{Float64}[]
+    Btmp = SparseMatrixCSC{Float64,Int}[]
     Ctmp = sparse(BB[1,1,:,:])
     Ctmp = Ctmp + Ctmp' - spdiagm(diag(Ctmp))
     push!(Btmp,Ctmp)
@@ -55,7 +55,7 @@ if nlmi == 1
     end
 else
     for ilmi = 1:nlmi
-        Btmp = SparseMatrixCSC{Float64}[]
+        Btmp = SparseMatrixCSC{Float64,Int}[]
         for j = 1:nvar+1
             push!(Btmp,sparse(BB[ilmi,j,:,:]))
         end

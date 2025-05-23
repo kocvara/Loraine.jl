@@ -32,10 +32,10 @@ The fields of the `struct` as related to the arrays of the above formulation as 
 * The first `qA[1,i] = qA[2,i]` matrices are considered as dense in the computation.
 """
 mutable struct MyModel
-    A::Matrix{Any}
-    AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
-    B::Vector{SparseArrays.SparseMatrixCSC{Float64}}
-    C::Vector{SparseArrays.SparseMatrixCSC{Float64}}
+    A::Matrix{SparseArrays.SparseMatrixCSC{Float64,Int}}
+    AA::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
+    B::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
+    C::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
     nzA::Matrix{Int64}
     sigmaA::Matrix{Int64}
     qA::Matrix{Int64}
@@ -49,10 +49,10 @@ mutable struct MyModel
     nlmi::Int64
 
     function MyModel(
-        A::Matrix{Any},
-        AA::Vector{SparseArrays.SparseMatrixCSC{Float64}},
-        B::Vector{SparseArrays.SparseMatrixCSC{Float64}},
-        C::Vector{SparseArrays.SparseMatrixCSC{Float64}},
+        A::Matrix{SparseArrays.SparseMatrixCSC{Float64,Int}},
+        AA::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}},
+        B::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}},
+        C::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}},
         nzA::Matrix{Int64},
         sigmaA::Matrix{Int64},
         qA::Matrix{Int64},
@@ -121,9 +121,9 @@ function _prepare_A(A, datarank, κ)
 
     nlmi = size(A, 1)
     n = size(A, 2) - 1
-    AA = SparseMatrixCSC{Float64}[]
-    B = SparseMatrixCSC{Float64}[]
-    C = SparseMatrixCSC{Float64}[]
+    AA = SparseMatrixCSC{Float64,Int}[]
+    B = SparseMatrixCSC{Float64,Int}[]
+    C = SparseMatrixCSC{Float64,Int}[]
     nzA = zeros(Int64,n,nlmi)
     sigmaA = zeros(Int64,n,nlmi)
     qA = zeros(Int64,2,nlmi)

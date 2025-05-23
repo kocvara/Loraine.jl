@@ -571,7 +571,7 @@ end
 
 struct MyA{T}
     W::Vector{Matrix{T}}
-    AA::Vector{SparseArrays.SparseMatrixCSC{Float64}}
+    AA::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
     nlin::Int64
     C_lin::SparseArrays.SparseMatrixCSC{Float64,Int64}
     X_lin

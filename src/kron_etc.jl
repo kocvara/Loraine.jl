@@ -30,7 +30,7 @@ end
 
 
 # How to create a vector of sparse matrices:
-# v = SparseMatrixCSC{Float64}[
+# v = SparseMatrixCSC{Float64,Int}[
 # a=sparse([3 0;0 5])
 # push!(v,copy(a))
 # a=sparse([7 0;0 5])
