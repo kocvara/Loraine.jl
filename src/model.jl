@@ -277,6 +277,14 @@ jac(model::MyModel, i::MatrixIndex) = model.AA[i.value]'
 objgrad(model::MyModel, ::Type{ScalarIndex}) = model.d_lin
 objgrad(model::MyModel, i::MatrixIndex) = model.C[i.value]
 
+function cons(model::MyModel, x, X)
+    result = model.b
+    for i = 1:model.nlmi
+        result -= model.AA[i] * X[i][:]
+    end
+    result -= model.C_lin * x[:]
+end
+
 function jprod(model::MyModel, w, W)
     h = model.C_lin * w
     for i = 1:model.nlmi
