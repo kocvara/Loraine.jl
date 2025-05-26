@@ -274,6 +274,14 @@ side_dimension(model::MyModel, i::MatrixIndex) = model.msizes[i.value]
 jac(model::MyModel, i::ScalarIndex) = model.C_lin[i.value,:]
 jac(model::MyModel, i::MatrixIndex) = model.AA[i.value]'
 
+function dual_cons(model::MyModel, ::Type{ScalarIndex}, y, S)
+    return model.d_lin - S - model.C_lin' * y
+end
+function dual_cons(model::MyModel, mat_idx::MatrixIndex, y, S)
+    i = mat_idx.value
+    return model.C[i] - S[i] - mat(model.AA[i]' * y)
+end
+
 objgrad(model::MyModel, ::Type{ScalarIndex}) = model.d_lin
 objgrad(model::MyModel, i::MatrixIndex) = model.C[i.value]
 

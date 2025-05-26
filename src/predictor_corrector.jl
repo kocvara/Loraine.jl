@@ -7,16 +7,15 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     solver.predict = true
     solver.Rp = cons(solver.model, solver.X_lin, solver.X)
 
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
-            solver.Rd[i] .= solver.model.C[i] - solver.S[i] - mat(solver.model.AA[i]' * solver.y)
-            solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
-        end
+    for mat_idx = matrix_indices(solver.model)
+        i = mat_idx.value
+        solver.Rd[i] .= dual_cons(solver.model, mat_idx, solver.y, solver.S)
+        solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
     if solver.model.nlin > 0
-        solver.Rd_lin = solver.model.d_lin - solver.S_lin - solver.model.C_lin' * solver.y
-        Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
+        solver.Rd_lin = dual_cons(solver.model, ScalarIndex, solver.y, solver.S_lin)
+        Rc_lin = solver.sigma * solver.mu .* ones(num_scalars(solver.model), 1) - solver.X_lin .* solver.S_lin
     end
 
     w = (solver.X_lin .* solver.S_lin_inv)[:]
