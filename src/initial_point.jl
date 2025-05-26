@@ -16,30 +16,30 @@ end
 
 function  find_initial!(solver)
 
-    C_lin = solver.model.C_lin'
-    
-    n = length(solver.model.b)
+    n = solver.model.n
     solver.y = zeros(n,1)
     
     b2 = 1 .+ abs.(solver.model.b')
     f = zeros(1,n)
-    for i=1:solver.model.nlmi
+    for mat_idx in matrix_indices(solver.model)
+        i = mat_idx.value
+        dim = side_dimension(solver.model, mat_idx)
         if solver.initpoint == 0
             Eps = 1.0
         else
-            f = norm(b2)/(1+norm(solver.model.AA[i]))
-            Eps = sqrt.(solver.model.msizes[i]).* max(1,sqrt.(solver.model.msizes[i]).* f)
+            f = norm(b2)/(1+norm(jac(solver.model, mat_idx)))
+            Eps = sqrt(dim) * max(1, sqrt.(dim) * f)
         end
-        solver.X[i] = Eps * Matrix(1.0I, Int64(solver.model.msizes[i]), Int64(solver.model.msizes[i]))
+        solver.X[i] = Eps * Matrix(1.0I, dim, dim)
         
         if solver.initpoint == 0
             Eta = solver.model.n
         else
-            mf = max(f,norm(solver.model.C[i],2))
-            mf = (1 + mf)./ sqrt(solver.model.msizes[i])
-            Eta = sqrt(solver.model.msizes[i]).* max(1,mf)
+            mf = max(f, norm(objgrad(solver.model, mat_idx), 2))
+            mf = (1 + mf) / dim
+            Eta = sqrt(dim).* max(1, mf)
         end
-        solver.S[i] = Eta * Matrix(1.0I, Int64(solver.model.msizes[i]), Int64(solver.model.msizes[i]))
+        solver.S[i] = Eta * Matrix(1.0I, dim, dim)
     end
     
     p = zeros(1,n)

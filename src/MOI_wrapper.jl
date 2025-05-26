@@ -1,6 +1,3 @@
-using MathOptInterface
-const MOI = MathOptInterface
-
 const VAF = MOI.VectorAffineFunction{Float64}
 const PSD = MOI.PositiveSemidefiniteConeTriangle
 const NNG = MOI.Nonnegatives

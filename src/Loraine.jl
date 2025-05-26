@@ -16,6 +16,8 @@ using FameSVD
 # using MKLSparse
 # using MKL
 
+import MathOptInterface as MOI
+
 #modules
 include("Solvers.jl")
 using .Solvers

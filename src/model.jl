@@ -4,6 +4,7 @@ using SparseArrays
 using Printf
 using TimerOutputs
 using LinearAlgebra
+import MathOptInterface as MOI
 
 """
     MyModel
@@ -247,6 +248,19 @@ function schur_complement(model::MyModel, w, W, G, datarank)
     end
     return Hermitian(H, :L)
 end
+
+struct MatrixIndex
+    value::Int64
+end
+
+function matrix_indices(model::MyModel)
+    return MOI.Utilities.LazyMap{MatrixIndex}(MatrixIndex, Base.OneTo(model.nlmi))
+end
+
+side_dimension(model::MyModel, i::MatrixIndex) = model.msizes[i.value]
+
+jac(model::MyModel, i::MatrixIndex) = model.AA[i.value]'
+objgrad(model::MyModel, i::MatrixIndex) = model.C[i.value]
 
 function jprod(model::MyModel, w, W)
     h = model.C_lin * w

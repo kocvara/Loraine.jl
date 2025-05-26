@@ -28,7 +28,8 @@ end
 function prepare_W(solver::MySolver{T}) where {T}
 
     # @timeit solver.to "prpr" begin
-        for i = 1:solver.model.nlmi
+        for mat_idx = matrix_indices(solver.model)
+            i = mat_idx.value
             # @timeit to "prpr1" begin
                 Ctmp = try_cholesky(solver, solver.X, i, "X")
                 CtmpS = try_cholesky(solver, solver.S, i, "S")
