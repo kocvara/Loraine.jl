@@ -44,38 +44,26 @@ function  find_initial!(solver)
     
     p = zeros(1,n)
     pp = zeros(1,n)
-    dd = size(solver.model.d_lin,1)
-    if solver.model.nlin>0
-        if solver.initpoint == 0
-            Epss = 1.0
-        else
-            for j=1:n
-                normClin = 1+norm(solver.model.C_lin[j,:])
-                p[j] = b2[j] ./ normClin;
-            end
-            Epss = max(1, maximum(p))
-        end
-        solver.X_lin = 1 .* Epss * ones(dd,1)
-        
-        if solver.initpoint == 0
-            Etaa = 1.0
-        else
-            for j=1:n
-                pp[j]=norm(solver.model.C_lin[j,:])
-            end
-            mf = max(maximum(pp),norm(solver.model.d_lin))
-            mf = (0 + mf) ./ sqrt(dd)
-            Etaa =  max(1,mf)
-        end
-        solver.S_lin = 1 .* Etaa * ones(dd,1)
-        solver.S_lin_inv = 1 ./ solver.S_lin
+    if solver.initpoint == 0
+        Epss = 1.0
     else
-        solver.X_lin = Float64[]; solver.S_lin = Float64[]
+        for scal_idx in scalar_indices(solver.model)
+            j = scal_idx.value
+            pp[j] = norm(jac(solver.model, scal_idx))
+            p[j] = b2[j] / (1 + pp[j])
+        end
+        Epss = max(1, maximum(p))
     end
-    if solver.model.nlin==0
-        solver.X_lin=Float64[]
-        solver.S_lin=Float64[]
-        solver.S_lin_inv=Float64[]
+    solver.X_lin = 1 .* Epss * ones(num_scalars(solver.model),1)
+    
+    if solver.initpoint == 0
+        Etaa = 1.0
+    else
+        mf = max(maximum(pp), norm(objgrad(solver.model, ScalarIndex)))
+        mf = (0 + mf) ./ sqrt(num_scalars(solver.model))
+        Etaa =  max(1,mf)
     end
+    solver.S_lin = 1 .* Etaa * ones(num_scalars(solver.model),1)
+    solver.S_lin_inv = 1 ./ solver.S_lin
     
 end

@@ -18,7 +18,7 @@ Model representing the problem:
 \\qquad
 \\forall i \\in \\{1,\\ldots,\\text{nlmi}\\}
 \\\\
-& C_\\text{lin} y \\le d_\\text{lin}
+& C_\\text{lin}^\\top y \\le d_\\text{lin}
 \\end{aligned}
 ```
 The fields of the `struct` as related to the arrays of the above formulation as follows:
@@ -249,17 +249,32 @@ function schur_complement(model::MyModel, w, W, G, datarank)
     return Hermitian(H, :L)
 end
 
+struct ScalarIndex
+    value::Int64
+end
+
+num_scalars(model::MyModel) = length(model.d_lin)
+
+function scalar_indices(model::MyModel)
+    return MOI.Utilities.LazyMap{ScalarIndex}(ScalarIndex, Base.OneTo(num_scalars(model)))
+end
+
 struct MatrixIndex
     value::Int64
 end
 
+num_matrices(model::MyModel) = model.nlmi
+
 function matrix_indices(model::MyModel)
-    return MOI.Utilities.LazyMap{MatrixIndex}(MatrixIndex, Base.OneTo(model.nlmi))
+    return MOI.Utilities.LazyMap{MatrixIndex}(MatrixIndex, Base.OneTo(num_matrices(model)))
 end
 
 side_dimension(model::MyModel, i::MatrixIndex) = model.msizes[i.value]
 
+jac(model::MyModel, i::ScalarIndex) = model.C_lin[i.value,:]
 jac(model::MyModel, i::MatrixIndex) = model.AA[i.value]'
+
+objgrad(model::MyModel, ::Type{ScalarIndex}) = model.d_lin
 objgrad(model::MyModel, i::MatrixIndex) = model.C[i.value]
 
 function jprod(model::MyModel, w, W)
