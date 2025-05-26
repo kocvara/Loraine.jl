@@ -22,7 +22,7 @@ function btrace(nlmi, X, S)
     # compute sum of traces of products of block matrices
     trXS = 0
     @inbounds for i = 1:nlmi
-        trXS += sum(sum(X[i] .* S[i]))
+        trXS += dot(X[i], S[i])
     end
     return trXS
 end
