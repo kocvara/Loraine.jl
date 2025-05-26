@@ -228,6 +228,36 @@ function prep_AA!(Ai,n)
     return AAA
 end
 
+# [HKS24, (5b)]
+# Returns the matrix equal to the sum, for each equation, of
+# ⟨A_i, WA_jW⟩
+function schur_complement(model::MyModel, w, W, G, datarank)
+    if model.nlmi > 0
+        if datarank == -1
+        # if 1 == 0
+            H = makeBBBB_rank1(model.n, model.nlmi, model.B, G)
+        else
+            H = makeBBBBs(model.n, model.nlmi, model.A, model.AA, W, model.qA, model.sigmaA)
+        end
+    else
+        H = zeros(eltype(w), model.n, model.n)
+    end
+    if model.nlin > 0
+        H .+= model.C_lin * spdiagm(w) * model.C_lin'
+    end
+    return Hermitian(H, :L)
+end
+
+function jprod(model::MyModel, w, W)
+    h = model.C_lin * w
+    for i = 1:model.nlmi
+        # h = h + AA[i] * my_kron(G[i], G[i], (G[i]' * Rd[i] * G[i] + diagm(D[i])))
+        h = h + model.AA[i] * vec(W[i]);  #equivalent
+    end
+    return h
+end
+
+
 # end #module
 
 

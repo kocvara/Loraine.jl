@@ -11,8 +11,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
         for i = 1:solver.model.nlmi
             solver.Rp -= solver.model.AA[i] * solver.X[i][:]
             solver.Rd[i] .= solver.model.C[i] - solver.S[i] - mat(solver.model.AA[i]' * solver.y)
-            solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
-        end
+            solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2 end
     end
 
     if solver.model.nlin > 0
@@ -21,33 +20,18 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
         Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
     end
 
+    w = (solver.X_lin .* solver.S_lin_inv)[:]
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
-    # @timeit solver.to "BBBB" begin
-        if solver.model.nlmi > 0
-            if solver.datarank == -1
-            # if 1 == 0
-                BBBB = makeBBBB_rank1(solver.model.n, solver.model.nlmi, solver.model.B, solver.G, solver.to)
-            else
-                BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
-            end
-        else
-            BBBB = zeros(T, solver.model.n, solver.model.n)
-        end
-        if solver.model.nlin > 0
-            BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
-        end
-        BBBB = Hermitian(BBBB, :L)
+        BBBB = schur_complement(solver.model, w, solver.W, solver.G, solver.datarank)
     end
     # end
 
-    if solver.model.nlmi > 0
-        h = makeRHS(solver.model.nlmi,solver.model.AA,solver.W,solver.S,solver.Rp,solver.Rd)
-    else
-        h = copy(solver.Rp)
-    end
-    if solver.model.nlin > 0
-        h .+= solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin)
-    end
+    # RHS for the Hessian equation
+    h = solver.Rp + jprod(
+        solver.model,
+        spdiagm(w) * solver.Rd_lin + solver.X_lin,
+        [solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i] for i in 1:solver.model.nlmi],
+    )
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
