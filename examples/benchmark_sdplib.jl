@@ -21,10 +21,7 @@
 #
 # Only options common to both `main` and `nlpmodel` are used, so the same
 # script produces comparable CSVs on either branch. The CSV is written with a
-# plain `print` (no CSV.jl dependency).
-#
-# The active project must have `Chairmarks` (used on the worker for a robust
-# minimum solve time) in addition to `JuMP` and `Loraine`.
+# plain `print` (no CSV.jl dependency), and it needs only `JuMP` and `Loraine`.
 
 using Distributed
 import Printf
@@ -63,15 +60,11 @@ end
 function start_worker()
     pid = addprocs(1; exeflags = `--project=$(Base.active_project())`)[1]
     ospid = remotecall_fetch(getpid, pid)
-    # Load in a separate eval from the function definition below: `@b` must be
-    # macro-expanded *after* `using Chairmarks` has taken effect.
     remotecall_wait(Core.eval, pid, Main, quote
         using JuMP
         import Loraine
-        using Chairmarks
-    end)
-    remotecall_wait(Core.eval, pid, Main, quote
-        function solve_problem(path, kit)
+        function solve_problem(path, kit, timeout)
+            t0 = time()
             model = read_from_file(path)
             set_optimizer(model, Loraine.Optimizer{Float64})
             set_attribute(model, "kit", kit)
@@ -80,28 +73,34 @@ function start_worker()
             set_attribute(model, "maxit", 100)
             set_attribute(model, "datasparsity", 8)
             optimize!(model) # warm up: absorb this problem's compilation
-            t = @elapsed optimize!(model)
-            # Millisecond solves are noise-dominated (GC/scheduler jitter), so
-            # take a robust minimum over repeated warm re-solves. Multi-second
-            # solves are measured once: they aren't noisy, and re-running them
-            # would risk blowing past the per-problem timeout.
-            if t < 0.5
-                t = (@b optimize!(model) seconds = 1).time
-            end
-            return (
-                t,
-                solve_time(model), # solver's own elapsed time (no harness)
+            sample() = (
+                solve_time(model), # solver's own `SolveTimeSec`
                 barrier_iterations(model),
                 objective_value(model),
                 string(termination_status(model)),
             )
+            # Re-solve for more samples (one row per solve, so `merge` can take
+            # the minimum), but only while another solve fits the budget (85% of
+            # the timeout). This keeps the whole call under the per-problem
+            # timeout while letting a larger `timeout` buy more samples; a solve
+            # slower than ~half the timeout just yields a single sample.
+            wall = @elapsed optimize!(model)
+            samples = [(wall, sample()...)]
+            # The 32-sample cap only binds for fast problems (slow ones are
+            # limited by the budget, so a larger `timeout` buys them more rows).
+            budget = 0.85 * timeout
+            while length(samples) < 32 && (time() - t0) + wall < budget
+                w = @elapsed optimize!(model)
+                push!(samples, (w, sample()...))
+            end
+            return samples
         end
     end)
     return pid, ospid
 end
 
-launch(pid, path, kit) =
-    remotecall((p, k) -> Main.solve_problem(p, k), pid, path, kit)
+launch(pid, path, kit, timeout) =
+    remotecall((p, k, t) -> Main.solve_problem(p, k, t), pid, path, kit, timeout)
 
 # Solve with a wall-clock cap. `isready` on a *remote* Future blocks while the
 # worker is busy (it has to query the worker), so we instead let an async task
@@ -110,7 +109,7 @@ launch(pid, path, kit) =
 function solve_capped(pid, path, kit, timeout)
     ch = Channel{Any}(1)
     @async put!(ch, try
-        fetch(launch(pid, path, kit))
+        fetch(launch(pid, path, kit, timeout))
     catch err
         err
     end)
@@ -121,16 +120,21 @@ function solve_capped(pid, path, kit, timeout)
     return (:timeout, nothing)
 end
 
-function bench(;
-    out = get(ARGS, 1, "sdplib_results.csv"),
-    label = get(ARGS, 2, "loraine"),
+function bench(
+    label,
+    only = get(ENV, "SDPLIB_ONLY", nothing);
+    out = label * ".csv",
     maxn = parse(Int, get(ENV, "SDPLIB_MAXN", "1000")),
     maxm = parse(Int, get(ENV, "SDPLIB_MAXM", "3000")),
     kit = parse(Int, get(ENV, "SDPLIB_KIT", "0")),
     timeout = parse(Float64, get(ENV, "SDPLIB_TIMEOUT", "60")),
 )
-    only = haskey(ENV, "SDPLIB_ONLY") ? Set(split(ENV["SDPLIB_ONLY"], ",")) :
-           nothing
+    # `only`: `nothing` (all problems within the size caps), a single name or a
+    # comma-separated string (e.g. "truss1" or "truss1,qap8"), or any iterable
+    # of names.
+    only =
+        isnothing(only) ? nothing :
+        only isa AbstractString ? Set(split(only, ",")) : Set(string.(only))
     ref = read_reference()
 
     problems = String[]
@@ -149,71 +153,80 @@ function bench(;
     pid, ospid = start_worker()
     # Warm up compilation on the smallest problem so timings exclude it.
     warmup = joinpath(DATA, problems[1] * ".dat-s")
-    fetch(launch(pid, warmup, kit))
+    fetch(launch(pid, warmup, kit, timeout))
 
-    open(out, "w") do io
-        println(
-            io,
-            "label,problem,m,n,status,time_s,solve_time_s,iterations,objective,optimal,rel_gap",
-        )
+    # Append so re-running accumulates more rows (one solve = one row); the
+    # minimum over rows is taken later, in `merge_results.jl`.
+    write_header = !isfile(out) || filesize(out) == 0
+    open(out, "a") do io
+        if write_header
+            println(
+                io,
+                "label,problem,m,n,status,time_s,solve_time_s,iterations,objective,optimal,rel_gap",
+            )
+        end
         ntot = length(problems)
         for (idx, name) in enumerate(problems)
             r = ref[name]
-            status, t, st, iters, obj = "ok", NaN, NaN, -1, NaN
             outcome, payload =
                 solve_capped(pid, joinpath(DATA, name * ".dat-s"), kit, timeout)
-            if outcome === :ok
-                t, st, iters, obj, status = payload
+            # `samples`: one `(wall, solve_time, iters, obj, status)` per solve.
+            # Error/timeout collapse to a single synthetic sample.
+            samples = if outcome === :ok
+                payload
             elseif outcome === :error
-                status = "ERROR: " * sprint(showerror, payload)[1:min(end, 60)]
+                msg = "ERROR: " * sprint(showerror, payload)[1:min(end, 60)]
+                [(NaN, NaN, -1, NaN, msg)]
             else
                 # Stuck: SIGKILL the worker's OS process, then respawn a fresh
                 # one (and re-warm it) for the remaining problems.
                 run(`kill -9 $ospid`)
                 rmprocs(pid; waitfor = 0)
-                status, t = "TIMEOUT", timeout
                 pid, ospid = start_worker()
-                fetch(launch(pid, warmup, kit))
+                fetch(launch(pid, warmup, kit, timeout))
+                [(timeout, NaN, -1, NaN, "TIMEOUT")]
             end
-            gap = isfinite(obj) && isfinite(r.opt) ?
-                  abs(obj - r.opt) / max(1, abs(r.opt)) : NaN
-            println(
-                io,
-                join(
-                    [
-                        label,
-                        name,
-                        r.m,
-                        r.n,
-                        "\"$status\"",
-                        round(t, sigdigits = 5),
-                        round(st, sigdigits = 5),
-                        iters,
-                        obj,
-                        r.opt,
-                        gap,
-                    ],
-                    ",",
-                ),
-            )
+            for (t, st, iters, obj, status) in samples
+                gap = isfinite(obj) && isfinite(r.opt) ?
+                      abs(obj - r.opt) / max(1, abs(r.opt)) : NaN
+                println(
+                    io,
+                    join(
+                        [
+                            label,
+                            name,
+                            r.m,
+                            r.n,
+                            "\"$status\"",
+                            round(t, sigdigits = 5),
+                            round(st, sigdigits = 5),
+                            iters,
+                            obj,
+                            r.opt,
+                            gap,
+                        ],
+                        ",",
+                    ),
+                )
+            end
+            flush(io)
+            # console: minimum solve time over the samples, and the count
+            fin = filter(isfinite, [s[2] for s in samples])
             Printf.@printf(
-                "[%2d/%2d] %-12s n=%-5d m=%-5d  %8.3fs (solve %8.3fs, %3d it)  obj=%-14.6g %s\n",
+                "[%2d/%2d] %-12s n=%-5d m=%-5d  min solve %8.3fs (%2d runs, %3d it)  obj=%-14.6g %s\n",
                 idx,
                 ntot,
                 name,
                 r.n,
                 r.m,
-                t,
-                st,
-                iters,
-                obj,
-                status,
+                isempty(fin) ? NaN : minimum(fin),
+                length(samples),
+                samples[end][3],
+                samples[end][4],
+                samples[end][5],
             )
-            flush(io)
         end
     end
     rmprocs(pid)
     println("\nWrote ", out)
 end
-
-bench()
