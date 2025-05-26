@@ -29,7 +29,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     # RHS for the Hessian equation
     h = solver.Rp + jprod(
         solver.model,
-        spdiagm(w) * solver.Rd_lin + solver.X_lin,
+        isempty(w) ? w : spdiagm(w) * solver.Rd_lin + solver.X_lin,
         [solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i] for i in 1:solver.model.nlmi],
     )
 
