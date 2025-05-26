@@ -16,10 +16,10 @@ end
 
 function  find_initial!(solver)
 
-    n = solver.model.n
+    b2 = 1 .+ abs.(cons_constant(solver.model)')
+    n = length(b2)
     solver.y = zeros(n,1)
     
-    b2 = 1 .+ abs.(solver.model.b')
     f = zeros(1,n)
     for mat_idx in matrix_indices(solver.model)
         i = mat_idx.value
@@ -33,7 +33,7 @@ function  find_initial!(solver)
         solver.X[i] = Eps * Matrix(1.0I, dim, dim)
         
         if solver.initpoint == 0
-            Eta = solver.model.n
+            Eta = n
         else
             mf = max(f, norm(objgrad(solver.model, mat_idx), 2))
             mf = (1 + mf) / dim

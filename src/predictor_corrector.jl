@@ -13,7 +13,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
         solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
-    if solver.model.nlin > 0
+    if num_scalars(solver.model) > 0
         solver.Rd_lin = dual_cons(solver.model, ScalarIndex, solver.y, solver.S_lin)
         Rc_lin = solver.sigma * solver.mu .* ones(num_scalars(solver.model), 1) - solver.X_lin .* solver.S_lin
     end
@@ -28,7 +28,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     h = solver.Rp + jprod(
         solver.model,
         isempty(w) ? w : spdiagm(w) * solver.Rd_lin + solver.X_lin,
-        [solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i] for i in 1:solver.model.nlmi],
+        [solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i] for i in 1:num_matrices(solver.model)],
     )
 
     # solving the linear system()
