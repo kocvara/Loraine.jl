@@ -61,6 +61,10 @@ using Test
 @test objective_value(model) ≈ 23 rtol = 1e-6
 # # value.(X)
 
+set_attribute(model, "kit", 1)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
+
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient
 
