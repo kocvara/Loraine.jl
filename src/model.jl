@@ -266,12 +266,20 @@ function obj(model::MyModel, X, i::MatrixIndex)
     return -dot(model.C[i.value], X)
 end
 
+function obj(model::MyModel, X, ::Type{MatrixIndex})
+    result = zero(eltype(eltype(X)))
+    for mat_idx in matrix_indices(model)
+        result += obj(model, X, mat_idx)
+    end
+    return result
+end
+
 function obj(model::MyModel, X_lin, ::Type{ScalarIndex})
     return -dot(model.d_lin, X_lin)
 end
 
 function obj(model::MyModel, X_lin, X)
-    return model.b_const - btrace(model.nlmi, model.C, X) - dot(model.d_lin, X_lin)
+    return model.b_const - obj(model, X, MatrixIndex) - dot(model.d_lin, X_lin)
 end
 
 dual_obj(model::MyModel, y) = -dot(model.b, y) + model.b_const

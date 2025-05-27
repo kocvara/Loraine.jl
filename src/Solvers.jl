@@ -490,7 +490,7 @@ function check_convergence(solver)
     end
 
     pobj = obj(solver.model, solver.X_lin, solver.X)
-    solver.err5 = (dobj - pobj) / (1 + abs(pobj) + abs(dobj))
+    solver.err5 = (dobj - pobj) / (1 + abs(obj(solver.model, solver.X, MatrixIndex)) + abs(dobj))
     if num_scalars(solver.model) > 0
         solver.err2 += max(0, -minimum(solver.X_lin) / b_den)
         solver.err3 += norm(solver.Rd_lin) / (1 + norm(objgrad(solver.model, ScalarIndex)))
