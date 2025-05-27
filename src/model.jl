@@ -269,7 +269,7 @@ end
 function obj(model::MyModel, X, ::Type{MatrixIndex})
     result = zero(eltype(eltype(X)))
     for mat_idx in matrix_indices(model)
-        result += obj(model, X, mat_idx)
+        result += obj(model, X[mat_idx.value], mat_idx)
     end
     return result
 end
@@ -279,7 +279,7 @@ function obj(model::MyModel, X_lin, ::Type{ScalarIndex})
 end
 
 function obj(model::MyModel, X_lin, X)
-    return model.b_const - obj(model, X, MatrixIndex) - dot(model.d_lin, X_lin)
+    return model.b_const + obj(model, X, MatrixIndex) - dot(model.d_lin, X_lin)
 end
 
 dual_obj(model::MyModel, y) = -dot(model.b, y) + model.b_const
