@@ -11,4 +11,4 @@ function run_examples(dir)
 end
 run_examples(joinpath(dirname(@__DIR__), "examples"))
 
-include("MOI_wrapper.jl")
+#include("MOI_wrapper.jl")

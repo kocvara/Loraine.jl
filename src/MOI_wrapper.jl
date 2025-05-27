@@ -311,16 +311,14 @@ end
 
 function MOI.get(optimizer::Optimizer, attr::MOI.ObjectiveValue)::Float64
     MOI.check_result_index_bounds(optimizer, attr)
-    val = dot(optimizer.solver.model.b, optimizer.solver.y) - optimizer.solver.model.b_const
-    return optimizer.max_sense ? val : -val
+    val = Solvers.dual_obj(optimizer.solver.model, optimizer.solver.y)
+    return optimizer.max_sense ? -val : val
 end
 
 function MOI.get(optimizer::Optimizer, attr::MOI.DualObjectiveValue)
     MOI.check_result_index_bounds(optimizer, attr)
-    val =
-        btrace(optimizer.solver.model.nlmi, optimizer.solver.model.C, optimizer.solver.X) +
-        dot(optimizer.solver.model.d_lin, optimizer.solver.X_lin) - optimizer.solver.model.b_const
-        return optimizer.max_sense ? val : -val
+    val = Solvers.obj(optimizer.solver.model, optimizer.solver.X_lin, optimizer.solver.X)
+    return optimizer.max_sense ? -val : val
 end
 
 function MOI.get(model::Optimizer, attr::MOI.VariablePrimal, vi::MOI.VariableIndex)

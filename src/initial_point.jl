@@ -47,19 +47,19 @@ function  find_initial!(solver)
     if solver.initpoint == 0
         Epss = 1.0
     else
-        for scal_idx in scalar_indices(solver.model)
-            j = scal_idx.value
-            pp[j] = norm(jac(solver.model, scal_idx))
+        for con_idx in constraint_indices(solver.model)
+            j = con_idx.value
+            pp[j] = norm(jac(solver.model, con_idx, ScalarIndex))
             p[j] = b2[j] / (1 + pp[j])
         end
-        Epss = max(1, maximum(p))
+        Epss = max(1.0, maximum(p, init = 0.0))
     end
     solver.X_lin = 1 .* Epss * ones(num_scalars(solver.model),1)
     
     if solver.initpoint == 0
         Etaa = 1.0
     else
-        mf = max(maximum(pp), norm(objgrad(solver.model, ScalarIndex)))
+        mf = max(maximum(pp, init = 0.0), norm(objgrad(solver.model, ScalarIndex)))
         mf = (0 + mf) ./ sqrt(num_scalars(solver.model))
         Etaa =  max(1,mf)
     end

@@ -271,8 +271,20 @@ end
 
 side_dimension(model::MyModel, i::MatrixIndex) = model.msizes[i.value]
 
-jac(model::MyModel, i::ScalarIndex) = model.C_lin[i.value,:]
+struct ConstraintIndex
+    value::Int64
+end
+num_constraints(model::MyModel) = length(model.b)
+function constraint_indices(model::MyModel)
+    return MOI.Utilities.LazyMap{ConstraintIndex}(ConstraintIndex, Base.OneTo(num_constraints(model)))
+end
+
+jac(model::MyModel, i::ConstraintIndex, ::Type{ScalarIndex}) = model.C_lin[i.value,:]
 jac(model::MyModel, i::MatrixIndex) = model.AA[i.value]'
+
+function obj(model::MyModel, X_lin, X)
+    return model.b_const - btrace(model.nlmi, model.C, X) - dot(model.d_lin, X_lin)
+end
 
 dual_obj(model::MyModel, y) = -dot(model.b, y) + model.b_const
 

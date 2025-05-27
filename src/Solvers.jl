@@ -388,32 +388,34 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
     solver.regcount = 0
  
-    for i = 1:solver.model.nlmi
-        push!(solver.X,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.S,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.delX,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.delS,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.D, zeros(solver.model.msizes[i]))
-        push!(solver.G,zeros(solver.model.msizes[i],  solver.model.msizes[i]))
-        push!(solver.Gi,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.W,zeros(solver.model.msizes[i],  solver.model.msizes[i]))
-        push!(solver.Si,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.DDsi,zeros(solver.model.msizes[i]))
-        push!(solver.Rd,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Rc,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Xn,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Sn,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.RNT,zeros(solver.model.msizes[i], solver.model.msizes[i]))
+    for mat_idx in matrix_indices(solver.model)
+        dim = side_dimension(solver.model, mat_idx)
+        push!(solver.X,zeros(dim, dim))
+        push!(solver.S,zeros(dim, dim))
+        push!(solver.delX,zeros(dim, dim))
+        push!(solver.delS,zeros(dim, dim))
+        push!(solver.D, zeros(dim))
+        push!(solver.G,zeros(dim,  dim))
+        push!(solver.Gi,zeros(dim, dim))
+        push!(solver.W,zeros(dim,  dim))
+        push!(solver.Si,zeros(dim, dim))
+        push!(solver.DDsi,zeros(dim))
+        push!(solver.Rd,zeros(dim, dim))
+        push!(solver.Rc,zeros(dim, dim))
+        push!(solver.Xn,zeros(dim, dim))
+        push!(solver.Sn,zeros(dim, dim))
+        push!(solver.RNT,zeros(dim, dim))
     end
 
     halpha.Umat = Matrix{T}[]
     halpha.Z = Matrix{T}[]
     halpha.AAAATtau = SparseMatrixCSC{T}[]
 
-    for i = 1:solver.model.nlmi
-        push!(halpha.Umat,zeros(solver.model.msizes[i], solver.erank))
-        push!(halpha.Z,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        # tmp = Matrix(I(solver.model.msizes[i]))
+    for mat_idx in matrix_indices(solver.model)
+        dim = side_dimension(solver.model, mat_idx)
+        push!(halpha.Umat,zeros(dim, solver.erank))
+        push!(halpha.Z,zeros(dim, dim))
+        # tmp = Matrix(I(dim))
         # push!(halpha.cholS,cholesky(tmp))
         push!(halpha.AAAATtau,spzeros(solver.model.n, solver.model.n))
     end
@@ -544,11 +546,7 @@ function check_convergence(solver)
         solver.y = solver.y
         if solver.verb > 0
             println("Primal objective: ", dual_obj(solver.model, solver.y))
-            if solver.model.nlin > 0
-                println("Dual objective:   ", -btrace(solver.model.nlmi, solver.model.C, solver.X) - dot(solver.model.d_lin', solver.X_lin))
-            else
-                println("Dual objective:   ", -btrace(solver.model.nlmi, solver.model.C, solver.X) )
-            end
+            println("Dual objective:   ", obj(solver.model, solver.X_lin, solver.X))
         end
     end
 
