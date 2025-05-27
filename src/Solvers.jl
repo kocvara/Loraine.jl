@@ -484,25 +484,29 @@ end
 function check_convergence(solver)
 
     # DIMACS error evaluation
-    solver.err1 = norm(solver.Rp) / (1 + norm(solver.model.b))
-    (solver.err2,solver.err3,solver.err4,solver.err5,solver.err6) = [0.,0.,0.,0.,0.]
+    b_den = 1 + norm(solver.model.b)
+    dobj = dual_obj(solver.model, solver.y)
+    solver.err1 = norm(solver.Rp) / b_den
+    solver.err2, solver.err3, solver.err4, solver.err5, solver.err6 = 0., 0., 0., 0., 0.
     if num_matrices(solver.model) > 0
-        for i = 1:num_matrices(solver.model)
-            solver.err2 = solver.err2 + max(0, -eigmin(solver.X[i]) / (1 + norm(solver.model.b)))
-            solver.err3 = solver.err3 + norm(solver.Rd[i], 2) / (1 + norm(solver.model.C[i]))
-            solver.err4 = solver.err4 + max(0, -eigmin(solver.S[i]) / (1 + norm(solver.model.C[i])))
+        for mat_idx = matrix_indices(solver.model)
+            i = mat_idx.value
+            C_den = 1 + norm(objgrad(solver.model, mat_idx))
+            solver.err2 = solver.err2 + max(0, -eigmin(solver.X[i]) / b_den)
+            solver.err3 = solver.err3 + norm(solver.Rd[i], 2) / C_den
+            solver.err4 = solver.err4 + max(0, -eigmin(solver.S[i]) / C_den)
             # err5 = err5 + (vecC[i]"*vec(X[i])-b'*y)/(1+abs(vecC[i]'*vec(X[i]))+abs(b"*y))
-            solver.err6 = solver.err6 + (vec(solver.S[i]))' * vec(solver.X[i]) / (1 + abs(vec(solver.model.C[i])' * vec(solver.X[i])) + abs(dot(solver.model.b', solver.y)))
+            solver.err6 = solver.err6 + dot(solver.S[i], solver.X[i]) / (1 + abs(obj(solver.model, solver.X[i], mat_idx)) + abs(dobj))
         end
     end
 
-    solver.err5 = (btrace(num_matrices(solver.model), solver.model.C, solver.X) - dot(solver.model.b', solver.y)) / (1 + abs(btrace(num_matrices(solver.model), solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
-    if solver.model.nlin > 0
-        solver.err2 = solver.err2 + max(0, -minimum(solver.X_lin) / (1 + norm(solver.model.b)))
-        solver.err3 = solver.err3 + norm(solver.Rd_lin) / (1 + norm(solver.model.d_lin))
-        solver.err4 = solver.err4 + max(0, -minimum(solver.S_lin) / (1 + norm(solver.model.d_lin)))
-        solver.err5 = (btrace(num_matrices(solver.model), solver.model.C, solver.X) + dot(solver.model.d_lin', solver.X_lin) - dot(solver.model.b',solver.y)) / (1 + abs(btrace(num_matrices(solver.model), solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
-        solver.err6 = solver.err6 + dot(solver.S_lin' , solver.X_lin) / (1 + abs(dot(solver.model.d_lin', solver.X_lin)) + abs(dot(solver.model.b', solver.y)))
+    pobj = obj(solver.model, solver.X_lin, solver.X)
+    solver.err5 = (dobj - pobj) / (1 + abs(pobj) + abs(dobj))
+    if num_scalars(solver.model) > 0
+        solver.err2 += max(0, -minimum(solver.X_lin) / b_den)
+        solver.err3 += norm(solver.Rd_lin) / (1 + norm(objgrad(solver.model, ScalarIndex)))
+        solver.err4 += max(0, -minimum(solver.S_lin) / (1 + norm(objgrad(solver.model, ScalarIndex))))
+        solver.err6 += dot(solver.S_lin', solver.X_lin) / (1 + abs(obj(solver.model, solver.X_lin, ScalarIndex)) + abs(dobj))
     end
 
     DIMACS_error = solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
@@ -514,15 +518,15 @@ function check_convergence(solver)
         # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, dual_obj(solver.model, solver.y), DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6,solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6,solver.itertime)
             else
-                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, dual_obj(solver.model, solver.y), DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
             end    
     else
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, dual_obj(solver.model, solver.y), DIMACS_error, solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, dobj, DIMACS_error, solver.itertime)
             else
-                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, dual_obj(solver.model, solver.y), DIMACS_error, solver.cg_iter_pre + solver.cg_iter_cor, solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, dobj, DIMACS_error, solver.cg_iter_pre + solver.cg_iter_cor, solver.itertime)
             end
         end
     end
@@ -531,8 +535,8 @@ function check_convergence(solver)
         solver.status = 1
         solver.y = solver.y
         if solver.verb > 0
-            println("Primal objective: ", dual_obj(solver.model, solver.y))
-            println("Dual objective:   ", obj(solver.model, solver.X_lin, solver.X))
+            println("Primal objective: ", dobj)
+            println("Dual objective:   ", pobj)
         end
     end
 
@@ -541,7 +545,7 @@ function check_convergence(solver)
         if solver.verb > 0
             println("WARNING: Problem probably infeasible (stopping status = 2)")
         end
-    elseif DIMACS_error > 1e55 || abs(dot(solver.y, solver.model.b')) > 1e55
+    elseif DIMACS_error > 1e55 || abs(dobj) > 1e55
         solver.status = 3
         if solver.verb > 0
             println("WARNING: Problem probably unbounded or infeasible (stopping status = 3)")
@@ -577,7 +581,7 @@ function Prec_for_CG_beta(solver,halpha)
     
     nlmi = num_matrices(solver.model)
     kk = solver.erank .* ones(Int64,nlmi,1)  
-    nvar = solver.model.n
+    nvar = num_constraints(solver.model)
         
     ntot=0
     if nlmi > 0
@@ -608,8 +612,8 @@ function Prec_for_CG_beta(solver,halpha)
             
             halpha.AAAATtau += ttau^2 .* ZZZ
         end
-        if solver.model.nlin > 0
-            halpha.AAAATtau .+= diag(solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin')
+        if num_scalars(solver.model) > 0
+            halpha.AAAATtau .+= diag(schur_complement(solver.model, solver.X_lin .* solver.S_lin_inv, ScalarIndex))
         end
     end
 end
@@ -632,7 +636,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
     # halpha.Z = SparseMatrixCSC{T}[]
     halpha.Z = Matrix{T}[]
 
-    nvar = solver.model.n
+    nvar = num_constraints(solver.model)
     
     halpha.AAAATtau = spzeros(nvar,nvar)
     

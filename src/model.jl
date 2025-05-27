@@ -299,6 +299,14 @@ end
 jac(model::MyModel, i::ConstraintIndex, ::Type{ScalarIndex}) = model.C_lin[i.value,:]
 jac(model::MyModel, i::MatrixIndex) = model.AA[i.value]'
 
+function obj(model::MyModel, X, i::MatrixIndex)
+    return -dot(model.C[i.value], X)
+end
+
+function obj(model::MyModel, X_lin, ::Type{ScalarIndex})
+    return -dot(model.d_lin, X_lin)
+end
+
 function obj(model::MyModel, X_lin, X)
     return model.b_const - btrace(model.nlmi, model.C, X) - dot(model.d_lin, X_lin)
 end
