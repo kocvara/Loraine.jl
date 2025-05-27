@@ -229,43 +229,6 @@ function prep_AA!(Ai,n)
     return AAA
 end
 
-# [HKS24, (5b)]
-# Returns the matrix equal to the sum, for each equation, of
-# ⟨A_i, WA_jW⟩
-function schur_complement(model::MyModel, w, W, G, datarank)
-    if model.nlmi > 0
-        if datarank == -1
-        # if 1 == 0
-            H = makeBBBB_rank1(model.n, model.nlmi, model.B, G)
-        else
-            H = makeBBBBs(model.n, model.nlmi, model.A, model.AA, W, model.qA, model.sigmaA)
-        end
-    else
-        H = zeros(eltype(w), model.n, model.n)
-    end
-    if model.nlin > 0
-        H .+= schur_complement(model, w, ScalarIndex)
-    end
-    return Hermitian(H, :L)
-end
-
-function schur_complement(model::MyModel, w, ::Type{ScalarIndex})
-    return model.C_lin * spdiagm(w) * model.C_lin'
-end
-
-# [HKS24, (5b)]
-# Returns the matrix equal to the sum, for each equation, of
-# ⟨A_i, WA(y)W⟩
-function eval_schur_complement!(result, model::MyModel, w, W, y)
-    result .= 0.0
-    for mat_idx in matrix_indices(model)
-        i = mat_idx.value
-        result .+= model.AA[i] * (W[i] * mat(transpose(model.AA[i]) * y) * W[i])[:]
-    end
-    result .+= model.C_lin * (w .* (model.C_lin' * y))
-    return result
-end
-
 struct ScalarIndex
     value::Int64
 end
@@ -320,9 +283,14 @@ end
 function dual_cons(model::MyModel, ::Type{ScalarIndex}, y, S)
     return model.d_lin - S + jtprod(model, ScalarIndex, y)
 end
+
+function jtprod(model::MyModel, mat_idx::MatrixIndex, y)
+    return -mat(model.AA[mat_idx.value]' * y)
+end
+
 function dual_cons(model::MyModel, mat_idx::MatrixIndex, y, S)
     i = mat_idx.value
-    return model.C[i] - S[i] - mat(model.AA[i]' * y)
+    return model.C[i] - S[i] + jtprod(model, mat_idx, y)
 end
 
 objgrad(model::MyModel, ::Type{ScalarIndex}) = model.d_lin
@@ -334,13 +302,53 @@ function cons(model::MyModel, x, X)
     return model.b - jprod(model, x, X)
 end
 
+function jprod(model::MyModel, i::MatrixIndex, W)
+    return model.AA[i.value] * vec(W)
+end
+
 function jprod(model::MyModel, w, W)
     h = model.C_lin * w
-    for i = 1:model.nlmi
-        # h = h + AA[i] * my_kron(G[i], G[i], (G[i]' * Rd[i] * G[i] + diagm(D[i])))
-        h = h + model.AA[i] * vec(W[i]);  #equivalent
+    for i in matrix_indices(model)
+        h += jprod(model, i, W[i.value])
     end
     return h
+end
+
+# [HKS24, (5b)]
+# Returns the matrix equal to the sum, for each equation, of
+# ⟨A_i, WA_jW⟩
+function schur_complement(model::MyModel, w, W, G, datarank)
+    if model.nlmi > 0
+        if datarank == -1
+        # if 1 == 0
+            H = makeBBBB_rank1(model.n, model.nlmi, model.B, G)
+        else
+            H = makeBBBBs(model.n, model.nlmi, model.A, model.AA, W, model.qA, model.sigmaA)
+        end
+    else
+        H = zeros(eltype(w), model.n, model.n)
+    end
+    if model.nlin > 0
+        H .+= schur_complement(model, w, ScalarIndex)
+    end
+    return Hermitian(H, :L)
+end
+
+function schur_complement(model::MyModel, w, ::Type{ScalarIndex})
+    return model.C_lin * spdiagm(w) * model.C_lin'
+end
+
+# [HKS24, (5b)]
+# Returns the matrix equal to the sum, for each equation, of
+# ⟨A_i, WA(y)W⟩
+function eval_schur_complement!(result, model::MyModel, w, W, y)
+    result .= 0.0
+    for mat_idx in matrix_indices(model)
+        i = mat_idx.value
+        result .+= model.AA[i] * (W[i] * mat(transpose(model.AA[i]) * y) * W[i])[:]
+    end
+    result .+= model.C_lin * (w .* (model.C_lin' * y))
+    return result
 end
 
 

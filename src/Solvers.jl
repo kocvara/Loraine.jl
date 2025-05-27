@@ -608,7 +608,7 @@ function Prec_for_CG_beta(solver,halpha)
 end
 
 struct MyM_beta
-    AA
+    model::MyModel
     AAAATtau
 end
 
@@ -755,7 +755,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
 end
 
 struct MyM
-    AA
+    model::MyModel
     AAAATtau
     Umat
     Z
@@ -813,7 +813,7 @@ end
 function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
 
     nvar = size(x,1)
-    nlmi = length(t.AA)
+    nlmi = num_matrices(t.model)
 
     yy2 = zeros(nvar,1)
     y33 = zeros(T,0)
@@ -821,9 +821,10 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
     AAAAinvx = t.AAAATtau\x
 
     if nlmi > 0
-        for ilmi = 1:nlmi
-            y22 = t.AA[ilmi]' * AAAAinvx
-            y33 = [y33; vec(t.Z[ilmi]' * mat(y22) * t.Umat[ilmi])]
+        for mat_idx in matrix_indices(t.model)
+            ilmi = mat_idx.value
+            y22 = -jtprod(t.model, mat_idx, AAAAinvx)
+            y33 = [y33; vec(t.Z[ilmi]' * y22 * t.Umat[ilmi])]
         end
     end
     
@@ -831,7 +832,8 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
 
     ii = 0
     if nlmi > 0
-        for ilmi = 1:nlmi
+        for mat_idx in matrix_indices(t.model)
+            ilmi = mat_idx.value
             n = size(t.Umat[ilmi],1)
             k = size(t.Umat[ilmi],2)
             yy = zeros(n*n)
@@ -840,7 +842,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
                 yy .+= kron(t.Umat[ilmi][:,i],xx)
                 ii += n
             end
-            yy2 .+= t.AA[ilmi] * yy
+            yy2 .+= jprod(t.model, mat_idx, yy)
         end
     end
 

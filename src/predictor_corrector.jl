@@ -103,10 +103,10 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
             Prec_for_CG_tilS_prep(solver,halpha)  
-            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         elseif solver.preconditioner == 2 || solver.preconditioner == 4
             Prec_for_CG_beta(solver,halpha)  
-            M = MyM_beta(solver.model.AA, halpha.AAAATtau)
+            M = MyM_beta(solver.model, halpha.AAAATtau)
         end
 
         # @timeit solver.to "CG predictor" begin
@@ -214,9 +214,9 @@ function corrector(solver,halpha)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
-            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         else
-            M = MyM_beta(solver.model.AA, halpha.AAAATtau)
+            M = MyM_beta(solver.model, halpha.AAAATtau)
         end
 
         @timeit solver.to "CG corrector" begin
@@ -235,9 +235,10 @@ end
 
 function find_step(solver::MySolver{T}) where {T}
     if num_matrices(solver.model) > 0
-        for i = 1:num_matrices(solver.model)
+        for mat_idx in matrix_indices(solver.model)
+            i = mat_idx.value
             @timeit solver.to "find_step_A" begin
-            solver.delS[i] .= solver.Rd[i] .- mat(solver.model.AA[i]' * solver.dely)
+            solver.delS[i] .= solver.Rd[i] .+ jtprod(solver.model, mat_idx, solver.dely)
             Ξ = vec(my_kron(solver.W[i], solver.W[i], solver.delS[i]))
             if solver.predict
                 solver.delX[i] .= mat(-solver.X[i][:] .- Ξ)
