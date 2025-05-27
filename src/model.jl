@@ -313,8 +313,12 @@ end
 
 dual_obj(model::MyModel, y) = -dot(model.b, y) + model.b_const
 
+function jtprod(model::MyModel, ::Type{ScalarIndex}, y)
+    return -model.C_lin' * y
+end
+
 function dual_cons(model::MyModel, ::Type{ScalarIndex}, y, S)
-    return model.d_lin - S - model.C_lin' * y
+    return model.d_lin - S + jtprod(model, ScalarIndex, y)
 end
 function dual_cons(model::MyModel, mat_idx::MatrixIndex, y, S)
     i = mat_idx.value

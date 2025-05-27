@@ -290,10 +290,12 @@ function find_step(solver::MySolver{T}) where {T}
     if solver.predict
         # solution update
         if num_matrices(solver.model) > 0
-            for i = 1:num_matrices(solver.model)
+            for mat_idx in matrix_indices(solver.model)
+                i = mat_idx.value
                 solver.Xn[i] = solver.X[i] + solver.alpha[i] .* solver.delX[i]
                 solver.Sn[i] = solver.S[i] + solver.beta[i] .* solver.delS[i]
-                deed = solver.D[i] * ones(1, Int(solver.model.msizes[i])) + ones(Int(solver.model.msizes[i]), 1) * solver.D[i]'
+                dim = side_dimension(solver.model, mat_idx)
+                deed = solver.D[i] * ones(dim)' + ones(side_dimension(solver.model, mat_idx)) * solver.D[i]'
                 solver.RNT[i] = -(solver.Gi[i] * solver.delX[i] * solver.delS[i] * solver.G[i] + solver.G[i]' * solver.delS[i] * solver.delX[i] * solver.Gi[i]') ./ deed 
             end
         end
@@ -315,7 +317,7 @@ end
 
 
 function find_step_lin(solver)
-    solver.delS_lin = solver.Rd_lin - solver.model.C_lin' * solver.dely
+    solver.delS_lin = solver.Rd_lin + jtprod(solver.model, ScalarIndex, solver.dely)
     if solver.predict
         solver.delX_lin = -solver.X_lin - (solver.X_lin) .* (solver.Si_lin) .* solver.delS_lin
     else
