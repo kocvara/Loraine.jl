@@ -217,22 +217,7 @@ function load(model, options::Dict; T = Float64)
         timing,
         maxit, 
         datasparsity,
-        MyModel(model.A,
-            model.AA,
-            model.B,
-            model.C,
-            model.nzA,
-            model.sigmaA,
-            model.qA,
-            model.b,
-            model.b_const,
-            model.d_lin,
-            model.C_lin,
-            model.n,
-            model.msizes,
-            model.nlin,
-            model.nlmi
-        )
+        model,
     )
 
     halpha = Halpha(kit)
