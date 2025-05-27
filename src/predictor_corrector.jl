@@ -151,7 +151,7 @@ function sigma_update(solver::MySolver{T}) where {T}
         else
                 tmp2 = 0
         end
-        tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + num_scalars(solver.model))
+        tmp12 = (tmp1 + tmp2) / (num_scalars(solver.model) + sum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model), init = 0))
         tmp12 = convert(Float64, tmp12)
         mu = Float64(solver.mu)
         solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
@@ -162,16 +162,22 @@ end
 
 function corrector(solver,halpha)
     solver.predict = false
-    h = solver.Rp #RHS for the linear system()
-    if num_matrices(solver.model) > 0
-        for i = 1:num_matrices(solver.model)
-            h += solver.model.AA[i] * my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i]))         # RHS using my_kron()
-        end
-    end
     if num_scalars(solver.model) > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
-        h = h + solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp)
+        x = spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp
+    else
+        x = Float64[]
     end
+    X = map(matrix_indices(solver.model)) do mat_idx
+        i = mat_idx.value
+        K = my_kron(
+            solver.G[i],
+            solver.G[i],
+            solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
+        )
+        K
+    end
+    h = solver.Rp + jprod(solver.model, x, X)
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
@@ -232,11 +238,11 @@ function find_step(solver::MySolver{T}) where {T}
         for i = 1:num_matrices(solver.model)
             @timeit solver.to "find_step_A" begin
             solver.delS[i] .= solver.Rd[i] .- mat(solver.model.AA[i]' * solver.dely)
-            Ξ = my_kron(solver.W[i], solver.W[i], solver.delS[i])
+            Ξ = vec(my_kron(solver.W[i], solver.W[i], solver.delS[i]))
             if solver.predict
                 solver.delX[i] .= mat(-solver.X[i][:] .- Ξ)
             else
-                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[i])[:] .- Ξ .+ my_kron(solver.G[i], solver.G[i], solver.RNT[i]))
+                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[i])[:] .- Ξ .+ vec(my_kron(solver.G[i], solver.G[i], solver.RNT[i])))
             end
             end
 

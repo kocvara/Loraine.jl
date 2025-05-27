@@ -412,7 +412,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
                 println("WARNING: Switching to a direct solver, no LMIs")
             end
             solver.kit = 0
-        elseif num_matrices(solver.model) > 0 && solver.erank >= maximum(mat_idx -> side_dimension(solver.model, mat_idx), matrix_indices(solver.model)) - 1
+        elseif num_matrices(solver.model) > 0 && solver.erank >= maximum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model)) - 1
             if solver.verb > 0
                 println("WARNING: Switching to a direct solver, erank bigger than matrix size")
             end

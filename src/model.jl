@@ -327,11 +327,7 @@ objgrad(model::MyModel, i::MatrixIndex) = model.C[i.value]
 cons_constant(model::MyModel) = model.b
 
 function cons(model::MyModel, x, X)
-    result = model.b
-    for i = 1:model.nlmi
-        result -= model.AA[i] * X[i][:]
-    end
-    result -= model.C_lin * x[:]
+    return model.b - jprod(model, x, X)
 end
 
 function jprod(model::MyModel, w, W)
