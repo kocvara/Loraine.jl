@@ -26,7 +26,7 @@ The fields of the `struct` as related to the arrays of the above formulation as 
 * The ``i``th PSD constraint is of size `msize[i] × msisze[i]`
 * The matrix ``C_i`` is given by `C[i]` which should be equal to `-A[i,1]`.
 * The matrix ``A_{i,j}`` is given by `-A[i,j+1]` as well as `myA[(i-1)*n + j]`.
-* The vectorization `vec(A[i,j+1])` is also given by `-AA[i][:,j]`
+* The vectorization `vec(A[i,j+1])` is also given by `-AA[i][,,j]`
 * If `datarank == -1`, ``A_{i,j}`` is also equal to `-B[i][j,:] * B[i][j,:]'`.
 * The matrix ``A_{i,j}`` has `nzA[j,i]` nonzero entries
 * The index `j = sigmaA[k,i]` is the `k`th matrix ``A_{i,j}`` of the largest number of nonzeros.
@@ -311,7 +311,9 @@ function cons(model::MyModel, x, X)
 end
 
 function jprod(model::MyModel, i::MatrixIndex, W)
-    return model.AA[i.value] * vec(W)
+    return eltype(W)[
+        -dot(model.A[i.value, j + 1], W) for j in 1:num_constraints(model)
+    ]
 end
 
 function jprod(model::MyModel, w, W)
