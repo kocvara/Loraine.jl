@@ -15,7 +15,7 @@ include("kron_etc.jl")
 include("makeBBBB.jl")
 include("model.jl")
 
-mutable struct MySolver{T}
+mutable struct MySolver{T,B}
     # main options
     kit::Int64
     tol_cg::T
@@ -37,6 +37,7 @@ mutable struct MySolver{T}
 
     # model and preprocessed model data
     model::MyModel
+    jtprod_buffer::B
 
     predict::Bool
 
@@ -125,7 +126,8 @@ mutable struct MySolver{T}
         model::MyModel
         ) where {T}
 
-        solver = new{T}()
+        jtprod_buffer = buffer_for_jtprod(model)
+        solver = new{T,typeof(jtprod_buffer)}()
         solver.kit             = kit
         solver.tol_cg          = tol_cg
         solver.tol_cg_up       = tol_cg_up
@@ -142,6 +144,7 @@ mutable struct MySolver{T}
         solver.maxit           = maxit 
         solver.datasparsity    = datasparsity
         solver.model           = model
+        solver.jtprod_buffer   = jtprod_buffer
         return solver
     end
 end
@@ -545,16 +548,17 @@ end
 
 ```Functions for the iterative solver follow```
 
-struct MyA{T}
+struct MyA{T,B}
     w::Vector{T}
     W::Vector{Matrix{T}}
     model::MyModel
+    jtprod_buffer::B
     to::TimerOutputs.TimerOutput
 end
 
 function (t::MyA)(Ax::Vector, x::Vector)
     @timeit t.to "Ax" begin
-        eval_schur_complement!(Ax, t.model, t.w, t.W, x)
+        eval_schur_complement!(t.jtprod_buffer, Ax, t.model, t.w, t.W, x)
     end
 end
 
@@ -754,8 +758,9 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
        
 end
 
-struct MyM
+struct MyM{B}
     model::MyModel
+    jtprod_buffer::B
     AAAATtau
     Umat
     Z
@@ -777,16 +782,19 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
             k = kk[ilmi] 
 
             @timeit solver.to "prec30" begin
-            AAs = AAAATtau_d * jac(solver.model, mat_idx)'
+                # We can reuse the buffer for different `i`
+                # because we directly apply the multiplication
+                # with `Umat`.
+                AU = reduce(vcat, [
+                    (jtprod!(
+                        solver.jtprod_buffer[ilmi],
+                        solver.model,
+                        mat_idx,
+                        AAAATtau_d[i,:],
+                    ) * halpha.Umat[ilmi])'
+                    for i in axes(AAAATtau_d, 1)
+                ])
             end
-            # @timeit solver.to "prec31" begin
-            ii_, jj_, aa_ = findnz(AAs)
-            qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
-            pp_ = mod.(jj_ .- 1, n) .+ 1
-            aau = Vector{T}(undef,length(aa_))
-            aau .= aa_ .* halpha.Umat[ilmi][qq_]
-            AU = sparse(ii_,pp_,aau,nvar,n)
-            # end
             if num_matrices(solver.model) > 1
                 # @timeit solver.to "prec32" begin
                 didi1 = size(solver.W[ilmi],1)
@@ -823,7 +831,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
     if nlmi > 0
         for mat_idx in matrix_indices(t.model)
             ilmi = mat_idx.value
-            y22 = -jtprod(t.model, mat_idx, AAAAinvx)
+            y22 = -jtprod!(t.jtprod_buffer[ilmi], t.model, mat_idx, AAAAinvx)
             y33 = [y33; vec(t.Z[ilmi]' * y22 * t.Umat[ilmi])]
         end
     end

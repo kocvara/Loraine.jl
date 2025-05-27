@@ -34,7 +34,6 @@ The fields of the `struct` as related to the arrays of the above formulation as 
 """
 mutable struct MyModel
     A::Matrix{SparseArrays.SparseMatrixCSC{Float64,Int}}
-    AA::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
     B::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
     nzA::Matrix{Int64}
@@ -51,7 +50,6 @@ mutable struct MyModel
 
     function MyModel(
         A::Matrix{SparseArrays.SparseMatrixCSC{Float64,Int}},
-        AA::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}},
         B::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}},
         C::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}},
         nzA::Matrix{Int64},
@@ -69,7 +67,6 @@ mutable struct MyModel
 
         model = new()
         model.A = A
-        model.AA = AA
         model.B = B
         model.C = C
         model.nzA = nzA
@@ -122,7 +119,6 @@ function _prepare_A(A, datarank, κ)
 
     nlmi = size(A, 1)
     n = size(A, 2) - 1
-    AA = SparseMatrixCSC{Float64,Int}[]
     B = SparseMatrixCSC{Float64,Int}[]
     C = SparseMatrixCSC{Float64,Int}[]
     nzA = zeros(Int64,n,nlmi)
@@ -135,8 +131,6 @@ function _prepare_A(A, datarank, κ)
 
         Ai = A[i,:]
         m = size(Ai,1)
-        AAA = prep_AA!(Ai,n)
-        push!(AA, copy(AAA'))
 
         if datarank == -1
             Btmp = prep_B(A,n,i)
@@ -147,7 +141,7 @@ function _prepare_A(A, datarank, κ)
 
     end
 
-    return AA, B, C, nzA, sigmaA, qA
+    return B, C, nzA, sigmaA, qA
 end
 
 
@@ -197,38 +191,6 @@ function prep_B(A,n,i)
     return Btmp
 end
 
-function prep_AA!(Ai,n)
-
-    @inbounds Threads.@threads for j = 1:n
-        if isempty(Ai[j+1])
-            Ai[j+1][1, 1] = 0
-        end
-    end
-
-    ntmp = size(Ai[1], 1) * size(Ai[1], 2)
-    
-    nnz = 0
-    @inbounds for j = 1:n
-        nnz += SparseArrays.nnz(Ai[j+1])
-    end
-
-    iii = zeros(Int64, nnz)
-    jjj = zeros(Int64, nnz)
-    vvv = zeros(Float64, nnz)
-    lb = 1
-    @inbounds for j = 1:n      
-        ii,vv = findnz(-(Ai[j+1])[:])
-        lf = lb+length(ii)-1
-        iii[lb:lf] = ii
-        jjj[lb:lf] = j .* ones(Int64,length(ii))
-        vvv[lb:lf] = float(vv)
-        lb = lf+1
-    end
-    AAA = sparse(iii,jjj,vvv,ntmp,n)
-
-    return AAA
-end
-
 struct ScalarIndex
     value::Int64
 end
@@ -259,8 +221,9 @@ function constraint_indices(model::MyModel)
     return MOI.Utilities.LazyMap{ConstraintIndex}(ConstraintIndex, Base.OneTo(num_constraints(model)))
 end
 
+# Should be only used with `norm`
 jac(model::MyModel, i::ConstraintIndex, ::Type{ScalarIndex}) = model.C_lin[i.value,:]
-jac(model::MyModel, i::MatrixIndex) = model.AA[i.value]'
+jac(model::MyModel, i::MatrixIndex) = model.A[i.value, 2:end]
 
 function obj(model::MyModel, X, i::MatrixIndex)
     return -dot(model.C[i.value], X)
@@ -292,13 +255,52 @@ function dual_cons(model::MyModel, ::Type{ScalarIndex}, y, S)
     return model.d_lin - S + jtprod(model, ScalarIndex, y)
 end
 
-function jtprod(model::MyModel, mat_idx::MatrixIndex, y)
-    return -mat(model.AA[mat_idx.value]' * y)
+function buffer_for_jtprod(model::MyModel)
+    if iszero(num_matrices(model))
+        return
+    end
+    return map(Base.Fix1(buffer_for_jtprod, model), matrix_indices(model))
 end
 
-function dual_cons(model::MyModel, mat_idx::MatrixIndex, y, S)
+function buffer_for_jtprod(model::MyModel, mat_idx::MatrixIndex)
+    if iszero(num_constraints(model))
+        return
+    end
+    # FIXME: at some point, switch to dense
+    return sum(
+        abs.(model.A[mat_idx.value, j + 1])
+        for j in 1:num_constraints(model)
+    )
+end
+
+function _add_mul!(A::SparseMatrixCSC, B::SparseMatrixCSC, α)
+    for col in axes(A, 2)
+        range_A = SparseArrays.nzrange(A, col)
+        it_A = iterate(range_A)
+        for k in SparseArrays.nzrange(B, col)
+            row_B = SparseArrays.rowvals(B)[k]
+            while SparseArrays.rowvals(A)[it_A[1]] < row_B
+                it_A = iterate(range_A, it_A[2])
+            end
+            @assert row_B == SparseArrays.rowvals(A)[it_A[1]]
+            SparseArrays.nonzeros(A)[it_A[1]] += SparseArrays.nonzeros(B)[k] * α
+        end
+    end
+end
+
+_zero!(A::SparseMatrixCSC) = fill!(SparseArrays.nonzeros(A), 0.0)
+
+function jtprod!(buffer, model::MyModel, mat_idx::MatrixIndex, y)
+    _zero!(buffer)
+    for j in eachindex(y)
+        _add_mul!(buffer, model.A[mat_idx.value, j + 1], y[j])
+    end
+    return buffer
+end
+
+function dual_cons!(buffer, model::MyModel, mat_idx::MatrixIndex, y, S)
     i = mat_idx.value
-    return model.C[i] - S[i] + jtprod(model, mat_idx, y)
+    return jtprod!(buffer[i], model, mat_idx, y) + model.C[i] - S[i]
 end
 
 objgrad(model::MyModel, ::Type{ScalarIndex}) = model.d_lin
@@ -333,7 +335,7 @@ function schur_complement(model::MyModel, w, W, G, datarank)
         # if 1 == 0
             H = makeBBBB_rank1(model.n, model.nlmi, model.B, G)
         else
-            H = makeBBBBs(model.n, model.nlmi, model.A, model.AA, W, model.qA, model.sigmaA)
+            H = makeBBBBs(model, W)
         end
     else
         H = zeros(eltype(w), model.n, model.n)
@@ -351,16 +353,15 @@ end
 # [HKS24, (5b)]
 # Returns the matrix equal to the sum, for each equation, of
 # ⟨A_i, WA(y)W⟩
-function eval_schur_complement!(result, model::MyModel, w, W, y)
+function eval_schur_complement!(buffer, result, model::MyModel, w, W, y)
     result .= 0.0
     for mat_idx in matrix_indices(model)
         i = mat_idx.value
-        result .-= jprod(model, mat_idx, W[i] * jtprod(model, mat_idx, y) * W[i])
+        result .-= jprod(model, mat_idx, W[i] * jtprod!(buffer[i], model, mat_idx, y) * W[i])
     end
     result .+= model.C_lin * (w .* (model.C_lin' * y))
     return result
 end
-
 
 # end #module
 

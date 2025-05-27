@@ -9,7 +9,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 
     for mat_idx = matrix_indices(solver.model)
         i = mat_idx.value
-        solver.Rd[i] .= dual_cons(solver.model, mat_idx, solver.y, solver.S)
+        solver.Rd[i] .= dual_cons!(solver.jtprod_buffer, solver.model, mat_idx, solver.y, solver.S)
         solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
@@ -98,12 +98,12 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 
     #     end
     else
-        A = MyA(w, solver.W, solver.model, solver.to)
+        A = MyA(w, solver.W, solver.model, solver.jtprod_buffer, solver.to)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
             Prec_for_CG_tilS_prep(solver,halpha)  
-            M = MyM(solver.model, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, solver.jtprod_buffer, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         elseif solver.preconditioner == 2 || solver.preconditioner == 4
             Prec_for_CG_beta(solver,halpha)  
             M = MyM_beta(solver.model, halpha.AAAATtau)
@@ -210,11 +210,11 @@ function corrector(solver,halpha)
         #     end
         # end
     else
-        A = MyA(solver.X_lin .* solver.S_lin_inv, solver.W, solver.model, solver.to)
+        A = MyA(solver.X_lin .* solver.S_lin_inv, solver.W, solver.model, solver.jtprod_buffer, solver.to)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
-            M = MyM(solver.model, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, solver.jtprod_buffer, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         else
             M = MyM_beta(solver.model, halpha.AAAATtau)
         end
@@ -239,7 +239,7 @@ function find_step(solver::MySolver{T}) where {T}
         for mat_idx in matrix_indices(solver.model)
             i = mat_idx.value
             @timeit solver.to "find_step_A" begin
-            solver.delS[i] .= solver.Rd[i] .+ jtprod(solver.model, mat_idx, solver.dely)
+            solver.delS[i] .= solver.Rd[i] .+ jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
             Ξ = vec(my_kron(solver.W[i], solver.W[i], solver.delS[i]))
             if solver.predict
                 solver.delX[i] .= mat(-solver.X[i][:] .- Ξ)

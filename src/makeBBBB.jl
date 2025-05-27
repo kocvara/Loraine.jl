@@ -15,15 +15,12 @@ end
 
 #########################
 
-function makeBBBBs(n,nlmi,A,AA,W,qA,sigmaA)
+function makeBBBBs(model, W)
+    n = num_constraints(model)
     BBBB = zeros(Float64, n, n)
-    @inbounds for ilmi = 1:nlmi
-        Wilmi = W[ilmi]
-        AAilmi = AA[ilmi]
-        Ailmi = A[ilmi,:]
-        BBBB += makeBBBBsi(ilmi,Ailmi,AAilmi,Wilmi,n,qA,sigmaA)
+    for mat_idx in matrix_indices(model)
+        BBBB += makeBBBBsi(model, mat_idx, W[mat_idx.value])
     end
-
     return BBBB
 end
 
@@ -56,33 +53,35 @@ function _dot(A::SparseMatrixCSC, B::SparseMatrixCSC, W::Matrix)
 end
 
 #####
-function makeBBBBsi(ilmi,Ailmi,AAilmi,Wilmi::Matrix{T},n,qA,sigmaA) where {T}
+function makeBBBBsi(model, mat_idx, Wilmi::Matrix{T}) where {T}
+    ilmi = mat_idx.value
+    n = num_constraints(model)
     BBBB = zeros(T, n, n)
-    tmp1 = Matrix{T}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
+    dim = side_dimension(model, mat_idx)
+    tmp1 = Matrix{T}(undef, size(Wilmi, 2), dim)
     # tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
-    tmp2 = Matrix{T}(undef,size(AAilmi, 1), 1)
-    tmp3 = Vector{Float64}(undef,size(Wilmi, 1))
-    ilmi1 = (ilmi-1)*n
+    tmp3 = Vector{Float64}(undef, size(Wilmi, 1))
 
-    @inbounds for ii = 1:n
-        # tmp1 = zeros(Float64,size(Wilmi, 2), size(Ailmi[1], 1))
-        i = sigmaA[ii,ilmi]
-        if nnz(Ailmi[i+1]) > 0
-            if ii <= qA[1,ilmi]
-                tmp  = zeros(T,size(Wilmi, 2), size(Ailmi[1], 1))
-                mul!(tmp1,Wilmi,Ailmi[i+1])
-                tmp = tmp1 * Wilmi
-                tmp2 = AAilmi * vec(tmp)
-                indi = sigmaA[ii:end,ilmi]
+    for ii = 1:n
+        i = model.sigmaA[ii,ilmi]
+        Ai = model.A[ilmi, i + 1]
+        if nnz(Ai) > 0
+            if ii <= model.qA[1,ilmi]
+                tmp  = zeros(T, size(Wilmi, 2), dim)
+                mul!(tmp1, Wilmi, Ai)
+                tmp = tmp1 * Wilmi # TODO mul!
+                tmp2 = jprod(model, mat_idx, tmp)
+                indi = model.sigmaA[ii:end,ilmi]
                 BBBB[indi,i] .= -tmp2[indi]
                 BBBB[i,indi] .= -tmp2[indi]
             else
-                if !iszero(nnz(Ailmi[i+1]))
-                    if nnz(Ailmi[i+1]) > 1
+                if !iszero(nnz(Ai))
+                    if nnz(Ai) > 1
                         @inbounds for jj = ii:n
-                            j = sigmaA[jj,ilmi]
-                            if !iszero(nnz(Ailmi[j+1]))
-                                ttt = _dot(Ailmi[i+1], Ailmi[j+1], Wilmi)
+                            j = model.sigmaA[jj,ilmi]
+                            Aj = model.A[ilmi, j+1]
+                            if !iszero(nnz(Aj))
+                                ttt = _dot(Ai, Aj, Wilmi)
                                 if i >= j
                                     BBBB[i,j] = ttt
                                 else
@@ -92,11 +91,11 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,Wilmi::Matrix{T},n,qA,sigmaA) where {T}
                         end   
                     else
                         # A is symmetric
-                        iiiiAi = jjjiAi = only(rowvals(Ailmi[i+1]))
-                        vvvi = only(nonzeros(Ailmi[i+1]))
+                        iiiiAi = jjjiAi = only(rowvals(Ai))
+                        vvvi = only(nonzeros(Ai))
                         @inbounds for jj = ii:n
-                            j = sigmaA[jj,ilmi]
-                            Ajjj = Ailmi[j+1]
+                            j = model.sigmaA[jj,ilmi]
+                            Ajjj = model.A[ilmi, j+1]
                             # As we sort the matrices in decreasing `nnz` order,
                             # the rest of matrices is either zero or have only
                             # one entry
