@@ -220,7 +220,8 @@ function corrector(solver,halpha)
         end
 
         @timeit solver.to "CG corrector" begin
-        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = 10000, precon = M)
+        # `maxIter = 10000` fails on 32-bit, we need `maxIter = Int64(10000)`
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = Int64(10000), precon = M)
         end
         solver.cg_iter_cor += num_iters
         solver.cg_iter_tot += num_iters
