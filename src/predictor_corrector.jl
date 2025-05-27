@@ -138,11 +138,11 @@ function sigma_update(solver::MySolver{T}) where {T}
     else
             expon_used = max(1, min(solver.expon, T(3) * step_pred^2))
     end
-    if btrace(solver.model.nlmi, solver.Xn, solver.Sn) .< 0
+    if btrace(num_matrices(solver.model), solver.Xn, solver.Sn) .< 0
         solver.sigma = T(0.8)
     else
-        if solver.model.nlmi > 0
-            tmp1 = btrace(solver.model.nlmi, solver.Xn, solver.Sn)
+        if num_matrices(solver.model) > 0
+            tmp1 = btrace(num_matrices(solver.model), solver.Xn, solver.Sn)
         else
             tmp1 = 0
         end
@@ -163,8 +163,8 @@ end
 function corrector(solver,halpha)
     solver.predict = false
     h = solver.Rp #RHS for the linear system()
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
+    if num_matrices(solver.model) > 0
+        for i = 1:num_matrices(solver.model)
             h += solver.model.AA[i] * my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i]))         # RHS using my_kron()
         end
     end
@@ -228,8 +228,8 @@ function corrector(solver,halpha)
 end
 
 function find_step(solver::MySolver{T}) where {T}
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
+    if num_matrices(solver.model) > 0
+        for i = 1:num_matrices(solver.model)
             @timeit solver.to "find_step_A" begin
             solver.delS[i] .= solver.Rd[i] .- mat(solver.model.AA[i]' * solver.dely)
             Ξ = my_kron(solver.W[i], solver.W[i], solver.delS[i])
@@ -283,8 +283,8 @@ function find_step(solver::MySolver{T}) where {T}
 
     if solver.predict
         # solution update
-        if solver.model.nlmi > 0
-            for i = 1:solver.model.nlmi
+        if num_matrices(solver.model) > 0
+            for i = 1:num_matrices(solver.model)
                 solver.Xn[i] = solver.X[i] + solver.alpha[i] .* solver.delX[i]
                 solver.Sn[i] = solver.S[i] + solver.beta[i] .* solver.delS[i]
                 deed = solver.D[i] * ones(1, Int(solver.model.msizes[i])) + ones(Int(solver.model.msizes[i]), 1) * solver.D[i]'
@@ -294,8 +294,8 @@ function find_step(solver::MySolver{T}) where {T}
     else
         solver.yold = solver.y
         solver.y = solver.y + minimum([solver.beta; solver.beta_lin]) * solver.dely
-        if solver.model.nlmi > 0
-            for i = 1:solver.model.nlmi
+        if num_matrices(solver.model) > 0
+            for i = 1:num_matrices(solver.model)
                 solver.X[i] = solver.X[i] + minimum([solver.alpha; solver.alpha_lin]) .* solver.delX[i]
                 solver.X[i] = (solver.X[i] + solver.X[i]') ./ 2
                 solver.S[i] = solver.S[i] + minimum([solver.beta; solver.beta_lin]) .* solver.delS[i]

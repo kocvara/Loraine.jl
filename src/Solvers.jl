@@ -230,14 +230,15 @@ function load(model, options::Dict; T = Float64)
     end
 
     if verb > 0
-        @printf(" Number of variables: %5d\n",model.n)
-        @printf(" LMI constraints    : %5d\n",model.nlmi)
-        if model.nlmi>0
+        @printf(" Number of variables: %5d\n",num_constraints(model))
+        @printf(" LMI constraints    : %5d\n",num_matrices(model))
+        if num_matrices(model) > 0
             @printf(" Matrix size(s)     :")
-            Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), model.msizes);
+            msizes = side_dimension.(Ref(model), matrix_indices(model))
+            Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), msizes);
             @printf("\n")
         end
-        @printf(" Linear constraints : %5d\n",model.nlin)
+        @printf(" Linear constraints : %5d\n",num_scalars(model))
         if solver.kit>0
             @printf(" Preconditioner     : %5d\n",preconditioner)
         else
@@ -323,7 +324,7 @@ function solve(solver::MySolver,halpha::Halpha)
 
         if solver.preconditioner == 4
             #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
-            if (solver.cg_iter_cor / 2 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/20 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter_cor > 100
+            if (solver.cg_iter_cor / 2 > solver.erank * num_matrices(solver.model) * sqrt(num_constraints(solver.model))/20 && solver.iter > sqrt(num_constraints(solver.model)) / 60) || solver.cg_iter_cor > 100
                 solver.preconditioner = 1; solver.aamat = 2; 
                 if solver.verb > 0
                     println("Switching to preconditioner 1")
@@ -364,8 +365,8 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Rd = Matrix{T}[]
     solver.Rc = Matrix{T}[]
 
-    solver.alpha = zeros(solver.model.nlmi)
-    solver.beta = zeros(solver.model.nlmi)
+    solver.alpha = zeros(num_matrices(solver.model))
+    solver.beta = zeros(num_matrices(solver.model))
 
     solver.Xn = Matrix{T}[]
     solver.Sn = Matrix{T}[]
@@ -402,16 +403,16 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
         push!(halpha.Z,zeros(dim, dim))
         # tmp = Matrix(I(dim))
         # push!(halpha.cholS,cholesky(tmp))
-        push!(halpha.AAAATtau,spzeros(solver.model.n, solver.model.n))
+        push!(halpha.AAAATtau,spzeros(num_constraints(solver.model), num_constraints(solver.model)))
     end
 
     if solver.kit == 1
-        if solver.model.nlmi == 0
+        if num_matrices(solver.model) == 0
             if solver.verb > 0
                 println("WARNING: Switching to a direct solver, no LMIs")
             end
             solver.kit = 0
-        elseif solver.model.nlmi > 0 && solver.erank >= maximum(solver.model.msizes) - 1
+        elseif num_matrices(solver.model) > 0 && solver.erank >= maximum(mat_idx -> side_dimension(solver.model, mat_idx), matrix_indices(solver.model)) - 1
             if solver.verb > 0
                 println("WARNING: Switching to a direct solver, erank bigger than matrix size")
             end
@@ -421,8 +422,8 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
     # when datarank was set to -1 and conversion failed, we switch to datarank = 0
     if ~isempty(solver.model.B)
-        if solver.model.nlmi > 0
-            for ilmi = 1:solver.model.nlmi
+        if num_matrices(solver.model) > 0
+            for ilmi = 1:num_matrices(solver.model)
                 if nnz(solver.model.B[ilmi]) == 0
                     solver.datarank = 0
                 end
@@ -466,8 +467,8 @@ end
 
 function find_mu(solver)
     trXS = 0
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
+    if num_matrices(solver.model) > 0
+        for i = 1:num_matrices(solver.model)
             trXS = trXS + sum(sum(solver.X[i] .* solver.S[i]))
         end
     end 
@@ -485,8 +486,8 @@ function check_convergence(solver)
     # DIMACS error evaluation
     solver.err1 = norm(solver.Rp) / (1 + norm(solver.model.b))
     (solver.err2,solver.err3,solver.err4,solver.err5,solver.err6) = [0.,0.,0.,0.,0.]
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
+    if num_matrices(solver.model) > 0
+        for i = 1:num_matrices(solver.model)
             solver.err2 = solver.err2 + max(0, -eigmin(solver.X[i]) / (1 + norm(solver.model.b)))
             solver.err3 = solver.err3 + norm(solver.Rd[i], 2) / (1 + norm(solver.model.C[i]))
             solver.err4 = solver.err4 + max(0, -eigmin(solver.S[i]) / (1 + norm(solver.model.C[i])))
@@ -495,12 +496,12 @@ function check_convergence(solver)
         end
     end
 
-    solver.err5 = (btrace(solver.model.nlmi, solver.model.C, solver.X) - dot(solver.model.b', solver.y)) / (1 + abs(btrace(solver.model.nlmi, solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
+    solver.err5 = (btrace(num_matrices(solver.model), solver.model.C, solver.X) - dot(solver.model.b', solver.y)) / (1 + abs(btrace(num_matrices(solver.model), solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
     if solver.model.nlin > 0
         solver.err2 = solver.err2 + max(0, -minimum(solver.X_lin) / (1 + norm(solver.model.b)))
         solver.err3 = solver.err3 + norm(solver.Rd_lin) / (1 + norm(solver.model.d_lin))
         solver.err4 = solver.err4 + max(0, -minimum(solver.S_lin) / (1 + norm(solver.model.d_lin)))
-        solver.err5 = (btrace(solver.model.nlmi, solver.model.C, solver.X) + dot(solver.model.d_lin', solver.X_lin) - dot(solver.model.b',solver.y)) / (1 + abs(btrace(solver.model.nlmi, solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
+        solver.err5 = (btrace(num_matrices(solver.model), solver.model.C, solver.X) + dot(solver.model.d_lin', solver.X_lin) - dot(solver.model.b',solver.y)) / (1 + abs(btrace(num_matrices(solver.model), solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
         solver.err6 = solver.err6 + dot(solver.S_lin' , solver.X_lin) / (1 + abs(dot(solver.model.d_lin', solver.X_lin)) + abs(dot(solver.model.b', solver.y)))
     end
 
@@ -574,7 +575,7 @@ end
 
 function Prec_for_CG_beta(solver,halpha)    
     
-    nlmi = solver.model.nlmi
+    nlmi = num_matrices(solver.model)
     kk = solver.erank .* ones(Int64,nlmi,1)  
     nvar = solver.model.n
         
@@ -625,8 +626,8 @@ end
 function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T} 
     
     @timeit solver.to "prec" begin
-    nlmi = solver.model.nlmi
-    kk = solver.erank .* ones(Int64,nlmi,1)
+    nlmi = num_matrices(solver.model)
+    kk = solver.erank .* ones(Int64,nlmi)
     # kk[2] = 3
     # halpha.Z = SparseMatrixCSC{T}[]
     halpha.Z = Matrix{T}[]
@@ -691,8 +692,8 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         end
     end
     
-    if solver.model.nlin > 0
-        halpha.AAAATtau .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
+    if num_scalars(solver.model) > 0
+        halpha.AAAATtau .+= schur_complement(solver.model, solver.X_lin .* solver.S_lin_inv, ScalarIndex)
     end
     
     didi = 0
@@ -704,11 +705,12 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         # @timeit solver.to "prec3" begin
         t = zeros(nvar, k*didi)
         if nlmi > 0
-            for ilmi = 1:nlmi
+            for mat_idx in matrix_indices(solver.model)
+                ilmi = mat_idx.value
                 n = size(solver.W[ilmi],1)
                 k = kk[ilmi]
                 TT = kron(halpha.Umat[ilmi],halpha.Z[ilmi])
-                t[1:nvar,lbt:lbt+k*n-1] .= solver.model.AA[ilmi] * TT
+                t[1:nvar,lbt:lbt+k*n-1] .= jac(solver.model, mat_idx)' * TT
                 lbt = lbt + k*n
             end
         end
@@ -770,10 +772,11 @@ end
 function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) where {T}
     @timeit solver.to "prec3" begin
     S = Matrix{T}(undef,sizeS,sizeS)
-    nvar = solver.model.n
+    nvar = num_constraints(solver.model)
     t = Matrix{T}(undef,nvar,kk[1]*didi)
-    if solver.model.nlmi > 0
-        for ilmi = 1:solver.model.nlmi
+    if num_matrices(solver.model) > 0
+        for mat_idx in matrix_indices(solver.model)
+            ilmi = mat_idx.value
             if kk[ilmi] == 0
                 continue 
             end
@@ -781,7 +784,7 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
             k = kk[ilmi] 
 
             @timeit solver.to "prec30" begin
-            AAs = AAAATtau_d * solver.model.AA[ilmi]
+            AAs = AAAATtau_d * jac(solver.model, mat_idx)'
             end
             # @timeit solver.to "prec31" begin
             ii_, jj_, aa_ = findnz(AAs)
@@ -791,7 +794,7 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
             aau .= aa_ .* halpha.Umat[ilmi][qq_]
             AU = sparse(ii_,pp_,aau,nvar,n)
             # end
-            if solver.model.nlmi>1
+            if num_matrices(solver.model) > 1
                 # @timeit solver.to "prec32" begin
                 didi1 = size(solver.W[ilmi],1)
                 ttmp = Matrix{T}(undef,nvar,kk[ilmi]*didi1)

@@ -244,9 +244,13 @@ function schur_complement(model::MyModel, w, W, G, datarank)
         H = zeros(eltype(w), model.n, model.n)
     end
     if model.nlin > 0
-        H .+= model.C_lin * spdiagm(w) * model.C_lin'
+        H .+= schur_complement(model, w, ScalarIndex)
     end
     return Hermitian(H, :L)
+end
+
+function schur_complement(model::MyModel, w, ::Type{ScalarIndex})
+    return model.C_lin * spdiagm(w) * model.C_lin'
 end
 
 # [HKS24, (5b)]
