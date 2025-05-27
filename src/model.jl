@@ -249,6 +249,19 @@ function schur_complement(model::MyModel, w, W, G, datarank)
     return Hermitian(H, :L)
 end
 
+# [HKS24, (5b)]
+# Returns the matrix equal to the sum, for each equation, of
+# ⟨A_i, WA(y)W⟩
+function eval_schur_complement!(result, model::MyModel, w, W, y)
+    result .= 0.0
+    for mat_idx in matrix_indices(model)
+        i = mat_idx.value
+        result .+= model.AA[i] * (W[i] * mat(transpose(model.AA[i]) * y) * W[i])[:]
+    end
+    result .+= model.C_lin * (w .* (model.C_lin' * y))
+    return result
+end
+
 struct ScalarIndex
     value::Int64
 end

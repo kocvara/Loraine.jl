@@ -552,46 +552,15 @@ end
 ```Functions for the iterative solver follow```
 
 struct MyA{T}
+    w::Vector{T}
     W::Vector{Matrix{T}}
-    AA::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
-    nlin::Int64
-    C_lin::SparseArrays.SparseMatrixCSC{Float64,Int64}
-    X_lin
-    S_lin_inv
+    model::MyModel
     to::TimerOutputs.TimerOutput
 end
 
-function (t::MyA)(Ax::Vector{T}, x::Vector{T}) where {T}
+function (t::MyA)(Ax::Vector, x::Vector)
     @timeit t.to "Ax" begin
-    nlmi = length(t.AA)
-    m = size(t.AA[1],1)
-    ax1 = zeros(m,1)
-    if nlmi > 0
-        for ilmi = 1:nlmi
-            waxwtmp = Matrix{T}(undef,size(t.W[ilmi]))
-            waxw = Matrix{T}(undef,size(t.W[ilmi]))
-            # @timeit t.to "Ax1" begin
-            ax = Vector{T}(undef,size(t.AA[ilmi],2))
-            # end
-            # @timeit t.to "Ax2" begin
-            mul!(ax, transpose(t.AA[ilmi]), x)
-            # ax = transpose(t.AA[ilmi]) * x
-            # end
-            # @timeit t.to "Ax3" begin
-            # waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
-            mul!(waxwtmp,t.W[ilmi], mat(ax))
-            mul!(waxw, waxwtmp, t.W[ilmi])
-            # end
-            # @timeit t.to "Ax4" begin
-            ax1 .+= t.AA[ilmi] * waxw[:]
-            # end
-        end
-    end
-    if t.nlin>0
-        ax1 .+= t.C_lin * ((t.X_lin .* t.S_lin_inv) .* (t.C_lin' * x))
-    end
-
-    mul!(Ax,I(m),ax1[:])
+        eval_schur_complement!(Ax, t.model, t.w, t.W, x)
     end
 end
 

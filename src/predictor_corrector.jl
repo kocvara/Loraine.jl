@@ -98,7 +98,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 
     #     end
     else
-        A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
+        A = MyA(w, solver.W, solver.model, solver.to)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
@@ -204,7 +204,7 @@ function corrector(solver,halpha)
         #     end
         # end
     else
-        A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
+        A = MyA(solver.X_lin .* solver.S_lin_inv, solver.W, solver.model, solver.to)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1

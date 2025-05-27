@@ -89,6 +89,9 @@ function MOI.set(optimizer::Optimizer, param::MOI.RawOptimizerAttribute, value)
         throw(MOI.UnsupportedAttribute(param))
     end
     optimizer.options[param.name] = value
+    if !isnothing(optimizer.solver)
+        setfield!(optimizer.solver, Symbol(param.name), value)
+    end
     return
 end
 
