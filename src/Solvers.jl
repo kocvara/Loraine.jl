@@ -70,14 +70,14 @@ mutable struct MySolver{T}
     Xn
     Sn
 
-    X_lin
-    S_lin
-    Si_lin
-    S_lin_inv
-    delX_lin
-    delS_lin
-    Xn_lin
-    Sn_lin
+    X_lin::Vector{T}
+    S_lin::Vector{T}
+    Si_lin::Vector{T}
+    S_lin_inv::Vector{T}
+    delX_lin::Vector{T}
+    delS_lin::Vector{T}
+    Xn_lin::Vector{T}
+    Sn_lin::Vector{T}
 
     D
     G
@@ -474,7 +474,7 @@ function find_mu(solver)
     mu = trXS
 
     if solver.model.nlin > 0
-        mu = mu + tr(solver.X_lin' * solver.S_lin)
+        mu = mu + dot(solver.X_lin, solver.S_lin)
     end
     solver.mu = mu / (sum(solver.model.msizes) + solver.model.nlin)
     return solver.mu

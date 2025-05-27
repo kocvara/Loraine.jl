@@ -18,9 +18,9 @@ function  find_initial!(solver)
 
     b2 = 1 .+ abs.(cons_constant(solver.model)')
     n = length(b2)
-    solver.y = zeros(n,1)
+    solver.y = zeros(n)
     
-    f = zeros(1,n)
+    f = zeros(n)
     for mat_idx in matrix_indices(solver.model)
         i = mat_idx.value
         dim = side_dimension(solver.model, mat_idx)
@@ -42,8 +42,8 @@ function  find_initial!(solver)
         solver.S[i] = Eta * Matrix(1.0I, dim, dim)
     end
     
-    p = zeros(1,n)
-    pp = zeros(1,n)
+    p = zeros(n)
+    pp = zeros(n)
     if solver.initpoint == 0
         Epss = 1.0
     else
@@ -54,16 +54,16 @@ function  find_initial!(solver)
         end
         Epss = max(1.0, maximum(p, init = 0.0))
     end
-    solver.X_lin = 1 .* Epss * ones(num_scalars(solver.model),1)
+    solver.X_lin = 1 .* Epss * ones(num_scalars(solver.model))
     
     if solver.initpoint == 0
         Etaa = 1.0
     else
         mf = max(maximum(pp, init = 0.0), norm(objgrad(solver.model, ScalarIndex)))
         mf = (0 + mf) ./ sqrt(num_scalars(solver.model))
-        Etaa =  max(1,mf)
+        Etaa =  max(1, mf)
     end
-    solver.S_lin = 1 .* Etaa * ones(num_scalars(solver.model),1)
+    solver.S_lin = 1 .* Etaa * ones(num_scalars(solver.model))
     solver.S_lin_inv = 1 ./ solver.S_lin
     
 end
