@@ -353,7 +353,7 @@ function eval_schur_complement!(result, model::MyModel, w, W, y)
     result .= 0.0
     for mat_idx in matrix_indices(model)
         i = mat_idx.value
-        result .-= model.AA[i] * (W[i] * jtprod(model, mat_idx, y) * W[i])[:]
+        result .-= jprod(model, mat_idx, W[i] * jtprod(model, mat_idx, y) * W[i])
     end
     result .+= model.C_lin * (w .* (model.C_lin' * y))
     return result
