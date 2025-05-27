@@ -146,12 +146,12 @@ function sigma_update(solver::MySolver{T}) where {T}
         else
             tmp1 = 0
         end
-        if solver.model.nlin > 0
+        if num_scalars(solver.model) > 0
                 tmp2 = dot(solver.Xn_lin', solver.Sn_lin)
         else
                 tmp2 = 0
         end
-        tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + solver.model.nlin)
+        tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + num_scalars(solver.model))
         tmp12 = convert(Float64, tmp12)
         mu = Float64(solver.mu)
         solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
@@ -168,7 +168,7 @@ function corrector(solver,halpha)
             h += solver.model.AA[i] * my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i]))         # RHS using my_kron()
         end
     end
-    if solver.model.nlin > 0
+    if num_scalars(solver.model) > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
         h = h + solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp)
     end
@@ -274,7 +274,7 @@ function find_step(solver::MySolver{T}) where {T}
         end
     end
 
-    if solver.model.nlin > 0
+    if num_scalars(solver.model) > 0
         find_step_lin(solver)
     else
         solver.alpha_lin = 1

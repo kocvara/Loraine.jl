@@ -420,21 +420,10 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
         end
     end
 
-    # when datarank was set to -1 and conversion failed, we switch to datarank = 0
-    if ~isempty(solver.model.B)
-        if num_matrices(solver.model) > 0
-            for ilmi = 1:num_matrices(solver.model)
-                if nnz(solver.model.B[ilmi]) == 0
-                    solver.datarank = 0
-                end
-            end
-        end
-    end
-
 end
 
 function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
-    mmm = Matrix{T}(undef, solver.model.n, solver.model.n)
+    mmm = Matrix{T}(undef, num_constraints(solver.model), num_constraints(solver.model))
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
@@ -474,17 +463,17 @@ function find_mu(solver)
     end 
     mu = trXS
 
-    if solver.model.nlin > 0
+    if num_scalars(solver.model) > 0
         mu = mu + dot(solver.X_lin, solver.S_lin)
     end
-    solver.mu = mu / (sum(solver.model.msizes) + solver.model.nlin)
+    solver.mu = mu / (num_scalars(solver.model) + sum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model), init = 0))
     return solver.mu
 end
 
 function check_convergence(solver)
 
     # DIMACS error evaluation
-    b_den = 1 + norm(solver.model.b)
+    b_den = 1 + norm(cons_constant(solver.model))
     dobj = dual_obj(solver.model, solver.y)
     solver.err1 = norm(solver.Rp) / b_den
     solver.err2, solver.err3, solver.err4, solver.err5, solver.err6 = 0., 0., 0., 0., 0.
