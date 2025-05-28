@@ -15,9 +15,9 @@ end
 
 #########################
 
-function makeBBBBs(model::MyModel{T}, W) where {T}
+function makeBBBBs(model, W)
     n = num_constraints(model)
-    BBBB = zeros(T, n, n)
+    BBBB = zeros(eltype(eltype(W)), n, n)
     for mat_idx in matrix_indices(model)
         BBBB += makeBBBBsi(model, mat_idx, W[mat_idx.value])
     end
