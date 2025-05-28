@@ -27,7 +27,7 @@ function  find_initial!(solver)
         if solver.initpoint == 0
             Eps = 1.0
         else
-            f = norm(b2)/(1+norm(jac(solver.model, mat_idx)))
+            f = norm(b2)/(1+norm_jac(solver.model, mat_idx))
             Eps = sqrt(dim) * max(1, sqrt.(dim) * f)
         end
         solver.X[i] = Eps * Matrix(1.0I, dim, dim)

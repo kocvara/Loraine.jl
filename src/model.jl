@@ -223,7 +223,12 @@ end
 
 # Should be only used with `norm`
 jac(model::MyModel, i::ConstraintIndex, ::Type{ScalarIndex}) = model.C_lin[i.value,:]
-jac(model::MyModel, i::MatrixIndex) = model.A[i.value, 2:end]
+function norm_jac(model::MyModel, i::MatrixIndex)
+    if size(model.A, 2) < 2
+        return 0.0
+    end
+    return norm(model.A[i.value, 2:end])
+end
 
 function obj(model::MyModel, X, i::MatrixIndex)
     return -dot(model.C[i.value], X)
