@@ -12,10 +12,18 @@ using MultiFloats
 # using MKL
 
 include("kron_etc.jl")
-include("makeBBBB.jl")
 include("model.jl")
+include("schur.jl")
 
-mutable struct MySolver{T}
+struct FactoredMatrix{T} <: AbstractMatrix{T}
+    factor::Matrix{T}
+    factor_inv::Matrix{T} # inv(factor)
+    matrix::Matrix{T} # factor * factor_inv'
+end
+Base.size(A::FactoredMatrix) = size(A.matrix)
+Base.getindex(A::FactoredMatrix, i, j) = Base.getindex(A.matrix, i, j)
+
+mutable struct MySolver{T,A,B,SB}
     # main options
     kit::Int64
     tol_cg::T
@@ -36,7 +44,9 @@ mutable struct MySolver{T}
     to::Any
 
     # model and preprocessed model data
-    model::MyModel
+    model::MyModel{T,A}
+    jtprod_buffer::B
+    schur_buffer::SB
 
     predict::Bool
 
@@ -70,19 +80,17 @@ mutable struct MySolver{T}
     Xn
     Sn
 
-    X_lin
-    S_lin
-    Si_lin
-    S_lin_inv
-    delX_lin
-    delS_lin
-    Xn_lin
-    Sn_lin
+    X_lin::Vector{T}
+    S_lin::Vector{T}
+    Si_lin::Vector{T}
+    S_lin_inv::Vector{T}
+    delX_lin::Vector{T}
+    delS_lin::Vector{T}
+    Xn_lin::Vector{T}
+    Sn_lin::Vector{T}
 
     D
-    G
-    Gi
-    W
+    W::Vector{FactoredMatrix{T}}
     Si
     DDsi
 
@@ -122,10 +130,12 @@ mutable struct MySolver{T}
         timing::Int64,
         maxit::Int64, 
         datasparsity::Int64,
-        model::MyModel
-        ) where {T}
+        model::MyModel{T,A}
+    ) where {T,A}
 
-        solver = new{T}()
+        jtprod_buffer = buffer_for_jtprod(model)
+        schur_buffer = buffer_for_schur_complement(model, datasparsity)
+        solver = new{T,A,typeof(jtprod_buffer),typeof(schur_buffer)}()
         solver.kit             = kit
         solver.tol_cg          = tol_cg
         solver.tol_cg_up       = tol_cg_up
@@ -142,6 +152,8 @@ mutable struct MySolver{T}
         solver.maxit           = maxit 
         solver.datasparsity    = datasparsity
         solver.model           = model
+        solver.jtprod_buffer   = jtprod_buffer
+        solver.schur_buffer    = schur_buffer
         return solver
     end
 end
@@ -200,7 +212,7 @@ function load(model, options::Dict; T = Float64)
     initpoint = Int64(get(options, "initpoint", 0))
     timing = Int64(get(options, "timing", 1))
     maxit = Int64(get(options, "maxit", 100))
-    datasparsity = Int64(get(options, "maxit", 8))
+    datasparsity = Int64(get(options, "datasparsity", 8))
 
     solver = MySolver{T}(kit,
         tol_cg,
@@ -217,22 +229,7 @@ function load(model, options::Dict; T = Float64)
         timing,
         maxit, 
         datasparsity,
-        MyModel(model.A,
-            model.AA,
-            model.B,
-            model.C,
-            model.nzA,
-            model.sigmaA,
-            model.qA,
-            model.b,
-            model.b_const,
-            model.d_lin,
-            model.C_lin,
-            model.n,
-            model.msizes,
-            model.nlin,
-            model.nlmi
-        )
+        model,
     )
 
     halpha = Halpha(kit)
@@ -245,14 +242,15 @@ function load(model, options::Dict; T = Float64)
     end
 
     if verb > 0
-        @printf(" Number of variables: %5d\n",model.n)
-        @printf(" LMI constraints    : %5d\n",model.nlmi)
-        if model.nlmi>0
+        @printf(" Number of variables: %5d\n",num_constraints(model))
+        @printf(" LMI constraints    : %5d\n",num_matrices(model))
+        if num_matrices(model) > 0
             @printf(" Matrix size(s)     :")
-            Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), model.msizes);
+            msizes = side_dimension.(Ref(model), matrix_indices(model))
+            Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), msizes);
             @printf("\n")
         end
-        @printf(" Linear constraints : %5d\n",model.nlin)
+        @printf(" Linear constraints : %5d\n",num_scalars(model))
         if solver.kit>0
             @printf(" Preconditioner     : %5d\n",preconditioner)
         else
@@ -338,7 +336,7 @@ function solve(solver::MySolver,halpha::Halpha)
 
         if solver.preconditioner == 4
             #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
-            if (solver.cg_iter_cor / 2 > solver.erank * solver.model.nlmi * sqrt(solver.model.n)/20 && solver.iter > sqrt(solver.model.n) / 60) || solver.cg_iter_cor > 100
+            if (solver.cg_iter_cor / 2 > solver.erank * num_matrices(solver.model) * sqrt(num_constraints(solver.model))/20 && solver.iter > sqrt(num_constraints(solver.model)) / 60) || solver.cg_iter_cor > 100
                 solver.preconditioner = 1; solver.aamat = 2; 
                 if solver.verb > 0
                     println("Switching to preconditioner 1")
@@ -370,17 +368,15 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.delS = Matrix{T}[]
 
     solver.D = Vector{T}[]
-    solver.G = Matrix{T}[]
-    solver.Gi = Matrix{T}[]
-    solver.W = Matrix{T}[]
+    solver.W = FactoredMatrix{T}[]
     solver.Si = Matrix{T}[]
     solver.DDsi = Vector{T}[]
 
     solver.Rd = Matrix{T}[]
     solver.Rc = Matrix{T}[]
 
-    solver.alpha = zeros(solver.model.nlmi)
-    solver.beta = zeros(solver.model.nlmi)
+    solver.alpha = zeros(num_matrices(solver.model))
+    solver.beta = zeros(num_matrices(solver.model))
 
     solver.Xn = Matrix{T}[]
     solver.Sn = Matrix{T}[]
@@ -388,43 +384,43 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
     solver.regcount = 0
  
-    for i = 1:solver.model.nlmi
-        push!(solver.X,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.S,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.delX,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.delS,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.D, zeros(solver.model.msizes[i]))
-        push!(solver.G,zeros(solver.model.msizes[i],  solver.model.msizes[i]))
-        push!(solver.Gi,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.W,zeros(solver.model.msizes[i],  solver.model.msizes[i]))
-        push!(solver.Si,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.DDsi,zeros(solver.model.msizes[i]))
-        push!(solver.Rd,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Rc,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Xn,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Sn,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.RNT,zeros(solver.model.msizes[i], solver.model.msizes[i]))
+    for mat_idx in matrix_indices(solver.model)
+        dim = side_dimension(solver.model, mat_idx)
+        push!(solver.X,zeros(dim, dim))
+        push!(solver.S,zeros(dim, dim))
+        push!(solver.delX,zeros(dim, dim))
+        push!(solver.delS,zeros(dim, dim))
+        push!(solver.D, zeros(dim))
+        push!(solver.W,FactoredMatrix(zeros(T, dim,  dim), zeros(T, dim,  dim), zeros(T, dim,  dim)))
+        push!(solver.Si,zeros(dim, dim))
+        push!(solver.DDsi,zeros(dim))
+        push!(solver.Rd,zeros(dim, dim))
+        push!(solver.Rc,zeros(dim, dim))
+        push!(solver.Xn,zeros(dim, dim))
+        push!(solver.Sn,zeros(dim, dim))
+        push!(solver.RNT,zeros(dim, dim))
     end
 
     halpha.Umat = Matrix{T}[]
     halpha.Z = Matrix{T}[]
     halpha.AAAATtau = SparseMatrixCSC{T}[]
 
-    for i = 1:solver.model.nlmi
-        push!(halpha.Umat,zeros(solver.model.msizes[i], solver.erank))
-        push!(halpha.Z,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        # tmp = Matrix(I(solver.model.msizes[i]))
+    for mat_idx in matrix_indices(solver.model)
+        dim = side_dimension(solver.model, mat_idx)
+        push!(halpha.Umat,zeros(dim, solver.erank))
+        push!(halpha.Z,zeros(dim, dim))
+        # tmp = Matrix(I(dim))
         # push!(halpha.cholS,cholesky(tmp))
-        push!(halpha.AAAATtau,spzeros(solver.model.n, solver.model.n))
+        push!(halpha.AAAATtau,spzeros(num_constraints(solver.model), num_constraints(solver.model)))
     end
 
     if solver.kit == 1
-        if solver.model.nlmi == 0
+        if num_matrices(solver.model) == 0
             if solver.verb > 0
                 println("WARNING: Switching to a direct solver, no LMIs")
             end
             solver.kit = 0
-        elseif solver.model.nlmi > 0 && solver.erank >= maximum(solver.model.msizes) - 1
+        elseif num_matrices(solver.model) > 0 && solver.erank >= maximum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model)) - 1
             if solver.verb > 0
                 println("WARNING: Switching to a direct solver, erank bigger than matrix size")
             end
@@ -432,21 +428,10 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
         end
     end
 
-    # when datarank was set to -1 and conversion failed, we switch to datarank = 0
-    if ~isempty(solver.model.B)
-        if solver.model.nlmi > 0
-            for ilmi = 1:solver.model.nlmi
-                if nnz(solver.model.B[ilmi]) == 0
-                    solver.datarank = 0
-                end
-            end
-        end
-    end
-
 end
 
 function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
-    mmm = Matrix{T}(undef, solver.model.n, solver.model.n)
+    mmm = Matrix{T}(undef, num_constraints(solver.model), num_constraints(solver.model))
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
@@ -479,63 +464,66 @@ end
 
 function find_mu(solver)
     trXS = 0
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
+    if num_matrices(solver.model) > 0
+        for i = 1:num_matrices(solver.model)
             trXS = trXS + sum(sum(solver.X[i] .* solver.S[i]))
         end
     end 
     mu = trXS
 
-    if solver.model.nlin > 0
-        mu = mu + tr(solver.X_lin' * solver.S_lin)
+    if num_scalars(solver.model) > 0
+        mu = mu + dot(solver.X_lin, solver.S_lin)
     end
-    solver.mu = mu / (sum(solver.model.msizes) + solver.model.nlin)
+    solver.mu = mu / (num_scalars(solver.model) + sum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model), init = 0))
     return solver.mu
 end
 
 function check_convergence(solver)
 
     # DIMACS error evaluation
-    solver.err1 = norm(solver.Rp) / (1 + norm(solver.model.b))
-    (solver.err2,solver.err3,solver.err4,solver.err5,solver.err6) = [0.,0.,0.,0.,0.]
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
-            solver.err2 = solver.err2 + max(0, -eigmin(solver.X[i]) / (1 + norm(solver.model.b)))
-            solver.err3 = solver.err3 + norm(solver.Rd[i], 2) / (1 + norm(solver.model.C[i]))
-            solver.err4 = solver.err4 + max(0, -eigmin(solver.S[i]) / (1 + norm(solver.model.C[i])))
+    b_den = 1 + norm(cons_constant(solver.model))
+    dobj = dual_obj(solver.model, solver.y)
+    solver.err1 = norm(solver.Rp) / b_den
+    solver.err2, solver.err3, solver.err4, solver.err5, solver.err6 = 0., 0., 0., 0., 0.
+    if num_matrices(solver.model) > 0
+        for mat_idx = matrix_indices(solver.model)
+            i = mat_idx.value
+            C_den = 1 + norm(objgrad(solver.model, mat_idx))
+            solver.err2 = solver.err2 + max(0, -eigmin(solver.X[i]) / b_den)
+            solver.err3 = solver.err3 + norm(solver.Rd[i], 2) / C_den
+            solver.err4 = solver.err4 + max(0, -eigmin(solver.S[i]) / C_den)
             # err5 = err5 + (vecC[i]"*vec(X[i])-b'*y)/(1+abs(vecC[i]'*vec(X[i]))+abs(b"*y))
-            solver.err6 = solver.err6 + (vec(solver.S[i]))' * vec(solver.X[i]) / (1 + abs(vec(solver.model.C[i])' * vec(solver.X[i])) + abs(dot(solver.model.b', solver.y)))
+            solver.err6 = solver.err6 + dot(solver.S[i], solver.X[i]) / (1 + abs(obj(solver.model, solver.X[i], mat_idx)) + abs(dobj))
         end
     end
 
-    solver.err5 = (btrace(solver.model.nlmi, solver.model.C, solver.X) - dot(solver.model.b', solver.y)) / (1 + abs(btrace(solver.model.nlmi, solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
-    if solver.model.nlin > 0
-        solver.err2 = solver.err2 + max(0, -minimum(solver.X_lin) / (1 + norm(solver.model.b)))
-        solver.err3 = solver.err3 + norm(solver.Rd_lin) / (1 + norm(solver.model.d_lin))
-        solver.err4 = solver.err4 + max(0, -minimum(solver.S_lin) / (1 + norm(solver.model.d_lin)))
-        solver.err5 = (btrace(solver.model.nlmi, solver.model.C, solver.X) + dot(solver.model.d_lin', solver.X_lin) - dot(solver.model.b',solver.y)) / (1 + abs(btrace(solver.model.nlmi, solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
-        solver.err6 = solver.err6 + dot(solver.S_lin' , solver.X_lin) / (1 + abs(dot(solver.model.d_lin', solver.X_lin)) + abs(dot(solver.model.b', solver.y)))
+    pobj = obj(solver.model, solver.X_lin, solver.X)
+    solver.err5 = (dobj - pobj) / (1 + abs(obj(solver.model, solver.X, MatrixIndex)) + abs(dobj))
+    if num_scalars(solver.model) > 0
+        solver.err2 += max(0, -minimum(solver.X_lin) / b_den)
+        solver.err3 += norm(solver.Rd_lin) / (1 + norm(objgrad(solver.model, ScalarIndex)))
+        solver.err4 += max(0, -minimum(solver.S_lin) / (1 + norm(objgrad(solver.model, ScalarIndex))))
+        solver.err6 += dot(solver.S_lin', solver.X_lin) / (1 + abs(obj(solver.model, solver.X_lin, ScalarIndex)) + abs(dobj))
     end
 
-    if solver.model.nlmi > 0
-        DIMACS_error = solver.err1 + solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
-    else
-        DIMACS_error = solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
+    DIMACS_error = solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
+    if num_matrices(solver.model) > 0
+        DIMACS_error += solver.err1
     end
     if solver.verb > 0 && solver.status == 0 
         #@sprintf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %8.1e %6.0d %8.2f\n', iter, y[1:ddnvar]"*ddc[:], DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, eq_norm, arank, titi)
         # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6,solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6,solver.itertime)
             else
-                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
             end    
     else
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, dobj, DIMACS_error, solver.itertime)
             else
-                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, -dot(solver.y, solver.model.b') + solver.model.b_const, DIMACS_error, solver.cg_iter_pre + solver.cg_iter_cor, solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, dobj, DIMACS_error, solver.cg_iter_pre + solver.cg_iter_cor, solver.itertime)
             end
         end
     end
@@ -544,13 +532,9 @@ function check_convergence(solver)
         solver.status = 1
         solver.y = solver.y
         if solver.verb > 0
-            println("Primal objective: ", -dot(solver.y, solver.model.b') + solver.model.b_const)
-            if solver.model.nlin > 0
-                println("Dual objective:   ", -btrace(solver.model.nlmi, solver.model.C, solver.X) - dot(solver.model.d_lin', solver.X_lin))
-            else
-                println("Dual objective:   ", -btrace(solver.model.nlmi, solver.model.C, solver.X) )
-            end
-            end
+            println("Primal objective: ", dobj)
+            println("Dual objective:   ", pobj)
+        end
     end
 
     if DIMACS_error > 1e55 
@@ -558,7 +542,7 @@ function check_convergence(solver)
         if solver.verb > 0
             println("WARNING: Problem probably infeasible (stopping status = 2)")
         end
-    elseif DIMACS_error > 1e55 || abs(dot(solver.y, solver.model.b')) > 1e55
+    elseif DIMACS_error > 1e55 || abs(dobj) > 1e55
         solver.status = 3
         if solver.verb > 0
             println("WARNING: Problem probably unbounded or infeasible (stopping status = 3)")
@@ -569,47 +553,17 @@ end
 
 ```Functions for the iterative solver follow```
 
-struct MyA{T}
-    W::Vector{Matrix{T}}
-    AA::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
-    nlin::Int64
-    C_lin::SparseArrays.SparseMatrixCSC{Float64,Int64}
-    X_lin
-    S_lin_inv
+struct MyA{T,A,B}
+    w::Vector{T}
+    W::Vector{FactoredMatrix{T}}
+    model::MyModel{T,A}
+    jtprod_buffer::B
     to::TimerOutputs.TimerOutput
 end
 
-function (t::MyA)(Ax::Vector{T}, x::Vector{T}) where {T}
+function (t::MyA)(Ax::Vector, x::Vector)
     @timeit t.to "Ax" begin
-    nlmi = length(t.AA)
-    m = size(t.AA[1],1)
-    ax1 = zeros(m,1)
-    if nlmi > 0
-        for ilmi = 1:nlmi
-            waxwtmp = Matrix{T}(undef,size(t.W[ilmi]))
-            waxw = Matrix{T}(undef,size(t.W[ilmi]))
-            # @timeit t.to "Ax1" begin
-            ax = Vector{T}(undef,size(t.AA[ilmi],2))
-            # end
-            # @timeit t.to "Ax2" begin
-            mul!(ax, transpose(t.AA[ilmi]), x)
-            # ax = transpose(t.AA[ilmi]) * x
-            # end
-            # @timeit t.to "Ax3" begin
-            # waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
-            mul!(waxwtmp,t.W[ilmi], mat(ax))
-            mul!(waxw, waxwtmp, t.W[ilmi])
-            # end
-            # @timeit t.to "Ax4" begin
-            ax1 .+= t.AA[ilmi] * waxw[:]
-            # end
-        end
-    end
-    if t.nlin>0
-        ax1 .+= t.C_lin * ((t.X_lin .* t.S_lin_inv) .* (t.C_lin' * x))
-    end
-
-    mul!(Ax,I(m),ax1[:])
+        eval_schur_complement!(t.jtprod_buffer, Ax, t.model, t.w, t.W, x)
     end
 end
 
@@ -623,9 +577,9 @@ end
 
 function Prec_for_CG_beta(solver,halpha)    
     
-    nlmi = solver.model.nlmi
+    nlmi = num_matrices(solver.model)
     kk = solver.erank .* ones(Int64,nlmi,1)  
-    nvar = solver.model.n
+    nvar = num_constraints(solver.model)
         
     ntot=0
     if nlmi > 0
@@ -656,14 +610,14 @@ function Prec_for_CG_beta(solver,halpha)
             
             halpha.AAAATtau += ttau^2 .* ZZZ
         end
-        if solver.model.nlin > 0
-            halpha.AAAATtau .+= diag(solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin')
+        if num_scalars(solver.model) > 0
+            halpha.AAAATtau .+= diag(schur_complement(solver.model, solver.X_lin .* solver.S_lin_inv, ScalarIndex))
         end
     end
 end
 
-struct MyM_beta
-    AA
+struct MyM_beta{T,A}
+    model::MyModel{T,A}
     AAAATtau
 end
 
@@ -674,13 +628,13 @@ end
 function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T} 
     
     @timeit solver.to "prec" begin
-    nlmi = solver.model.nlmi
-    kk = solver.erank .* ones(Int64,nlmi,1)
+    nlmi = num_matrices(solver.model)
+    kk = solver.erank .* ones(Int64,nlmi)
     # kk[2] = 3
     # halpha.Z = SparseMatrixCSC{T}[]
     halpha.Z = Matrix{T}[]
 
-    nvar = solver.model.n
+    nvar = num_constraints(solver.model)
     
     halpha.AAAATtau = spzeros(nvar,nvar)
     
@@ -740,8 +694,8 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         end
     end
     
-    if solver.model.nlin > 0
-        halpha.AAAATtau .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
+    if num_scalars(solver.model) > 0
+        halpha.AAAATtau .+= schur_complement(solver.model, solver.X_lin .* solver.S_lin_inv, ScalarIndex)
     end
     
     didi = 0
@@ -753,11 +707,12 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         # @timeit solver.to "prec3" begin
         t = zeros(nvar, k*didi)
         if nlmi > 0
-            for ilmi = 1:nlmi
+            for mat_idx in matrix_indices(solver.model)
+                ilmi = mat_idx.value
                 n = size(solver.W[ilmi],1)
                 k = kk[ilmi]
                 TT = kron(halpha.Umat[ilmi],halpha.Z[ilmi])
-                t[1:nvar,lbt:lbt+k*n-1] .= solver.model.AA[ilmi] * TT
+                t[1:nvar,lbt:lbt+k*n-1] .= jac(solver.model, mat_idx)' * TT
                 lbt = lbt + k*n
             end
         end
@@ -808,8 +763,9 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
        
 end
 
-struct MyM
-    AA
+struct MyM{T,A,B}
+    model::MyModel{T,A}
+    jtprod_buffer::B
     AAAATtau
     Umat
     Z
@@ -819,10 +775,11 @@ end
 function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) where {T}
     @timeit solver.to "prec3" begin
     S = Matrix{T}(undef,sizeS,sizeS)
-    nvar = solver.model.n
+    nvar = num_constraints(solver.model)
     t = Matrix{T}(undef,nvar,kk[1]*didi)
-    if solver.model.nlmi > 0
-        for ilmi = 1:solver.model.nlmi
+    if num_matrices(solver.model) > 0
+        for mat_idx in matrix_indices(solver.model)
+            ilmi = mat_idx.value
             if kk[ilmi] == 0
                 continue 
             end
@@ -830,17 +787,20 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
             k = kk[ilmi] 
 
             @timeit solver.to "prec30" begin
-            AAs = AAAATtau_d * solver.model.AA[ilmi]
+                # We can reuse the buffer for different `i`
+                # because we directly apply the multiplication
+                # with `Umat`.
+                AU = reduce(vcat, [
+                    (jtprod!(
+                        solver.jtprod_buffer[ilmi],
+                        solver.model,
+                        mat_idx,
+                        AAAATtau_d[i,:],
+                    ) * halpha.Umat[ilmi])'
+                    for i in axes(AAAATtau_d, 1)
+                ])
             end
-            # @timeit solver.to "prec31" begin
-            ii_, jj_, aa_ = findnz(AAs)
-            qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
-            pp_ = mod.(jj_ .- 1, n) .+ 1
-            aau = Vector{T}(undef,length(aa_))
-            aau .= aa_ .* halpha.Umat[ilmi][qq_]
-            AU = sparse(ii_,pp_,aau,nvar,n)
-            # end
-            if solver.model.nlmi>1
+            if num_matrices(solver.model) > 1
                 # @timeit solver.to "prec32" begin
                 didi1 = size(solver.W[ilmi],1)
                 ttmp = Matrix{T}(undef,nvar,kk[ilmi]*didi1)
@@ -866,7 +826,7 @@ end
 function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
 
     nvar = size(x,1)
-    nlmi = length(t.AA)
+    nlmi = num_matrices(t.model)
 
     yy2 = zeros(nvar,1)
     y33 = zeros(T,0)
@@ -874,9 +834,10 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
     AAAAinvx = t.AAAATtau\x
 
     if nlmi > 0
-        for ilmi = 1:nlmi
-            y22 = t.AA[ilmi]' * AAAAinvx
-            y33 = [y33; vec(t.Z[ilmi]' * mat(y22) * t.Umat[ilmi])]
+        for mat_idx in matrix_indices(t.model)
+            ilmi = mat_idx.value
+            y22 = -jtprod!(t.jtprod_buffer[ilmi], t.model, mat_idx, AAAAinvx)
+            y33 = [y33; vec(t.Z[ilmi]' * y22 * t.Umat[ilmi])]
         end
     end
     
@@ -884,7 +845,8 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
 
     ii = 0
     if nlmi > 0
-        for ilmi = 1:nlmi
+        for mat_idx in matrix_indices(t.model)
+            ilmi = mat_idx.value
             n = size(t.Umat[ilmi],1)
             k = size(t.Umat[ilmi],2)
             yy = zeros(n*n)
@@ -893,7 +855,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
                 yy .+= kron(t.Umat[ilmi][:,i],xx)
                 ii += n
             end
-            yy2 .+= t.AA[ilmi] * yy
+            yy2 .+= jprod(t.model, mat_idx, yy)
         end
     end
 

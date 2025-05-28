@@ -5,58 +5,48 @@ using GenericLinearAlgebra
 function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     
     solver.predict = true
-    solver.Rp = solver.model.b
+    solver.Rp = cons(solver.model, solver.X_lin, solver.X)
 
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
-            solver.Rp -= solver.model.AA[i] * solver.X[i][:]
-            solver.Rd[i] .= solver.model.C[i] - solver.S[i] - mat(solver.model.AA[i]' * solver.y)
-            solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
-        end
+    for mat_idx = matrix_indices(solver.model)
+        i = mat_idx.value
+        solver.Rd[i] .= dual_cons!(solver.jtprod_buffer, solver.model, mat_idx, solver.y, solver.S)
+        solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
-    if solver.model.nlin > 0
-        solver.Rp -= solver.model.C_lin * solver.X_lin[:]
-        solver.Rd_lin = solver.model.d_lin - solver.S_lin - solver.model.C_lin' * solver.y
-        Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
+    if num_scalars(solver.model) > 0
+        solver.Rd_lin = dual_cons(solver.model, ScalarIndex, solver.y, solver.S_lin)
+        Rc_lin = solver.sigma * solver.mu .* ones(num_scalars(solver.model), 1) - solver.X_lin .* solver.S_lin
     end
 
+    w = solver.X_lin .* solver.S_lin_inv
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
-    # @timeit solver.to "BBBB" begin
-        if solver.model.nlmi > 0
-            if solver.datarank == -1
-            # if 1 == 0
-                BBBB = makeBBBB_rank1(solver.model.n, solver.model.nlmi, solver.model.B, solver.G, solver.to)
-            else
-                BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
-            end
-        else
-            BBBB = zeros(T, solver.model.n, solver.model.n)
-        end
-        if solver.model.nlin > 0
-            BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
-        end
-        BBBB = Hermitian(BBBB, :L)
+        BBBB = schur_complement(solver.schur_buffer, solver.model, w, solver.W)
     end
     # end
 
-    if solver.model.nlmi > 0
-        h = makeRHS(solver.model.nlmi,solver.model.AA,solver.W,solver.S,solver.Rp,solver.Rd)
-    else
-        h = copy(solver.Rp)
-    end
-    if solver.model.nlin > 0
-        h .+= solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin)
-    end
+    # RHS for the Hessian equation
+    h = solver.Rp + jprod(
+        solver.model,
+        isempty(w) ? w : spdiagm(w) * solver.Rd_lin + solver.X_lin,
+        [solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i] for i in 1:num_matrices(solver.model)],
+    )
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
+            if parent(BBBB) isa SparseMatrixCSC
+                # Convert to dense because
+                # 1. Cholesky is not implemented for `MultiFloat` for sparse
+                # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
+                BBBB = LinearAlgebra.Hermitian(Matrix(parent(BBBB)), LinearAlgebra.sym_uplo(BBBB.uplo))
+            end
             try
-                cholBBBB1, cholBBBB2 = cholesky(BBBB)
-                solver.cholBBBB = cholBBBB1
+                solver.cholBBBB = cholesky(BBBB).L
             catch err
+                if !(err isa LinearAlgebra.PosDefException)
+                    rethrow(err)
+                end
                 if solver.verb > 0
                     println("Matrix H not positive definite, trying to regularize")
                 end
@@ -70,7 +60,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                     solver.status = 3
                     return
                 end
-                while isposdef(BBBB) == false
+                while !isposdef(BBBB)
                     BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
                     icount = icount + 1
                     if icount > 1000
@@ -82,12 +72,10 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                         return
                     end
                 end
-                solver.cholBBBB = cholesky(BBBB)
-            else
-                solver.cholBBBB = copy(solver.cholBBBB)
+                solver.cholBBBB = cholesky(BBBB).L
             end
             solver.dely = solver.cholBBBB \ h
-            solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+            solver.dely = solver.cholBBBB' \ solver.dely
             # delyy = solver.dely
         else
             @warn("System matrix not Hermitian, stopping Loraine")
@@ -116,15 +104,15 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 
     #     end
     else
-        A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
+        A = MyA(w, solver.W, solver.model, solver.jtprod_buffer, solver.to)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
             Prec_for_CG_tilS_prep(solver,halpha)  
-            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, solver.jtprod_buffer, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         elseif solver.preconditioner == 2 || solver.preconditioner == 4
             Prec_for_CG_beta(solver,halpha)  
-            M = MyM_beta(solver.model.AA, halpha.AAAATtau)
+            M = MyM_beta(solver.model, halpha.AAAATtau)
         end
 
         # @timeit solver.to "CG predictor" begin
@@ -156,40 +144,46 @@ function sigma_update(solver::MySolver{T}) where {T}
     else
             expon_used = max(1, min(solver.expon, T(3) * step_pred^2))
     end
-    if btrace(solver.model.nlmi, solver.Xn, solver.Sn) .< 0
+    if btrace(num_matrices(solver.model), solver.Xn, solver.Sn) .< 0
         solver.sigma = T(0.8)
     else
-        if solver.model.nlmi > 0
-            tmp1 = btrace(solver.model.nlmi, solver.Xn, solver.Sn)
+        if num_matrices(solver.model) > 0
+            tmp1 = btrace(num_matrices(solver.model), solver.Xn, solver.Sn)
         else
             tmp1 = 0
         end
-        if solver.model.nlin > 0
+        if num_scalars(solver.model) > 0
                 tmp2 = dot(solver.Xn_lin', solver.Sn_lin)
         else
                 tmp2 = 0
         end
-        tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + solver.model.nlin)
+        tmp12 = (tmp1 + tmp2) / (num_scalars(solver.model) + sum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model), init = 0))
         tmp12 = convert(Float64, tmp12)
         mu = Float64(solver.mu)
         solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
     end
 
     return solver.sigma
-end   
+end
 
-function corrector(solver,halpha)
+function corrector(solver::MySolver{T},halpha) where {T}
     solver.predict = false
-    h = solver.Rp #RHS for the linear system()
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
-            h += solver.model.AA[i] * my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i]))         # RHS using my_kron()
-        end
-    end
-    if solver.model.nlin > 0
+    if num_scalars(solver.model) > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
-        h = h + solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp)
+        x = spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp
+    else
+        x = T[]
     end
+    X = map(matrix_indices(solver.model)) do mat_idx
+        i = mat_idx.value
+        K = my_kron(
+            solver.W[i].factor,
+            solver.W[i].factor,
+            solver.W[i].factor' * solver.Rd[i] * solver.W[i].factor + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
+        )
+        K
+    end
+    h = solver.Rp + jprod(solver.model, x, X)
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
@@ -222,17 +216,18 @@ function corrector(solver,halpha)
         #     end
         # end
     else
-        A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
+        A = MyA(solver.X_lin .* solver.S_lin_inv, solver.W, solver.model, solver.jtprod_buffer, solver.to)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
-            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, solver.jtprod_buffer, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         else
-            M = MyM_beta(solver.model.AA, halpha.AAAATtau)
+            M = MyM_beta(solver.model, halpha.AAAATtau)
         end
 
         @timeit solver.to "CG corrector" begin
-        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = 10000, precon = M)
+        # `maxIter = 10000` fails on 32-bit, we need `maxIter = Int64(10000)`
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = Int64(10000), precon = M)
         end
         solver.cg_iter_cor += num_iters
         solver.cg_iter_tot += num_iters
@@ -246,22 +241,23 @@ function corrector(solver,halpha)
 end
 
 function find_step(solver::MySolver{T}) where {T}
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
+    if num_matrices(solver.model) > 0
+        for mat_idx in matrix_indices(solver.model)
+            i = mat_idx.value
             @timeit solver.to "find_step_A" begin
-            solver.delS[i] .= solver.Rd[i] .- mat(solver.model.AA[i]' * solver.dely)
-            Ξ = my_kron(solver.W[i], solver.W[i], solver.delS[i])
+            solver.delS[i] .= solver.Rd[i] .+ jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
+            Ξ = vec(my_kron(solver.W[i].matrix, solver.W[i], solver.delS[i]))
             if solver.predict
                 solver.delX[i] .= mat(-solver.X[i][:] .- Ξ)
             else
-                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[i])[:] .- Ξ .+ my_kron(solver.G[i], solver.G[i], solver.RNT[i]))
+                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[i])[:] .- Ξ .+ vec(my_kron(solver.W[i].factor, solver.W[i].factor, solver.RNT[i])))
             end
             end
 
             # determining steplength to stay feasible
             @timeit solver.to "find_step_B" begin
-            delSb = solver.G[i]' * solver.delS[i] * solver.G[i]
-            delXb = solver.Gi[i] * solver.delX[i] * solver.Gi[i]'
+            delSb = solver.W[i].factor' * solver.delS[i] * solver.W[i].factor
+            delXb = solver.W[i].factor_inv * solver.delX[i] * solver.W[i].factor_inv'
             end
 
             @timeit solver.to "find_step_C" begin
@@ -292,7 +288,7 @@ function find_step(solver::MySolver{T}) where {T}
         end
     end
 
-    if solver.model.nlin > 0
+    if num_scalars(solver.model) > 0
         find_step_lin(solver)
     else
         solver.alpha_lin = 1
@@ -301,19 +297,21 @@ function find_step(solver::MySolver{T}) where {T}
 
     if solver.predict
         # solution update
-        if solver.model.nlmi > 0
-            for i = 1:solver.model.nlmi
+        if num_matrices(solver.model) > 0
+            for mat_idx in matrix_indices(solver.model)
+                i = mat_idx.value
                 solver.Xn[i] = solver.X[i] + solver.alpha[i] .* solver.delX[i]
                 solver.Sn[i] = solver.S[i] + solver.beta[i] .* solver.delS[i]
-                deed = solver.D[i] * ones(1, Int(solver.model.msizes[i])) + ones(Int(solver.model.msizes[i]), 1) * solver.D[i]'
-                solver.RNT[i] = -(solver.Gi[i] * solver.delX[i] * solver.delS[i] * solver.G[i] + solver.G[i]' * solver.delS[i] * solver.delX[i] * solver.Gi[i]') ./ deed 
+                dim = side_dimension(solver.model, mat_idx)
+                deed = solver.D[i] * ones(dim)' + ones(side_dimension(solver.model, mat_idx)) * solver.D[i]'
+                solver.RNT[i] = -(solver.W[i].factor_inv * solver.delX[i] * solver.delS[i] * solver.W[i].factor + solver.W[i].factor' * solver.delS[i] * solver.delX[i] * solver.W[i].factor_inv') ./ deed
             end
         end
     else
         solver.yold = solver.y
         solver.y = solver.y + minimum([solver.beta; solver.beta_lin]) * solver.dely
-        if solver.model.nlmi > 0
-            for i = 1:solver.model.nlmi
+        if num_matrices(solver.model) > 0
+            for i = 1:num_matrices(solver.model)
                 solver.X[i] = solver.X[i] + minimum([solver.alpha; solver.alpha_lin]) .* solver.delX[i]
                 solver.X[i] = (solver.X[i] + solver.X[i]') ./ 2
                 solver.S[i] = solver.S[i] + minimum([solver.beta; solver.beta_lin]) .* solver.delS[i]
@@ -327,7 +325,7 @@ end
 
 
 function find_step_lin(solver)
-    solver.delS_lin = solver.Rd_lin - solver.model.C_lin' * solver.dely
+    solver.delS_lin = solver.Rd_lin + jtprod(solver.model, ScalarIndex, solver.dely)
     if solver.predict
         solver.delX_lin = -solver.X_lin - (solver.X_lin) .* (solver.Si_lin) .* solver.delS_lin
     else
