@@ -31,10 +31,8 @@ The fields of the `struct` as related to the arrays of the above formulation as 
 * The first `qA[1,i] = qA[2,i]` matrices are considered as dense in the computation.
 """
 mutable struct MyModel{T,A<:AbstractMatrix{T}}
-    A::Matrix{A}
     C::Vector{SparseArrays.SparseMatrixCSC{T,Int}}
-    sigmaA::Matrix{Int64}
-    qA::Matrix{Int64}
+    A::Matrix{A}
     b::Vector{T}
     b_const::T
     d_lin::SparseArrays.SparseVector{T, Int64}
@@ -42,10 +40,8 @@ mutable struct MyModel{T,A<:AbstractMatrix{T}}
     msizes::Vector{Int64}
 
     function MyModel(
-        A::Matrix{AT},
         C::Vector{SparseArrays.SparseMatrixCSC{T,Int}},
-        sigmaA::Matrix{Int64},
-        qA::Matrix{Int64},
+        A::Matrix{AT},
         b::Vector{T},
         b_const::T,
         d_lin::SparseArrays.SparseVector{T, Int64},
@@ -54,10 +50,8 @@ mutable struct MyModel{T,A<:AbstractMatrix{T}}
     ) where {T,AT<:AbstractMatrix{T}}
 
         model = new{T,AT}()
-        model.A = A
         model.C = C
-        model.sigmaA = sigmaA
-        model.qA = qA
+        model.A = A
         model.b = b
         model.b_const = b_const
         model.d_lin = d_lin
@@ -98,48 +92,6 @@ end
 model = MyModel(A[:,2:end], _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, msizes)
 
 return model
-end
-
-function _prepare_A(A::Matrix{SparseMatrixCSC{T,Int}}, datarank, κ) where {T}
-
-    nlmi = size(A, 1)
-    n = size(A, 2) - 1
-    C = SparseMatrixCSC{T,Int}[]
-    sigmaA = zeros(Int64,n,nlmi)
-    qA = zeros(Int64,2,nlmi)
-
-    for i = 1:nlmi
-        
-        push!(C, copy(-A[i, 1]))
-
-        Ai = A[i,:]
-        m = size(Ai,1)
-
-        prep_sparse!(A,n,i,sigmaA,qA,κ)
-
-    end
-
-    return C, sigmaA, qA
-end
-
-
-function prep_sparse!(A,n,i,sigmaA,qA,κ)
-    # Simplified data sparsity handling
-
-    nzA = [nnz(A[i,j+1]) for j in 1:n]
-    sigmaA[:,i] = sortperm(nzA, rev = true)
-    sisi = nzA[sigmaA[:,i]]
-    # @show sisi
-
-    qA[1,i] = n
-    kappa = κ
-    for j = 1:n
-        if sisi[j] <= kappa
-            qA[1,i] = j-1
-            break
-        end
-    end
-    qA[2,i] = qA[1,i]
 end
 
 struct ScalarIndex
@@ -283,39 +235,4 @@ function jprod(model::MyModel, w, W)
         h += jprod(model, i, W[i.value])
     end
     return h
-end
-
-# [HKS24, (5b)]
-# Returns the matrix equal to the sum, for each equation, of
-# ⟨A_i, WA_jW⟩
-function schur_complement(model::MyModel, w, W)
-    H = MA.Zero()
-    if num_matrices(model) > 0
-        H = MA.add!!(H, makeBBBBs(model, W))
-    end
-    if num_scalars(model) > 0
-        H = MA.add!!(H, schur_complement(model, w, ScalarIndex))
-    end
-    if H isa MA.Zero
-        n = num_constraints(model)
-        H = zeros(eltype(w), n, n)
-    end
-    return Hermitian(H, :L)
-end
-
-function schur_complement(model::MyModel, w, ::Type{ScalarIndex})
-    return model.C_lin * spdiagm(w) * model.C_lin'
-end
-
-# [HKS24, (5b)]
-# Returns the matrix equal to the sum, for each equation, of
-# ⟨A_i, WA(y)W⟩
-function eval_schur_complement!(buffer, result, model::MyModel, w, W, y)
-    result .= 0.0
-    for mat_idx in matrix_indices(model)
-        i = mat_idx.value
-        result .-= jprod(model, mat_idx, W[i] * jtprod!(buffer[i], model, mat_idx, y) * W[i])
-    end
-    result .+= model.C_lin * (w .* (model.C_lin' * y))
-    return result
 end

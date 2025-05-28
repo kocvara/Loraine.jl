@@ -12,8 +12,8 @@ using MultiFloats
 # using MKL
 
 include("kron_etc.jl")
-include("makeBBBB.jl")
 include("model.jl")
+include("makeBBBB.jl")
 
 struct FactoredMatrix{T} <: AbstractMatrix{T}
     factor::Matrix{T}
@@ -23,7 +23,7 @@ end
 Base.size(A::FactoredMatrix) = size(A.matrix)
 Base.getindex(A::FactoredMatrix, i, j) = Base.getindex(A.matrix, i, j)
 
-mutable struct MySolver{T,A,B}
+mutable struct MySolver{T,A,B,SB}
     # main options
     kit::Int64
     tol_cg::T
@@ -46,6 +46,7 @@ mutable struct MySolver{T,A,B}
     # model and preprocessed model data
     model::MyModel{T,A}
     jtprod_buffer::B
+    schur_buffer::SB
 
     predict::Bool
 
@@ -130,10 +131,11 @@ mutable struct MySolver{T,A,B}
         maxit::Int64, 
         datasparsity::Int64,
         model::MyModel{T,A}
-        ) where {T,A}
+    ) where {T,A}
 
         jtprod_buffer = buffer_for_jtprod(model)
-        solver = new{T,A,typeof(jtprod_buffer)}()
+        schur_buffer = buffer_for_schur_complement(model, datasparsity)
+        solver = new{T,A,typeof(jtprod_buffer),typeof(schur_buffer)}()
         solver.kit             = kit
         solver.tol_cg          = tol_cg
         solver.tol_cg_up       = tol_cg_up
@@ -151,6 +153,7 @@ mutable struct MySolver{T,A,B}
         solver.datasparsity    = datasparsity
         solver.model           = model
         solver.jtprod_buffer   = jtprod_buffer
+        solver.schur_buffer    = schur_buffer
         return solver
     end
 end
@@ -209,7 +212,7 @@ function load(model, options::Dict; T = Float64)
     initpoint = Int64(get(options, "initpoint", 0))
     timing = Int64(get(options, "timing", 1))
     maxit = Int64(get(options, "maxit", 100))
-    datasparsity = Int64(get(options, "maxit", 8))
+    datasparsity = Int64(get(options, "datasparsity", 8))
 
     solver = MySolver{T}(kit,
         tol_cg,

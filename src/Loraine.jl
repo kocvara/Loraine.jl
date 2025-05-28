@@ -23,7 +23,6 @@ include("Solvers.jl")
 using .Solvers
 
 include("kron_etc.jl")
-include("makeBBBB.jl")
 include("initial_point.jl")
 include("predictor_corrector.jl")
 include("prepare_W.jl")

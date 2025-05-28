@@ -207,11 +207,9 @@ function MOI.copy_to(dest::Optimizer{T}, src::OptimizerCache{T}) where {T}
     # b = max_sense ? -b0 : b0
 
     AA = SparseMatrixCSC{T,Int}[sparse(IJV...) for IJV in A]
-    drank = get(dest.options,"datarank",1)
-    κ = get(dest.options,"datasparsity",1)
     model = MyModel(
+        -AA[:,1],
         AA[:,2:end],
-        Solvers._prepare_A(AA,drank,κ)...,
         b,
         b_const,
         convert(SparseVector{T,Int64}, sparsevec(Cd_lin.constants)),
