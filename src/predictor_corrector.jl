@@ -35,8 +35,10 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     if solver.kit == 0   # direct solver
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
-            if BBBB isa LinearAlgebra.Hermitian{<:MultiFloat,<:SparseMatrixCSC}
-                # Convert to dense as Cholesky is not implemented for `MultiFloat` for sparse
+            if parent(BBBB) isa SparseMatrixCSC
+                # Convert to dense because
+                # 1. Cholesky is not implemented for `MultiFloat` for sparse
+                # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
                 BBBB = LinearAlgebra.Hermitian(Matrix(parent(BBBB)), LinearAlgebra.sym_uplo(BBBB.uplo))
             end
             try
@@ -73,7 +75,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                 solver.cholBBBB = cholesky(BBBB).L
             end
             solver.dely = solver.cholBBBB \ h
-            solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+            solver.dely = solver.cholBBBB' \ solver.dely
             # delyy = solver.dely
         else
             @warn("System matrix not Hermitian, stopping Loraine")
@@ -162,7 +164,7 @@ function sigma_update(solver::MySolver{T}) where {T}
     end
 
     return solver.sigma
-end   
+end
 
 function corrector(solver::MySolver{T},halpha) where {T}
     solver.predict = false

@@ -226,10 +226,6 @@ function MOI.copy_to(dest::Optimizer{T}, src::OptimizerCache{T}) where {T}
     return MOI.Utilities.identity_index_map(src)
 end
 
-function MOI.copy_to(dest::Optimizer{T}, src::MOI.Utilities.UniversalFallback{OptimizerCache{T}}) where {T}
-    return MOI.copy_to(dest, src.model)
-end
-
 function MOI.copy_to(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     cache = OptimizerCache{T}()
     index_map = MOI.copy_to(cache, src)
