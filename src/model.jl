@@ -4,6 +4,7 @@ using SparseArrays
 using Printf
 using TimerOutputs
 using LinearAlgebra
+import MutableArithmetics as MA
 import MathOptInterface as MOI
 
 """
@@ -296,6 +297,9 @@ end
 _zero!(A::SparseMatrixCSC) = fill!(SparseArrays.nonzeros(A), 0.0)
 
 function jtprod!(buffer, model::MyModel, mat_idx::MatrixIndex, y)
+    if iszero(num_constraints(model))
+        return MA.Zero()
+    end
     _zero!(buffer)
     for j in eachindex(y)
         _add_mul!(buffer, model.A[mat_idx.value, j + 1], y[j])
