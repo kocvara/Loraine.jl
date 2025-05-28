@@ -40,10 +40,11 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                 BBBB = LinearAlgebra.Hermitian(Matrix(parent(BBBB)), LinearAlgebra.sym_uplo(BBBB.uplo))
             end
             try
-                cholBBBB1, cholBBBB2 = cholesky(BBBB)
-                solver.cholBBBB = cholBBBB1
+                solver.cholBBBB = cholesky(BBBB).L
             catch err
-                @assert err isa LinearAlgebra.PosDefException
+                if !(err isa LinearAlgebra.PosDefException)
+                    rethrow(err)
+                end
                 if solver.verb > 0
                     println("Matrix H not positive definite, trying to regularize")
                 end

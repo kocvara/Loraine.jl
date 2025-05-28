@@ -79,7 +79,6 @@ function schur_complement(buffer, model, mat_idx, W::AbstractMatrix{T}) where {T
     @assert dim == size(W, 1) == size(W, 2)
     tmp1 = Matrix{T}(undef, size(W, 2), dim)
     tmp  = zeros(T, size(W, 2), dim)
-    tmp3 = Vector{T}(undef, size(W, 1))
 
     for ii = 1:n
         i = σ[ii,ilmi]
