@@ -70,9 +70,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                         return
                     end
                 end
-                solver.cholBBBB = cholesky(BBBB)
-            else
-                solver.cholBBBB = copy(solver.cholBBBB)
+                solver.cholBBBB = cholesky(BBBB).L
             end
             solver.dely = solver.cholBBBB \ h
             solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
