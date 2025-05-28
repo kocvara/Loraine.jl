@@ -15,9 +15,9 @@ end
 
 #########################
 
-function makeBBBBs(model, W)
+function makeBBBBs(model::MyModel{T}, W) where {T}
     n = num_constraints(model)
-    BBBB = zeros(Float64, n, n)
+    BBBB = zeros(T, n, n)
     for mat_idx in matrix_indices(model)
         BBBB += makeBBBBsi(model, mat_idx, W[mat_idx.value])
     end
@@ -60,11 +60,11 @@ function makeBBBBsi(model, mat_idx, Wilmi::AbstractMatrix{T}) where {T}
     dim = side_dimension(model, mat_idx)
     tmp1 = Matrix{T}(undef, size(Wilmi, 2), dim)
     # tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
-    tmp3 = Vector{Float64}(undef, size(Wilmi, 1))
+    tmp3 = Vector{T}(undef, size(Wilmi, 1))
 
     for ii = 1:n
         i = model.sigmaA[ii,ilmi]
-        Ai = model.A[ilmi, i + 1]
+        Ai = model.A[ilmi, i]
         if nnz(Ai) > 0
             if ii <= model.qA[1,ilmi]
                 tmp  = zeros(T, size(Wilmi, 2), dim)
@@ -79,7 +79,7 @@ function makeBBBBsi(model, mat_idx, Wilmi::AbstractMatrix{T}) where {T}
                     if nnz(Ai) > 1
                         @inbounds for jj = ii:n
                             j = model.sigmaA[jj,ilmi]
-                            Aj = model.A[ilmi, j+1]
+                            Aj = model.A[ilmi, j]
                             if !iszero(nnz(Aj))
                                 ttt = _dot(Ai, Aj, Wilmi)
                                 if i >= j
@@ -95,7 +95,7 @@ function makeBBBBsi(model, mat_idx, Wilmi::AbstractMatrix{T}) where {T}
                         vvvi = only(nonzeros(Ai))
                         @inbounds for jj = ii:n
                             j = model.sigmaA[jj,ilmi]
-                            Ajjj = model.A[ilmi, j+1]
+                            Ajjj = model.A[ilmi, j]
                             # As we sort the matrices in decreasing `nnz` order,
                             # the rest of matrices is either zero or have only
                             # one entry

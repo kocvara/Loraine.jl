@@ -23,7 +23,7 @@ end
 Base.size(A::FactoredMatrix) = size(A.matrix)
 Base.getindex(A::FactoredMatrix, i, j) = Base.getindex(A.matrix, i, j)
 
-mutable struct MySolver{T,B}
+mutable struct MySolver{T,A,B}
     # main options
     kit::Int64
     tol_cg::T
@@ -44,7 +44,7 @@ mutable struct MySolver{T,B}
     to::Any
 
     # model and preprocessed model data
-    model::MyModel
+    model::MyModel{T,A}
     jtprod_buffer::B
 
     predict::Bool
@@ -129,11 +129,11 @@ mutable struct MySolver{T,B}
         timing::Int64,
         maxit::Int64, 
         datasparsity::Int64,
-        model::MyModel
-        ) where {T}
+        model::MyModel{T,A}
+        ) where {T,A}
 
         jtprod_buffer = buffer_for_jtprod(model)
-        solver = new{T,typeof(jtprod_buffer)}()
+        solver = new{T,A,typeof(jtprod_buffer)}()
         solver.kit             = kit
         solver.tol_cg          = tol_cg
         solver.tol_cg_up       = tol_cg_up
@@ -550,10 +550,10 @@ end
 
 ```Functions for the iterative solver follow```
 
-struct MyA{T,B}
+struct MyA{T,A,B}
     w::Vector{T}
     W::Vector{FactoredMatrix{T}}
-    model::MyModel
+    model::MyModel{T,A}
     jtprod_buffer::B
     to::TimerOutputs.TimerOutput
 end
@@ -613,8 +613,8 @@ function Prec_for_CG_beta(solver,halpha)
     end
 end
 
-struct MyM_beta
-    model::MyModel
+struct MyM_beta{T,A}
+    model::MyModel{T,A}
     AAAATtau
 end
 
@@ -760,8 +760,8 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
        
 end
 
-struct MyM{B}
-    model::MyModel
+struct MyM{T,A,B}
+    model::MyModel{T,A}
     jtprod_buffer::B
     AAAATtau
     Umat

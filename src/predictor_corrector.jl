@@ -165,13 +165,13 @@ function sigma_update(solver::MySolver{T}) where {T}
     return solver.sigma
 end   
 
-function corrector(solver,halpha)
+function corrector(solver::MySolver{T},halpha) where {T}
     solver.predict = false
     if num_scalars(solver.model) > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
         x = spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp
     else
-        x = Float64[]
+        x = T[]
     end
     X = map(matrix_indices(solver.model)) do mat_idx
         i = mat_idx.value
