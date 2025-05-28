@@ -27,8 +27,6 @@ The fields of the `struct` as related to the arrays of the above formulation as 
 * The ``i``th PSD constraint is of size `msize[i] × msisze[i]`
 * The matrix ``C_i`` is given by `C[i]`.
 * The matrix ``A_{i,j}`` is given by `-A[i,j]`.
-* The index `j = sigmaA[k,i]` is the `k`th matrix ``A_{i,j}`` of the largest number of nonzeros.
-* The first `qA[1,i] = qA[2,i]` matrices are considered as dense in the computation.
 """
 mutable struct MyModel{T,A<:AbstractMatrix{T}}
     C::Vector{SparseArrays.SparseMatrixCSC{T,Int}}
