@@ -13,7 +13,7 @@ using MultiFloats
 
 include("kron_etc.jl")
 include("model.jl")
-include("makeBBBB.jl")
+include("schur.jl")
 
 struct FactoredMatrix{T} <: AbstractMatrix{T}
     factor::Matrix{T}

@@ -37,7 +37,6 @@ function buffer_for_schur_complement(model::MyModel, κ)
         σ[:,i] = sortperm(nzA, rev = true)
         sorted = nzA[σ[:,i]]
 
-        @show sorted
         last_dense[i] = something(findlast(Base.Fix1(isless, κ), sorted), 0)
     end
 
@@ -73,8 +72,6 @@ end
 #####
 function schur_complement(buffer, model, mat_idx, W::AbstractMatrix{T}) where {T}
     σ, last_dense = buffer
-    display(σ)
-    @show last_dense
     ilmi = mat_idx.value
     n = num_constraints(model)
     BBBB = zeros(T, n, n)

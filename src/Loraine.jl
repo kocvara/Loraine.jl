@@ -28,6 +28,38 @@ include("predictor_corrector.jl")
 include("prepare_W.jl")
 include("MOI_wrapper.jl")
 
+function prepare_model_data(d,drank)
+
+msizes = Vector{Int64}
+n = Int64(get(d, "nvar", 1));
+msizesa = get(d, "msizes", 1)
+if length(msizesa) == 1
+    msizes = [convert.(Int64,msizesa)]
+else
+    msizes = convert.(Int64,msizesa[:])
+end
+nlin = Int64(get(d, "nlin", 1))
+nlmi = Int64(get(d, "nlmi", 1))
+A = get(d, "A", 1);
+@assert size(A, 1) == nlmi
+b = -get(d, "c", 1);
+@assert length(b) == n
+b_const = -get(d, "b_const", 1);
+
+if nlin > 0
+    d_lin = -get(d, "d", 1)
+    d_lin = d_lin[:]
+    C_lin = -get(d, "C", 1)
+else
+    d_lin = sparse([0.; 0.])
+    C_lin = sparse([0. 0.;0. 0.])
+end
+
+model = MyModel(A[:,2:end], _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, msizes)
+
+return model
+end
+
 function loraine(d, options::Dict)
 
     verb   = Int64(get(options, "verb", 1))
