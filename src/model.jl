@@ -37,50 +37,38 @@ mutable struct MyModel
     A::Matrix{SparseArrays.SparseMatrixCSC{Float64,Int}}
     B::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
     C::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}}
-    nzA::Matrix{Int64}
     sigmaA::Matrix{Int64}
     qA::Matrix{Int64}
     b::Vector{Float64}
     b_const::Float64
     d_lin::SparseArrays.SparseVector{Float64, Int64}
     C_lin::SparseArrays.SparseMatrixCSC{Float64, Int64}
-    n::Int64
     msizes::Vector{Int64}
-    nlin::Int64
-    nlmi::Int64
 
     function MyModel(
         A::Matrix{SparseArrays.SparseMatrixCSC{Float64,Int}},
         B::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}},
         C::Vector{SparseArrays.SparseMatrixCSC{Float64,Int}},
-        nzA::Matrix{Int64},
         sigmaA::Matrix{Int64},
         qA::Matrix{Int64},
         b::Vector{Float64},
         b_const::Float64,
         d_lin::SparseArrays.SparseVector{Float64, Int64},
         C_lin::SparseArrays.SparseMatrixCSC{Float64, Int64},
-        n::Int64,
         msizes::Vector{Int64},
-        nlin::Int64,
-        nlmi::Int64
         ) 
 
         model = new()
         model.A = A
         model.B = B
         model.C = C
-        model.nzA = nzA
         model.sigmaA = sigmaA
         model.qA = qA
         model.b = b
         model.b_const = b_const
         model.d_lin = d_lin
         model.C_lin = C_lin
-        model.n = n
         model.msizes = msizes
-        model.nlin = nlin
-        model.nlmi = nlmi
         return model
     end
 end
@@ -99,7 +87,9 @@ end
 nlin = Int64(get(d, "nlin", 1))
 nlmi = Int64(get(d, "nlmi", 1))
 A = get(d, "A", 1);
+@assert size(A, 1) == nlmi
 b = -get(d, "c", 1);
+@assert length(b) == n
 b_const = -get(d, "b_const", 1);
 
 if nlin > 0
@@ -111,7 +101,7 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-model = MyModel(A, _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, n, msizes, nlin, nlmi)
+model = MyModel(A, _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, msizes)
 
 return model
 end
@@ -122,7 +112,6 @@ function _prepare_A(A, datarank, κ)
     n = size(A, 2) - 1
     B = SparseMatrixCSC{Float64,Int}[]
     C = SparseMatrixCSC{Float64,Int}[]
-    nzA = zeros(Int64,n,nlmi)
     sigmaA = zeros(Int64,n,nlmi)
     qA = zeros(Int64,2,nlmi)
 
@@ -138,22 +127,20 @@ function _prepare_A(A, datarank, κ)
             push!(B, Btmp)
         end
 
-        prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
+        prep_sparse!(A,n,i,sigmaA,qA,κ)
 
     end
 
-    return B, C, nzA, sigmaA, qA
+    return B, C, sigmaA, qA
 end
 
 
-function prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
+function prep_sparse!(A,n,i,sigmaA,qA,κ)
     # Simplified data sparsity handling
 
-    for j = 1:n
-        nzA[j,i] = nnz(A[i,j+1])
-    end
-    sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
-    sisi = nzA[sigmaA[:,i],i]
+    nzA = [nnz(A[i,j+1]) for j in 1:n]
+    sigmaA[:,i] = sortperm(nzA, rev = true)
+    sisi = nzA[sigmaA[:,i]]
     # @show sisi
 
     qA[1,i] = n
@@ -206,7 +193,7 @@ struct MatrixIndex
     value::Int64
 end
 
-num_matrices(model::MyModel) = model.nlmi
+num_matrices(model::MyModel) = length(model.C)
 
 function matrix_indices(model::MyModel)
     return MOI.Utilities.LazyMap{MatrixIndex}(MatrixIndex, Base.OneTo(num_matrices(model)))
@@ -339,17 +326,16 @@ end
 # Returns the matrix equal to the sum, for each equation, of
 # ⟨A_i, WA_jW⟩
 function schur_complement(model::MyModel, w, W)
-    if model.nlmi > 0
-        if false
-            H = makeBBBB_rank1(model.n, model.nlmi, model.B, W)
-        else
-            H = makeBBBBs(model, W)
-        end
-    else
-        H = zeros(eltype(w), model.n, model.n)
+    H = MA.Zero()
+    if num_matrices(model) > 0
+        H = MA.add!!(H, makeBBBBs(model, W))
     end
-    if model.nlin > 0
-        H .+= schur_complement(model, w, ScalarIndex)
+    if num_scalars(model) > 0
+        H = MA.add!!(H, schur_complement(model, w, ScalarIndex))
+    end
+    if H isa MA.Zero
+        n = num_constraints(model)
+        H = zeros(eltype(w), n, n)
     end
     return Hermitian(H, :L)
 end

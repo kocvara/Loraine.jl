@@ -35,10 +35,15 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     if solver.kit == 0   # direct solver
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
+            if BBBB isa LinearAlgebra.Hermitian{<:MultiFloat,<:SparseMatrixCSC}
+                # Convert to dense as Cholesky is not implemented for `MultiFloat` for sparse
+                BBBB = LinearAlgebra.Hermitian(Matrix(parent(BBBB)), LinearAlgebra.sym_uplo(BBBB.uplo))
+            end
             try
                 cholBBBB1, cholBBBB2 = cholesky(BBBB)
                 solver.cholBBBB = cholBBBB1
             catch err
+                @assert err isa LinearAlgebra.PosDefException
                 if solver.verb > 0
                     println("Matrix H not positive definite, trying to regularize")
                 end
@@ -52,7 +57,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                     solver.status = 3
                     return
                 end
-                while isposdef(BBBB) == false
+                while !isposdef(BBBB)
                     BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
                     icount = icount + 1
                     if icount > 1000

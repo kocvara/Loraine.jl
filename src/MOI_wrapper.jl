@@ -216,10 +216,7 @@ function MOI.copy_to(dest::Optimizer{T}, src::OptimizerCache) where {T}
         b_const,
         convert(SparseVector{Float64,Int64}, sparsevec(Cd_lin.constants)),
         C_lin,
-        n,
         msizes,
-        Int64(length(Cd_lin.constants)),
-        nlmi,
     )
     # FIXME this does not work if an option is changed between `MOI.copy_to` and `MOI.optimize!`
     options = copy(dest.options)
