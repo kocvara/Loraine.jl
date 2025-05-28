@@ -20,7 +20,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 
     w = solver.X_lin .* solver.S_lin_inv
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
-        BBBB = schur_complement(solver.model, w, solver.W, solver.G, solver.datarank)
+        BBBB = schur_complement(solver.model, w, solver.W)
     end
     # end
 
@@ -171,9 +171,9 @@ function corrector(solver,halpha)
     X = map(matrix_indices(solver.model)) do mat_idx
         i = mat_idx.value
         K = my_kron(
-            solver.G[i],
-            solver.G[i],
-            solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
+            solver.W[i].factor,
+            solver.W[i].factor,
+            solver.W[i].factor' * solver.Rd[i] * solver.W[i].factor + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
         )
         K
     end
@@ -240,18 +240,18 @@ function find_step(solver::MySolver{T}) where {T}
             i = mat_idx.value
             @timeit solver.to "find_step_A" begin
             solver.delS[i] .= solver.Rd[i] .+ jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
-            Ξ = vec(my_kron(solver.W[i], solver.W[i], solver.delS[i]))
+            Ξ = vec(my_kron(solver.W[i].matrix, solver.W[i], solver.delS[i]))
             if solver.predict
                 solver.delX[i] .= mat(-solver.X[i][:] .- Ξ)
             else
-                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[i])[:] .- Ξ .+ vec(my_kron(solver.G[i], solver.G[i], solver.RNT[i])))
+                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[i])[:] .- Ξ .+ vec(my_kron(solver.W[i].factor, solver.W[i].factor, solver.RNT[i])))
             end
             end
 
             # determining steplength to stay feasible
             @timeit solver.to "find_step_B" begin
-            delSb = solver.G[i]' * solver.delS[i] * solver.G[i]
-            delXb = solver.Gi[i] * solver.delX[i] * solver.Gi[i]'
+            delSb = solver.W[i].factor' * solver.delS[i] * solver.W[i].factor
+            delXb = solver.W[i].factor_inv * solver.delX[i] * solver.W[i].factor_inv'
             end
 
             @timeit solver.to "find_step_C" begin
@@ -298,7 +298,7 @@ function find_step(solver::MySolver{T}) where {T}
                 solver.Sn[i] = solver.S[i] + solver.beta[i] .* solver.delS[i]
                 dim = side_dimension(solver.model, mat_idx)
                 deed = solver.D[i] * ones(dim)' + ones(side_dimension(solver.model, mat_idx)) * solver.D[i]'
-                solver.RNT[i] = -(solver.Gi[i] * solver.delX[i] * solver.delS[i] * solver.G[i] + solver.G[i]' * solver.delS[i] * solver.delX[i] * solver.Gi[i]') ./ deed 
+                solver.RNT[i] = -(solver.W[i].factor_inv * solver.delX[i] * solver.delS[i] * solver.W[i].factor + solver.W[i].factor' * solver.delS[i] * solver.delX[i] * solver.W[i].factor_inv') ./ deed
             end
         end
     else

@@ -15,6 +15,14 @@ include("kron_etc.jl")
 include("makeBBBB.jl")
 include("model.jl")
 
+struct FactoredMatrix{T} <: AbstractMatrix{T}
+    factor::Matrix{T}
+    factor_inv::Matrix{T} # inv(factor)
+    matrix::Matrix{T} # factor * factor_inv'
+end
+Base.size(A::FactoredMatrix) = size(A.matrix)
+Base.getindex(A::FactoredMatrix, i, j) = Base.getindex(A.matrix, i, j)
+
 mutable struct MySolver{T,B}
     # main options
     kit::Int64
@@ -81,9 +89,7 @@ mutable struct MySolver{T,B}
     Sn_lin::Vector{T}
 
     D
-    G
-    Gi
-    W
+    W::Vector{FactoredMatrix{T}}
     Si
     DDsi
 
@@ -359,9 +365,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.delS = Matrix{T}[]
 
     solver.D = Vector{T}[]
-    solver.G = Matrix{T}[]
-    solver.Gi = Matrix{T}[]
-    solver.W = Matrix{T}[]
+    solver.W = FactoredMatrix{T}[]
     solver.Si = Matrix{T}[]
     solver.DDsi = Vector{T}[]
 
@@ -384,9 +388,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
         push!(solver.delX,zeros(dim, dim))
         push!(solver.delS,zeros(dim, dim))
         push!(solver.D, zeros(dim))
-        push!(solver.G,zeros(dim,  dim))
-        push!(solver.Gi,zeros(dim, dim))
-        push!(solver.W,zeros(dim,  dim))
+        push!(solver.W,FactoredMatrix(zeros(T, dim,  dim), zeros(T, dim,  dim), zeros(T, dim,  dim)))
         push!(solver.Si,zeros(dim, dim))
         push!(solver.DDsi,zeros(dim))
         push!(solver.Rd,zeros(dim, dim))
@@ -550,7 +552,7 @@ end
 
 struct MyA{T,B}
     w::Vector{T}
-    W::Vector{Matrix{T}}
+    W::Vector{FactoredMatrix{T}}
     model::MyModel
     jtprod_buffer::B
     to::TimerOutputs.TimerOutput

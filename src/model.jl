@@ -338,11 +338,10 @@ end
 # [HKS24, (5b)]
 # Returns the matrix equal to the sum, for each equation, of
 # ⟨A_i, WA_jW⟩
-function schur_complement(model::MyModel, w, W, G, datarank)
+function schur_complement(model::MyModel, w, W)
     if model.nlmi > 0
-        if datarank == -1
-        # if 1 == 0
-            H = makeBBBB_rank1(model.n, model.nlmi, model.B, G)
+        if false
+            H = makeBBBB_rank1(model.n, model.nlmi, model.B, W)
         else
             H = makeBBBBs(model, W)
         end

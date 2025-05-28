@@ -25,7 +25,7 @@ function makeBBBBs(model, W)
 end
 
 # Computes `⟨A * W, W * B⟩` for symmetric sparse matrices `A` and `B`
-function _dot(A::SparseMatrixCSC, B::SparseMatrixCSC, W::Matrix)
+function _dot(A::SparseMatrixCSC, B::SparseMatrixCSC, W::AbstractMatrix)
     @assert LinearAlgebra.checksquare(W) == LinearAlgebra.checksquare(A) == LinearAlgebra.checksquare(B)
     # After these asserts, we know that `A`, `B` and `W` are square and
     # have the same sizes so we can safely use `@inbounds`
@@ -53,7 +53,7 @@ function _dot(A::SparseMatrixCSC, B::SparseMatrixCSC, W::Matrix)
 end
 
 #####
-function makeBBBBsi(model, mat_idx, Wilmi::Matrix{T}) where {T}
+function makeBBBBsi(model, mat_idx, Wilmi::AbstractMatrix{T}) where {T}
     ilmi = mat_idx.value
     n = num_constraints(model)
     BBBB = zeros(T, n, n)

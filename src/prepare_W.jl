@@ -58,18 +58,17 @@ function prepare_W(solver::MySolver{T}) where {T}
             end
 
             # @timeit to "prpr3a" begin
-                solver.G[i] = Ctmp.L * V * Di2
+                G = Ctmp.L * V * Di2
             # end
             # @timeit to "prpr3" begin
-                solver.Gi[i] = inv(solver.G[i])
-                solver.W[i] =  solver.G[i] * solver.G[i]'
+                solver.W[i] = FactoredMatrix(G, inv(G), G * G')
             # end
             # @timeit to "prpr4" begin
                 # solver.Si[i] = inv(solver.S[i])
                 solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ (I(size(solver.Si[i],1))))  # S[i] inverse
                 # DDtmp = (CtmpS.U * solver.G[i])
                 # DDtmp = DDtmp' * DDtmp
-                DDtmp = solver.G[i]' * solver.S[i] * solver.G[i]
+                DDtmp = solver.W[i].factor' * solver.S[i] * solver.W[i].factor
                 DDtmp = (DDtmp + DDtmp') ./ 2.0
                 try
                     solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp,0)))
@@ -90,6 +89,6 @@ function prepare_W(solver::MySolver{T}) where {T}
         end
         # end
 
-    return solver.D, solver.G, solver.Gi, solver.W, solver.Si, solver.DDsi, solver.Si_lin
+    return solver.D, solver.W, solver.Si, solver.DDsi, solver.Si_lin
 
 end
