@@ -21,9 +21,9 @@ function  find_initial!(solver)
     solver.y = zeros(n)
     
     f = zeros(n)
-    for mat_idx in matrix_indices(solver.model)
+    for mat_idx in LRO.matrix_indices(solver.model)
         i = mat_idx.value
-        dim = side_dimension(solver.model, mat_idx)
+        dim = LRO.side_dimension(solver.model, mat_idx)
         if solver.initpoint == 0
             Eps = 1.0
         else
@@ -54,16 +54,16 @@ function  find_initial!(solver)
         end
         Epss = max(1.0, maximum(p, init = 0.0))
     end
-    solver.X_lin = 1 .* Epss * ones(num_scalars(solver.model))
+    solver.X_lin = 1 .* Epss * ones(LRO.num_scalars(solver.model))
     
     if solver.initpoint == 0
         Etaa = 1.0
     else
         mf = max(maximum(pp, init = 0.0), norm(objgrad(solver.model, ScalarIndex)))
-        mf = (0 + mf) ./ sqrt(num_scalars(solver.model))
+        mf = (0 + mf) ./ sqrt(LRO.num_scalars(solver.model))
         Etaa =  max(1, mf)
     end
-    solver.S_lin = 1 .* Etaa * ones(num_scalars(solver.model))
+    solver.S_lin = 1 .* Etaa * ones(LRO.num_scalars(solver.model))
     solver.S_lin_inv = 1 ./ solver.S_lin
     
 end

@@ -7,15 +7,15 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     solver.predict = true
     solver.Rp = cons(solver.model, solver.X_lin, solver.X)
 
-    for mat_idx = matrix_indices(solver.model)
+    for mat_idx = LRO.matrix_indices(solver.model)
         i = mat_idx.value
         solver.Rd[i] .= dual_cons!(solver.jtprod_buffer, solver.model, mat_idx, solver.y, solver.S)
         solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
-    if num_scalars(solver.model) > 0
+    if LRO.num_scalars(solver.model) > 0
         solver.Rd_lin = dual_cons(solver.model, ScalarIndex, solver.y, solver.S_lin)
-        Rc_lin = solver.sigma * solver.mu .* ones(num_scalars(solver.model), 1) - solver.X_lin .* solver.S_lin
+        Rc_lin = solver.sigma * solver.mu .* ones(LRO.num_scalars(solver.model), 1) - solver.X_lin .* solver.S_lin
     end
 
     w = solver.X_lin .* solver.S_lin_inv
@@ -28,7 +28,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     h = solver.Rp + jprod(
         solver.model,
         isempty(w) ? w : spdiagm(w) * solver.Rd_lin + solver.X_lin,
-        [solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i] for i in 1:num_matrices(solver.model)],
+        [solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i] for i in 1:LRO.num_matrices(solver.model)],
     )
 
     # solving the linear system()
@@ -144,20 +144,20 @@ function sigma_update(solver::MySolver{T}) where {T}
     else
             expon_used = max(1, min(solver.expon, T(3) * step_pred^2))
     end
-    if btrace(num_matrices(solver.model), solver.Xn, solver.Sn) .< 0
+    if btrace(LRO.num_matrices(solver.model), solver.Xn, solver.Sn) .< 0
         solver.sigma = T(0.8)
     else
-        if num_matrices(solver.model) > 0
-            tmp1 = btrace(num_matrices(solver.model), solver.Xn, solver.Sn)
+        if LRO.num_matrices(solver.model) > 0
+            tmp1 = btrace(LRO.num_matrices(solver.model), solver.Xn, solver.Sn)
         else
             tmp1 = 0
         end
-        if num_scalars(solver.model) > 0
+        if LRO.num_scalars(solver.model) > 0
                 tmp2 = dot(solver.Xn_lin', solver.Sn_lin)
         else
                 tmp2 = 0
         end
-        tmp12 = (tmp1 + tmp2) / (num_scalars(solver.model) + sum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model), init = 0))
+        tmp12 = (tmp1 + tmp2) / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
         tmp12 = convert(Float64, tmp12)
         mu = Float64(solver.mu)
         solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
@@ -168,13 +168,13 @@ end
 
 function corrector(solver::MySolver{T},halpha) where {T}
     solver.predict = false
-    if num_scalars(solver.model) > 0
+    if LRO.num_scalars(solver.model) > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
         x = spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp
     else
         x = T[]
     end
-    X = map(matrix_indices(solver.model)) do mat_idx
+    X = map(LRO.matrix_indices(solver.model)) do mat_idx
         i = mat_idx.value
         K = my_kron(
             solver.W[i].factor,
@@ -241,8 +241,8 @@ function corrector(solver::MySolver{T},halpha) where {T}
 end
 
 function find_step(solver::MySolver{T}) where {T}
-    if num_matrices(solver.model) > 0
-        for mat_idx in matrix_indices(solver.model)
+    if LRO.num_matrices(solver.model) > 0
+        for mat_idx in LRO.matrix_indices(solver.model)
             i = mat_idx.value
             @timeit solver.to "find_step_A" begin
             solver.delS[i] .= solver.Rd[i] .+ jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
@@ -288,7 +288,7 @@ function find_step(solver::MySolver{T}) where {T}
         end
     end
 
-    if num_scalars(solver.model) > 0
+    if LRO.num_scalars(solver.model) > 0
         find_step_lin(solver)
     else
         solver.alpha_lin = 1
@@ -297,21 +297,21 @@ function find_step(solver::MySolver{T}) where {T}
 
     if solver.predict
         # solution update
-        if num_matrices(solver.model) > 0
-            for mat_idx in matrix_indices(solver.model)
+        if LRO.num_matrices(solver.model) > 0
+            for mat_idx in LRO.matrix_indices(solver.model)
                 i = mat_idx.value
                 solver.Xn[i] = solver.X[i] + solver.alpha[i] .* solver.delX[i]
                 solver.Sn[i] = solver.S[i] + solver.beta[i] .* solver.delS[i]
-                dim = side_dimension(solver.model, mat_idx)
-                deed = solver.D[i] * ones(dim)' + ones(side_dimension(solver.model, mat_idx)) * solver.D[i]'
+                dim = LRO.side_dimension(solver.model, mat_idx)
+                deed = solver.D[i] * ones(dim)' + ones(LRO.side_dimension(solver.model, mat_idx)) * solver.D[i]'
                 solver.RNT[i] = -(solver.W[i].factor_inv * solver.delX[i] * solver.delS[i] * solver.W[i].factor + solver.W[i].factor' * solver.delS[i] * solver.delX[i] * solver.W[i].factor_inv') ./ deed
             end
         end
     else
         solver.yold = solver.y
         solver.y = solver.y + minimum([solver.beta; solver.beta_lin]) * solver.dely
-        if num_matrices(solver.model) > 0
-            for i = 1:num_matrices(solver.model)
+        if LRO.num_matrices(solver.model) > 0
+            for i = 1:LRO.num_matrices(solver.model)
                 solver.X[i] = solver.X[i] + minimum([solver.alpha; solver.alpha_lin]) .* solver.delX[i]
                 solver.X[i] = (solver.X[i] + solver.X[i]') ./ 2
                 solver.S[i] = solver.S[i] + minimum([solver.beta; solver.beta_lin]) .* solver.delS[i]

@@ -8,12 +8,13 @@ import Statistics: mean
 using Printf
 using TimerOutputs
 using MultiFloats
+import NLPModels
+import SolverCore
+import LowRankOpt as LRO
 # using MKLSparse
 # using MKL
 
 include("kron_etc.jl")
-include("model.jl")
-include("schur.jl")
 
 struct FactoredMatrix{T} <: AbstractMatrix{T}
     factor::Matrix{T}
@@ -44,7 +45,7 @@ mutable struct MySolver{T,A,B,SB}
     to::Any
 
     # model and preprocessed model data
-    model::MyModel{T,A}
+    model::LRO.Model{T,A}
     jtprod_buffer::B
     schur_buffer::SB
 
@@ -130,11 +131,11 @@ mutable struct MySolver{T,A,B,SB}
         timing::Int64,
         maxit::Int64, 
         datasparsity::Int64,
-        model::MyModel{T,A}
+        model::LRO.Model{T,A}
     ) where {T,A}
 
-        jtprod_buffer = buffer_for_jtprod(model)
-        schur_buffer = buffer_for_schur_complement(model, datasparsity)
+        jtprod_buffer = LRO.buffer_for_jtprod(model)
+        schur_buffer = LRO.buffer_for_schur_complement(model, datasparsity)
         solver = new{T,A,typeof(jtprod_buffer),typeof(schur_buffer)}()
         solver.kit             = kit
         solver.tol_cg          = tol_cg
@@ -173,6 +174,17 @@ mutable struct Halpha
     end
 end
 
+struct Solver{T,A,B,SB} <: SolverCore.AbstractOptimizationSolver
+    solver::MySolver{T,A,B,SB}
+    halpha::Halpha
+    stats::SolverCore.GenericExecutionStats{T,LRO.Solution{T},Vector{T},Any}
+end
+
+function Solver{T}(model::LRO.Model; kws...) where {T}
+    options = Dict(kw[1] => kw[2] for kw in kws)
+    stats = SolverCore.GenericExecutionStats(model)
+    Solver(load(model, options; T)..., stats)
+end
 
 include("initial_point.jl")
 include("prepare_W.jl") 
@@ -242,15 +254,15 @@ function load(model, options::Dict; T = Float64)
     end
 
     if verb > 0
-        @printf(" Number of variables: %5d\n",num_constraints(model))
-        @printf(" LMI constraints    : %5d\n",num_matrices(model))
-        if num_matrices(model) > 0
+        @printf(" Number of variables: %5d\n",LRO.num_constraints(model))
+        @printf(" LMI constraints    : %5d\n",LRO.num_matrices(model))
+        if LRO.num_matrices(model) > 0
             @printf(" Matrix size(s)     :")
-            msizes = side_dimension.(Ref(model), matrix_indices(model))
+            msizes = LRO.side_dimension.(Ref(model), LRO.matrix_indices(model))
             Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), msizes);
             @printf("\n")
         end
-        @printf(" Linear constraints : %5d\n",num_scalars(model))
+        @printf(" Linear constraints : %5d\n",LRO.num_scalars(model))
         if solver.kit>0
             @printf(" Preconditioner     : %5d\n",preconditioner)
         else
@@ -336,7 +348,7 @@ function solve(solver::MySolver,halpha::Halpha)
 
         if solver.preconditioner == 4
             #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
-            if (solver.cg_iter_cor / 2 > solver.erank * num_matrices(solver.model) * sqrt(num_constraints(solver.model))/20 && solver.iter > sqrt(num_constraints(solver.model)) / 60) || solver.cg_iter_cor > 100
+            if (solver.cg_iter_cor / 2 > solver.erank * LRO.num_matrices(solver.model) * sqrt(LRO.num_constraints(solver.model))/20 && solver.iter > sqrt(LRO.num_constraints(solver.model)) / 60) || solver.cg_iter_cor > 100
                 solver.preconditioner = 1; solver.aamat = 2; 
                 if solver.verb > 0
                     println("Switching to preconditioner 1")
@@ -375,8 +387,8 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Rd = Matrix{T}[]
     solver.Rc = Matrix{T}[]
 
-    solver.alpha = zeros(num_matrices(solver.model))
-    solver.beta = zeros(num_matrices(solver.model))
+    solver.alpha = zeros(LRO.num_matrices(solver.model))
+    solver.beta = zeros(LRO.num_matrices(solver.model))
 
     solver.Xn = Matrix{T}[]
     solver.Sn = Matrix{T}[]
@@ -384,8 +396,8 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
     solver.regcount = 0
  
-    for mat_idx in matrix_indices(solver.model)
-        dim = side_dimension(solver.model, mat_idx)
+    for mat_idx in LRO.matrix_indices(solver.model)
+        dim = LRO.side_dimension(solver.model, mat_idx)
         push!(solver.X,zeros(dim, dim))
         push!(solver.S,zeros(dim, dim))
         push!(solver.delX,zeros(dim, dim))
@@ -405,22 +417,22 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     halpha.Z = Matrix{T}[]
     halpha.AAAATtau = SparseMatrixCSC{T}[]
 
-    for mat_idx in matrix_indices(solver.model)
-        dim = side_dimension(solver.model, mat_idx)
+    for mat_idx in LRO.matrix_indices(solver.model)
+        dim = LRO.side_dimension(solver.model, mat_idx)
         push!(halpha.Umat,zeros(dim, solver.erank))
         push!(halpha.Z,zeros(dim, dim))
         # tmp = Matrix(I(dim))
         # push!(halpha.cholS,cholesky(tmp))
-        push!(halpha.AAAATtau,spzeros(num_constraints(solver.model), num_constraints(solver.model)))
+        push!(halpha.AAAATtau,spzeros(LRO.num_constraints(solver.model), LRO.num_constraints(solver.model)))
     end
 
     if solver.kit == 1
-        if num_matrices(solver.model) == 0
+        if LRO.num_matrices(solver.model) == 0
             if solver.verb > 0
                 println("WARNING: Switching to a direct solver, no LMIs")
             end
             solver.kit = 0
-        elseif num_matrices(solver.model) > 0 && solver.erank >= maximum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model)) - 1
+        elseif LRO.num_matrices(solver.model) > 0 && solver.erank >= maximum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model)) - 1
             if solver.verb > 0
                 println("WARNING: Switching to a direct solver, erank bigger than matrix size")
             end
@@ -431,7 +443,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 end
 
 function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
-    mmm = Matrix{T}(undef, num_constraints(solver.model), num_constraints(solver.model))
+    mmm = Matrix{T}(undef, LRO.num_constraints(solver.model), LRO.num_constraints(solver.model))
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
@@ -464,17 +476,17 @@ end
 
 function find_mu(solver)
     trXS = 0
-    if num_matrices(solver.model) > 0
-        for i = 1:num_matrices(solver.model)
+    if LRO.num_matrices(solver.model) > 0
+        for i = 1:LRO.num_matrices(solver.model)
             trXS = trXS + sum(sum(solver.X[i] .* solver.S[i]))
         end
     end 
     mu = trXS
 
-    if num_scalars(solver.model) > 0
+    if LRO.num_scalars(solver.model) > 0
         mu = mu + dot(solver.X_lin, solver.S_lin)
     end
-    solver.mu = mu / (num_scalars(solver.model) + sum(Base.Fix1(side_dimension, solver.model), matrix_indices(solver.model), init = 0))
+    solver.mu = mu / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
     return solver.mu
 end
 
@@ -485,8 +497,8 @@ function check_convergence(solver)
     dobj = dual_obj(solver.model, solver.y)
     solver.err1 = norm(solver.Rp) / b_den
     solver.err2, solver.err3, solver.err4, solver.err5, solver.err6 = 0., 0., 0., 0., 0.
-    if num_matrices(solver.model) > 0
-        for mat_idx = matrix_indices(solver.model)
+    if LRO.num_matrices(solver.model) > 0
+        for mat_idx = LRO.matrix_indices(solver.model)
             i = mat_idx.value
             C_den = 1 + norm(objgrad(solver.model, mat_idx))
             solver.err2 = solver.err2 + max(0, -eigmin(solver.X[i]) / b_den)
@@ -499,7 +511,7 @@ function check_convergence(solver)
 
     pobj = obj(solver.model, solver.X_lin, solver.X)
     solver.err5 = (dobj - pobj) / (1 + abs(obj(solver.model, solver.X, MatrixIndex)) + abs(dobj))
-    if num_scalars(solver.model) > 0
+    if LRO.num_scalars(solver.model) > 0
         solver.err2 += max(0, -minimum(solver.X_lin) / b_den)
         solver.err3 += norm(solver.Rd_lin) / (1 + norm(objgrad(solver.model, ScalarIndex)))
         solver.err4 += max(0, -minimum(solver.S_lin) / (1 + norm(objgrad(solver.model, ScalarIndex))))
@@ -507,7 +519,7 @@ function check_convergence(solver)
     end
 
     DIMACS_error = solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
-    if num_matrices(solver.model) > 0
+    if LRO.num_matrices(solver.model) > 0
         DIMACS_error += solver.err1
     end
     if solver.verb > 0 && solver.status == 0 
@@ -556,7 +568,7 @@ end
 struct MyA{T,A,B}
     w::Vector{T}
     W::Vector{FactoredMatrix{T}}
-    model::MyModel{T,A}
+    model::LRO.Model{T,A}
     jtprod_buffer::B
     to::TimerOutputs.TimerOutput
 end
@@ -577,9 +589,9 @@ end
 
 function Prec_for_CG_beta(solver,halpha)    
     
-    nlmi = num_matrices(solver.model)
+    nlmi = LRO.num_matrices(solver.model)
     kk = solver.erank .* ones(Int64,nlmi,1)  
-    nvar = num_constraints(solver.model)
+    nvar = LRO.num_constraints(solver.model)
         
     ntot=0
     if nlmi > 0
@@ -610,14 +622,14 @@ function Prec_for_CG_beta(solver,halpha)
             
             halpha.AAAATtau += ttau^2 .* ZZZ
         end
-        if num_scalars(solver.model) > 0
+        if LRO.num_scalars(solver.model) > 0
             halpha.AAAATtau .+= diag(schur_complement(solver.model, solver.X_lin .* solver.S_lin_inv, ScalarIndex))
         end
     end
 end
 
 struct MyM_beta{T,A}
-    model::MyModel{T,A}
+    model::LRO.Model{T,A}
     AAAATtau
 end
 
@@ -628,13 +640,13 @@ end
 function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T} 
     
     @timeit solver.to "prec" begin
-    nlmi = num_matrices(solver.model)
+    nlmi = LRO.num_matrices(solver.model)
     kk = solver.erank .* ones(Int64,nlmi)
     # kk[2] = 3
     # halpha.Z = SparseMatrixCSC{T}[]
     halpha.Z = Matrix{T}[]
 
-    nvar = num_constraints(solver.model)
+    nvar = LRO.num_constraints(solver.model)
     
     halpha.AAAATtau = spzeros(nvar,nvar)
     
@@ -694,7 +706,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         end
     end
     
-    if num_scalars(solver.model) > 0
+    if LRO.num_scalars(solver.model) > 0
         halpha.AAAATtau .+= schur_complement(solver.model, solver.X_lin .* solver.S_lin_inv, ScalarIndex)
     end
     
@@ -707,7 +719,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         # @timeit solver.to "prec3" begin
         t = zeros(nvar, k*didi)
         if nlmi > 0
-            for mat_idx in matrix_indices(solver.model)
+            for mat_idx in LRO.matrix_indices(solver.model)
                 ilmi = mat_idx.value
                 n = size(solver.W[ilmi],1)
                 k = kk[ilmi]
@@ -764,7 +776,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
 end
 
 struct MyM{T,A,B}
-    model::MyModel{T,A}
+    model::LRO.Model{T,A}
     jtprod_buffer::B
     AAAATtau
     Umat
@@ -775,10 +787,10 @@ end
 function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) where {T}
     @timeit solver.to "prec3" begin
     S = Matrix{T}(undef,sizeS,sizeS)
-    nvar = num_constraints(solver.model)
+    nvar = LRO.num_constraints(solver.model)
     t = Matrix{T}(undef,nvar,kk[1]*didi)
-    if num_matrices(solver.model) > 0
-        for mat_idx in matrix_indices(solver.model)
+    if LRO.num_matrices(solver.model) > 0
+        for mat_idx in LRO.matrix_indices(solver.model)
             ilmi = mat_idx.value
             if kk[ilmi] == 0
                 continue 
@@ -800,7 +812,7 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
                     for i in axes(AAAATtau_d, 1)
                 ])
             end
-            if num_matrices(solver.model) > 1
+            if LRO.num_matrices(solver.model) > 1
                 # @timeit solver.to "prec32" begin
                 didi1 = size(solver.W[ilmi],1)
                 ttmp = Matrix{T}(undef,nvar,kk[ilmi]*didi1)
@@ -826,7 +838,7 @@ end
 function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
 
     nvar = size(x,1)
-    nlmi = num_matrices(t.model)
+    nlmi = LRO.num_matrices(t.model)
 
     yy2 = zeros(nvar,1)
     y33 = zeros(T,0)
@@ -834,7 +846,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
     AAAAinvx = t.AAAATtau\x
 
     if nlmi > 0
-        for mat_idx in matrix_indices(t.model)
+        for mat_idx in LRO.matrix_indices(t.model)
             ilmi = mat_idx.value
             y22 = -jtprod!(t.jtprod_buffer[ilmi], t.model, mat_idx, AAAAinvx)
             y33 = [y33; vec(t.Z[ilmi]' * y22 * t.Umat[ilmi])]
@@ -845,7 +857,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
 
     ii = 0
     if nlmi > 0
-        for mat_idx in matrix_indices(t.model)
+        for mat_idx in LRO.matrix_indices(t.model)
             ilmi = mat_idx.value
             n = size(t.Umat[ilmi],1)
             k = size(t.Umat[ilmi],2)

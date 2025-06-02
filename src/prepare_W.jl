@@ -28,7 +28,7 @@ end
 function prepare_W(solver::MySolver{T}) where {T}
 
     # @timeit solver.to "prpr" begin
-        for mat_idx = matrix_indices(solver.model)
+        for mat_idx = LRO.matrix_indices(solver.model)
             i = mat_idx.value
             # @timeit to "prpr1" begin
                 Ctmp = try_cholesky(solver, solver.X, i, "X")
@@ -82,7 +82,7 @@ function prepare_W(solver::MySolver{T}) where {T}
                 end
             # end
         end
-        if num_scalars(solver.model) > 0
+        if LRO.num_scalars(solver.model) > 0
             solver.Si_lin = 1.0 ./ solver.S_lin
         else
             solver.Si_lin = []

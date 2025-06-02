@@ -17,6 +17,20 @@ using FameSVD
 # using MKL
 
 import MathOptInterface as MOI
+import LowRankOpt as LRO
+struct Optimizer{T}
+    dummy::T
+end
+function Optimizer{T}() where {T}
+    model = LRO.Optimizer{T}()
+    MOI.set(
+        model,
+        MOI.RawOptimizerAttribute("solver"),
+        Solvers.Solver{T},
+    )
+    return model
+end
+Optimizer() = Optimizer{Float64}()
 
 #modules
 include("Solvers.jl")
@@ -26,7 +40,6 @@ include("kron_etc.jl")
 include("initial_point.jl")
 include("predictor_corrector.jl")
 include("prepare_W.jl")
-include("MOI_wrapper.jl")
 
 function prepare_model_data(d,drank)
 
@@ -55,7 +68,7 @@ else
     C_lin = sparse([0. 0.;0. 0.])
 end
 
-model = MyModel(A[:,2:end], _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, msizes)
+model = LRO.Model(A[:,2:end], _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, msizes)
 
 return model
 end
