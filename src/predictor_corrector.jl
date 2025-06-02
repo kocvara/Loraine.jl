@@ -5,16 +5,16 @@ using GenericLinearAlgebra
 function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     
     solver.predict = true
-    solver.Rp = NLPModels.cons(solver.model, solver.X)
+    solver.Rp = -NLPModels.cons(solver.model, solver.X)
 
     for mat_idx = LRO.matrix_indices(solver.model)
         i = mat_idx.value
-        solver.Rd[i] .= LRO.dual_cons!(solver.jtprod_buffer, solver.model, mat_idx, solver.y, solver.S)
+        solver.Rd[i] .= LRO.dual_cons!(solver.jtprod_buffer, solver.model, mat_idx, solver.y) .- solver.S[i]
         solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
     if LRO.num_scalars(solver.model) > 0
-        solver.Rd_lin = LRO.dual_cons(solver.model, LRO.ScalarIndex, solver.y, solver.S_lin)
+        solver.Rd_lin = LRO.dual_cons(solver.model, LRO.ScalarIndex, solver.y) - solver.S_lin
         Rc_lin = solver.sigma * solver.mu .* ones(LRO.num_scalars(solver.model), 1) - solver.X[LRO.ScalarIndex] .* solver.S_lin
     end
 
