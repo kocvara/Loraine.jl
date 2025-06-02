@@ -187,6 +187,7 @@ const STATUS_MAP = [
     :infeasible,
     :unbounded,
     :max_iter,
+    :exception,
 ]
 
 function SolverCore.solve!(
@@ -446,12 +447,12 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     if solver.kit == 1
         if LRO.num_matrices(solver.model) == 0
             if solver.verb > 0
-                println("WARNING: Switching to a direct solver, no LMIs")
+                @warn("Switching to a direct solver, no LMIs")
             end
             solver.kit = 0
         elseif LRO.num_matrices(solver.model) > 0 && solver.erank >= maximum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model)) - 1
             if solver.verb > 0
-                println("WARNING: Switching to a direct solver, erank bigger than matrix size")
+                @warn("Switching to a direct solver, erank bigger than matrix size")
             end
             solver.kit = 0
         end
@@ -465,7 +466,7 @@ function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
     if solver.iter > solver.maxit
         solver.status = 4
         if solver.verb > 0
-            println("WARNING: Stopped by iteration limit (stopping status = 4)")
+            @warn("Stopped by iteration limit (stopping status = 4)")
         end
     end
     solver.cg_iter_pre = 0
@@ -540,15 +541,20 @@ function check_convergence(solver)
         end
     end
 
-    if DIMACS_error > 1e55 
+    if pobj < -1e55
         solver.status = 2
         if solver.verb > 0
-            println("WARNING: Problem probably infeasible (stopping status = 2)")
+            @warn(": Problem probably infeasible (stopping status = 2)")
         end
-    elseif DIMACS_error > 1e55 || abs(dobj) > 1e55
+    elseif dobj > 1e55
         solver.status = 3
         if solver.verb > 0
-            println("WARNING: Problem probably unbounded or infeasible (stopping status = 3)")
+            @warn(": Problem probably unbounded or infeasible (stopping status = 3)")
+        end
+    elseif any(isnan, solver.err)
+        solver.status = 5
+        if solver.verb > 0
+            @warn(": Got NaN (stopping status = 5)")
         end
     end
 

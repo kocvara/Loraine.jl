@@ -15,7 +15,7 @@ function try_cholesky(solver, X, name::String)
             icount += 1
             if icount > 1000
                 if solver.verb > 0
-                    println("WARNING: $name cannot be made positive definite, giving up")
+                    @warn("$name cannot be made positive definite, giving up")
                 end
                 solver.status = 4
                 return I(size(X, 1))
@@ -53,7 +53,7 @@ function prepare_W(solver::MySolver{T}) where {T}
             Di2 = try
                 Diagonal(1.0 ./ sqrt.(Dtmp))
             catch err
-                println("WARNING: Numerical difficulties, giving up")
+                @warn("Numerical difficulties, giving up")
                     solver.status = 4
                 Diagonal(I(size(solver.Dtmp, 1)))
             end
@@ -76,7 +76,7 @@ function prepare_W(solver::MySolver{T}) where {T}
                 try
                     solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp,0)))
                 catch err
-                    println("WARNING: Numerical difficulties, giving up")
+                    @warn("Numerical difficulties, giving up")
                     solver.DDsi[i] = diag(I(size(DDtmp, 1)))
                     solver.status = 4
                     return

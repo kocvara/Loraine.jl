@@ -57,7 +57,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                 solver.regcount += 1
                 if solver.regcount > 5
                     if solver.verb > 0
-                        println("WARNING: too many regularizations of H, giving up")
+                        @warn("too many regularizations of H, giving up")
                     end
                     solver.cholBBBB = I(size(BBBB, 1))
                     solver.status = 3
@@ -68,7 +68,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                     icount = icount + 1
                     if icount > 1000
                         if solver.verb > 0
-                            println("WARNING: H cannot be made positive definite, giving up")
+                            @warn("H cannot be made positive definite, giving up")
                         end
                         solver.cholBBBB = I(size(BBBB, 1))
                         solver.status = 3
