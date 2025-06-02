@@ -18,7 +18,6 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     if solver.model.nlin > 0
         solver.Rp -= solver.model.C_lin * solver.X_lin[:]
         solver.Rd_lin = solver.model.d_lin - solver.S_lin - solver.model.C_lin' * solver.y
-        Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
     end
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
