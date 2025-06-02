@@ -823,7 +823,7 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
                         solver.jtprod_buffer[ilmi],
                         solver.model,
                         mat_idx,
-                        AAAATtau_d[i,:],
+                        -AAAATtau_d[i,:],
                     ) * halpha.Umat[ilmi])'
                     for i in axes(AAAATtau_d, 1)
                 ])
@@ -864,7 +864,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
     if nlmi > 0
         for mat_idx in LRO.matrix_indices(t.model)
             ilmi = mat_idx.value
-            y22 = -LRO.jtprod!(t.jtprod_buffer[ilmi], t.model, mat_idx, AAAAinvx)
+            y22 = LRO.jtprod!(t.jtprod_buffer[ilmi], t.model, mat_idx, AAAAinvx)
             y33 = [y33; vec(t.Z[ilmi]' * y22 * t.Umat[ilmi])]
         end
     end

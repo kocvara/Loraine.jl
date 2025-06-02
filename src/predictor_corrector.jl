@@ -247,7 +247,7 @@ function find_step(solver::MySolver{T}) where {T}
         for mat_idx in LRO.matrix_indices(solver.model)
             i = mat_idx.value
             @timeit solver.to "find_step_A" begin
-            solver.delS[i] .= solver.Rd[i] .+ LRO.jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
+            solver.delS[i] .= solver.Rd[i] .- LRO.jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
             Ξ = vec(my_kron(solver.W[mat_idx].matrix, solver.W[mat_idx], solver.delS[i]))
             if solver.predict
                 solver.delX[i] .= mat(-solver.X[mat_idx][:] .- Ξ)
@@ -326,7 +326,7 @@ end
 
 
 function find_step_lin(solver)
-    solver.delS_lin = solver.Rd_lin + LRO.jtprod(solver.model, LRO.ScalarIndex, solver.dely)
+    solver.delS_lin = solver.Rd_lin - LRO.jtprod(solver.model, LRO.ScalarIndex, solver.dely)
     if solver.predict
         solver.delX_lin = -solver.X[LRO.ScalarIndex] - (solver.X[LRO.ScalarIndex]) .* (solver.Si_lin) .* solver.delS_lin
     else
