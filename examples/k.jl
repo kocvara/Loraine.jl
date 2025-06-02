@@ -30,6 +30,7 @@ using Test
 @test primal_status(model) == MOI.FEASIBLE_POINT
 @test dual_status(model) == MOI.FEASIBLE_POINT
 @test objective_value(model) ≈ 4 rtol = 1e-6
+@test dual_objective_value(model) ≈ 4 rtol = 1e-6
 
 @test value(x) ≈ 2 rtol = 1e-6
 

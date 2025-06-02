@@ -18,7 +18,15 @@ function mat(vecA)
 end
 
 ###########################################################################
-function btrace(nlmi, X, S)
+function btrace(nlmi, X::LRO.VectorizedSolution, S)
+    # compute sum of traces of products of block matrices
+    trXS = 0
+    @inbounds for i = 1:nlmi
+        trXS += dot(X[LRO.MatrixIndex(i)], S[i])
+    end
+    return trXS
+end
+function btrace(nlmi, X::Vector, S) # TODO remplace by `dot(X, S)`
     # compute sum of traces of products of block matrices
     trXS = 0
     @inbounds for i = 1:nlmi

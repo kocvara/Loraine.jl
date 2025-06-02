@@ -2,37 +2,38 @@ using TimerOutputs
 using FameSVD
 using MultiFloats
 
-function try_cholesky(solver, X, i::Integer, name::String)
+function try_cholesky(solver, X, name::String)
     try
-        return cholesky(X[i])
+        return cholesky(X)
     catch
         if solver.verb > 0
             println("Matrix $name not positive definite, trying to regularize")
         end
         icount = 0
-        while isposdef(X[i]) == false
-            X[i] += 1e-5 .* I(size(X[i], 1))
+        while isposdef(X) == false
+            X .+= 1e-5 .* I(size(X, 1))
             icount += 1
             if icount > 1000
                 if solver.verb > 0
                     println("WARNING: $name cannot be made positive definite, giving up")
                 end
                 solver.status = 4
-                return I(size(X[i], 1))
+                return I(size(X, 1))
             end
         end
-        return cholesky(X[i])
+        return cholesky(X)
     end
 end
 
 function prepare_W(solver::MySolver{T}) where {T}
 
     # @timeit solver.to "prpr" begin
+        solver.W[LRO.ScalarIndex] .= solver.X[LRO.ScalarIndex] .* solver.S_lin_inv
         for mat_idx = LRO.matrix_indices(solver.model)
             i = mat_idx.value
             # @timeit to "prpr1" begin
-                Ctmp = try_cholesky(solver, solver.X, i, "X")
-                CtmpS = try_cholesky(solver, solver.S, i, "S")
+                Ctmp = try_cholesky(solver, solver.X[mat_idx], "X")
+                CtmpS = try_cholesky(solver, solver.S[i], "S")
                 # Ctmp = cholesky(solver.X[i])
                 # CtmpS = cholesky(solver.S[i])
             @timeit solver.to "prep W SVD" begin
@@ -58,17 +59,19 @@ function prepare_W(solver::MySolver{T}) where {T}
             end
 
             # @timeit to "prpr3a" begin
-                G = Ctmp.L * V * Di2
+                W = solver.W[mat_idx]
+                W.factor .= Ctmp.L * V * Di2
+                W.factor_inv .= inv(W.factor)
+                LinearAlgebra.mul!(W.matrix, W.factor, W.factor')
             # end
             # @timeit to "prpr3" begin
-                solver.W[i] = FactoredMatrix(G, inv(G), G * G')
             # end
             # @timeit to "prpr4" begin
                 # solver.Si[i] = inv(solver.S[i])
                 solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ (I(size(solver.Si[i],1))))  # S[i] inverse
                 # DDtmp = (CtmpS.U * solver.G[i])
                 # DDtmp = DDtmp' * DDtmp
-                DDtmp = solver.W[i].factor' * solver.S[i] * solver.W[i].factor
+                DDtmp = solver.W[mat_idx].factor' * solver.S[i] * solver.W[mat_idx].factor
                 DDtmp = (DDtmp + DDtmp') ./ 2.0
                 try
                     solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp,0)))

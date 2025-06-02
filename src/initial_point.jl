@@ -16,9 +16,9 @@ end
 
 function  find_initial!(solver)
 
-    b2 = 1 .+ abs.(cons_constant(solver.model)')
+    b2 = 1 .+ abs.(LRO.cons_constant(solver.model)')
     n = length(b2)
-    solver.y = zeros(n)
+    solver.y .= 0
     
     f = zeros(n)
     for mat_idx in LRO.matrix_indices(solver.model)
@@ -27,15 +27,15 @@ function  find_initial!(solver)
         if solver.initpoint == 0
             Eps = 1.0
         else
-            f = norm(b2)/(1+norm_jac(solver.model, mat_idx))
+            f = norm(b2)/(1+LRO.norm_jac(solver.model, mat_idx))
             Eps = sqrt(dim) * max(1, sqrt.(dim) * f)
         end
-        solver.X[i] = Eps * Matrix(1.0I, dim, dim)
+        solver.X[mat_idx] .= Eps * Matrix(1.0I, dim, dim)
         
         if solver.initpoint == 0
             Eta = n
         else
-            mf = max(f, norm(objgrad(solver.model, mat_idx), 2))
+            mf = max(f, norm(NLPModels.grad(solver.model, mat_idx), 2))
             mf = (1 + mf) / dim
             Eta = sqrt(dim).* max(1, mf)
         end
@@ -47,19 +47,19 @@ function  find_initial!(solver)
     if solver.initpoint == 0
         Epss = 1.0
     else
-        for con_idx in constraint_indices(solver.model)
+        for con_idx in LRO.constraint_indices(solver.model)
             j = con_idx.value
-            pp[j] = norm(jac(solver.model, con_idx, ScalarIndex))
+            pp[j] = norm(NLPModels.jac(solver.model, con_idx, LRO.ScalarIndex))
             p[j] = b2[j] / (1 + pp[j])
         end
         Epss = max(1.0, maximum(p, init = 0.0))
     end
-    solver.X_lin = 1 .* Epss * ones(LRO.num_scalars(solver.model))
+    solver.X[LRO.ScalarIndex] .= Epss
     
     if solver.initpoint == 0
         Etaa = 1.0
     else
-        mf = max(maximum(pp, init = 0.0), norm(objgrad(solver.model, ScalarIndex)))
+        mf = max(maximum(pp, init = 0.0), norm(NLPModels.grad(solver.model, LRO.ScalarIndex)))
         mf = (0 + mf) ./ sqrt(LRO.num_scalars(solver.model))
         Etaa =  max(1, mf)
     end

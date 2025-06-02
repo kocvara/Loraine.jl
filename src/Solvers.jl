@@ -71,7 +71,7 @@ mutable struct MySolver{T,A,B,SB}
     err5::T
     err6::T
 
-    X
+    X::LRO.VectorizedSolution{T}
     S
     y
     yold
@@ -81,7 +81,6 @@ mutable struct MySolver{T,A,B,SB}
     Xn
     Sn
 
-    X_lin::Vector{T}
     S_lin::Vector{T}
     Si_lin::Vector{T}
     S_lin_inv::Vector{T}
@@ -91,7 +90,7 @@ mutable struct MySolver{T,A,B,SB}
     Sn_lin::Vector{T}
 
     D
-    W::Vector{FactoredMatrix{T}}
+    W::LRO.ShapedSolution{T,FactoredMatrix{T}}
     Si
     DDsi
 
@@ -177,14 +176,45 @@ end
 struct Solver{T,A,B,SB} <: SolverCore.AbstractOptimizationSolver
     solver::MySolver{T,A,B,SB}
     halpha::Halpha
-    stats::SolverCore.GenericExecutionStats{T,LRO.Solution{T},Vector{T},Any}
+    stats::SolverCore.GenericExecutionStats{T,Vector{T},Vector{T},Any}
 end
 
 function Solver{T}(model::LRO.Model; kws...) where {T}
     options = Dict(kw[1] => kw[2] for kw in kws)
     stats = SolverCore.GenericExecutionStats(model)
-    Solver(load(model, options; T)..., stats)
+    solver, halpha = load(model, options; T)
+    solver.X = LRO.VectorizedSolution{T}(stats.solution, model.dim)
+    solver.y = stats.multipliers
+    Solver(solver, halpha, stats)
 end
+
+const STATUS_MAP = [
+    :unknown,
+    :first_order,
+    :infeasible,
+    :unbounded,
+    :max_iter,
+]
+
+function SolverCore.solve!(
+    solver::Solver,
+    model::NLPModels.AbstractNLPModel; # Same as `solver.model`, we can ignore
+    kws...,
+)
+    for kw in kws
+        field = Symbol(kw[1])
+        if field == :verbose
+            field = :verb # TODO rename to :verbose to follow NLPModels convention
+        end
+        setproperty!(solver.solver, field, kw[2])
+    end
+    solver.solver.to = TimerOutput()
+    solve(solver.solver, solver.halpha)
+    solver.stats.status = STATUS_MAP[solver.solver.status + 1]
+    solver.stats.objective = NLPModels.obj(solver.solver.model, solver.solver.X)
+    return
+end
+
 
 include("initial_point.jl")
 include("prepare_W.jl") 
@@ -247,29 +277,6 @@ function load(model, options::Dict; T = Float64)
     halpha = Halpha(kit)
     solver.cg_iter_tot = 0
 
-    if verb > 0
-        t1 = time()
-        @printf("\n *** Loraine.jl v0.2.5 ***\n")
-        @printf(" *** Initialisation STARTS\n")
-    end
-
-    if verb > 0
-        @printf(" Number of variables: %5d\n",LRO.num_constraints(model))
-        @printf(" LMI constraints    : %5d\n",LRO.num_matrices(model))
-        if LRO.num_matrices(model) > 0
-            @printf(" Matrix size(s)     :")
-            msizes = LRO.side_dimension.(Ref(model), LRO.matrix_indices(model))
-            Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), msizes);
-            @printf("\n")
-        end
-        @printf(" Linear constraints : %5d\n",LRO.num_scalars(model))
-        if solver.kit>0
-            @printf(" Preconditioner     : %5d\n",preconditioner)
-        else
-            @printf(" Preconditioner     :  none, using direct solver\n")
-        end
-    end
-
     # Input parameters check
     if kit < 0 || kit > 1
         solver.kit = 0
@@ -314,6 +321,23 @@ end
 function solve(solver::MySolver,halpha::Halpha)
     t1 = time()
     if solver.verb > 0
+        @printf("\n *** Loraine.jl v0.2.5 ***\n")
+
+        @printf(" Number of variables: %5d\n",LRO.num_constraints(solver.model))
+        @printf(" LMI constraints    : %5d\n",LRO.num_matrices(solver.model))
+        if LRO.num_matrices(solver.model) > 0
+            @printf(" Matrix size(s)     :")
+            msizes = LRO.side_dimension.(Ref(solver.model), LRO.matrix_indices(solver.model))
+            Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), msizes);
+            @printf("\n")
+        end
+        @printf(" Linear constraints : %5d\n",LRO.num_scalars(solver.model))
+        if solver.kit>0
+            @printf(" Preconditioner     : %5d\n",solver.preconditioner)
+        else
+            @printf(" Preconditioner     :  none, using direct solver\n")
+        end
+
         @printf(" *** IP STARTS\n")
         if solver.verb < 2
             if solver.kit == 0
@@ -372,15 +396,19 @@ end
 
 function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
-    solver.X = Matrix{T}[]
     solver.S = Matrix{T}[]
-    solver.y = Vector{T}[]
 
     solver.delX = Matrix{T}[]
     solver.delS = Matrix{T}[]
 
     solver.D = Vector{T}[]
-    solver.W = FactoredMatrix{T}[]
+    solver.W = LRO.ShapedSolution{T,FactoredMatrix{T}}(
+        zeros(T, LRO.num_scalars(solver.model)),
+        map(LRO.matrix_indices(solver.model)) do i
+            dim = LRO.side_dimension(solver.model, i)
+            FactoredMatrix(zeros(T, dim, dim), zeros(T, dim, dim), zeros(T, dim, dim))
+        end,
+    )
     solver.Si = Matrix{T}[]
     solver.DDsi = Vector{T}[]
 
@@ -398,12 +426,10 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
  
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
-        push!(solver.X,zeros(dim, dim))
         push!(solver.S,zeros(dim, dim))
         push!(solver.delX,zeros(dim, dim))
         push!(solver.delS,zeros(dim, dim))
         push!(solver.D, zeros(dim))
-        push!(solver.W,FactoredMatrix(zeros(T, dim,  dim), zeros(T, dim,  dim), zeros(T, dim,  dim)))
         push!(solver.Si,zeros(dim, dim))
         push!(solver.DDsi,zeros(dim))
         push!(solver.Rd,zeros(dim, dim))
@@ -475,16 +501,10 @@ function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
 end
 
 function find_mu(solver)
-    trXS = 0
-    if LRO.num_matrices(solver.model) > 0
-        for i = 1:LRO.num_matrices(solver.model)
-            trXS = trXS + sum(sum(solver.X[i] .* solver.S[i]))
-        end
-    end 
-    mu = trXS
+    mu = btrace(LRO.num_matrices(solver.model), solver.X, solver.S)
 
     if LRO.num_scalars(solver.model) > 0
-        mu = mu + dot(solver.X_lin, solver.S_lin)
+        mu = mu + dot(solver.X[LRO.ScalarIndex], solver.S_lin)
     end
     solver.mu = mu / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
     return solver.mu
@@ -493,29 +513,29 @@ end
 function check_convergence(solver)
 
     # DIMACS error evaluation
-    b_den = 1 + norm(cons_constant(solver.model))
-    dobj = dual_obj(solver.model, solver.y)
+    b_den = 1 + norm(LRO.cons_constant(solver.model))
+    dobj = LRO.dual_obj(solver.model, solver.y)
     solver.err1 = norm(solver.Rp) / b_den
     solver.err2, solver.err3, solver.err4, solver.err5, solver.err6 = 0., 0., 0., 0., 0.
     if LRO.num_matrices(solver.model) > 0
         for mat_idx = LRO.matrix_indices(solver.model)
             i = mat_idx.value
-            C_den = 1 + norm(objgrad(solver.model, mat_idx))
-            solver.err2 = solver.err2 + max(0, -eigmin(solver.X[i]) / b_den)
+            C_den = 1 + norm(NLPModels.grad(solver.model, mat_idx))
+            solver.err2 = solver.err2 + max(0, -eigmin(solver.X[mat_idx]) / b_den)
             solver.err3 = solver.err3 + norm(solver.Rd[i], 2) / C_den
             solver.err4 = solver.err4 + max(0, -eigmin(solver.S[i]) / C_den)
             # err5 = err5 + (vecC[i]"*vec(X[i])-b'*y)/(1+abs(vecC[i]'*vec(X[i]))+abs(b"*y))
-            solver.err6 = solver.err6 + dot(solver.S[i], solver.X[i]) / (1 + abs(obj(solver.model, solver.X[i], mat_idx)) + abs(dobj))
+            solver.err6 = solver.err6 + dot(solver.S[i], solver.X[mat_idx]) / (1 + abs(NLPModels.obj(solver.model, solver.X[mat_idx], mat_idx)) + abs(dobj))
         end
     end
 
-    pobj = obj(solver.model, solver.X_lin, solver.X)
-    solver.err5 = (dobj - pobj) / (1 + abs(obj(solver.model, solver.X, MatrixIndex)) + abs(dobj))
+    pobj = NLPModels.obj(solver.model, solver.X)
+    solver.err5 = (dobj - pobj) / (1 + abs(NLPModels.obj(solver.model, solver.X, LRO.MatrixIndex)) + abs(dobj))
     if LRO.num_scalars(solver.model) > 0
-        solver.err2 += max(0, -minimum(solver.X_lin) / b_den)
-        solver.err3 += norm(solver.Rd_lin) / (1 + norm(objgrad(solver.model, ScalarIndex)))
-        solver.err4 += max(0, -minimum(solver.S_lin) / (1 + norm(objgrad(solver.model, ScalarIndex))))
-        solver.err6 += dot(solver.S_lin', solver.X_lin) / (1 + abs(obj(solver.model, solver.X_lin, ScalarIndex)) + abs(dobj))
+        solver.err2 += max(0, -minimum(solver.X[LRO.ScalarIndex]) / b_den)
+        solver.err3 += norm(solver.Rd_lin) / (1 + norm(NLPModels.grad(solver.model, LRO.ScalarIndex)))
+        solver.err4 += max(0, -minimum(solver.S_lin) / (1 + norm(NLPModels.grad(solver.model, LRO.ScalarIndex))))
+        solver.err6 += dot(solver.S_lin', solver.X[LRO.ScalarIndex]) / (1 + abs(NLPModels.obj(solver.model, solver.X, LRO.ScalarIndex)) + abs(dobj))
     end
 
     DIMACS_error = solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
@@ -542,7 +562,6 @@ function check_convergence(solver)
 
     if DIMACS_error < solver.eDIMACS
         solver.status = 1
-        solver.y = solver.y
         if solver.verb > 0
             println("Primal objective: ", dobj)
             println("Dual objective:   ", pobj)
@@ -566,8 +585,7 @@ end
 ```Functions for the iterative solver follow```
 
 struct MyA{T,A,B}
-    w::Vector{T}
-    W::Vector{FactoredMatrix{T}}
+    W::LRO.ShapedSolution{T,FactoredMatrix{T}}
     model::LRO.Model{T,A}
     jtprod_buffer::B
     to::TimerOutputs.TimerOutput
@@ -575,7 +593,7 @@ end
 
 function (t::MyA)(Ax::Vector, x::Vector)
     @timeit t.to "Ax" begin
-        eval_schur_complement!(t.jtprod_buffer, Ax, t.model, t.w, t.W, x)
+        LRO.eval_schur_complement!(t.jtprod_buffer, Ax, t.model, t.W, x)
     end
 end
 
@@ -595,17 +613,18 @@ function Prec_for_CG_beta(solver,halpha)
         
     ntot=0
     if nlmi > 0
-        for ilmi=1:nlmi
-            ntot = ntot + size(solver.W[ilmi],1)
+        for i in LRO.matrix_indices(solver.model)
+            ntot = ntot + size(solver.W[i],1)
         end
     end
     
     halpha.AAAATtau = zeros(nvar)
     if nlmi > 0
-        for ilmi = 1:nlmi
-            n = size(solver.W[ilmi],1);
+        for i in LRO.matrix_indices(solver.model)
+            ilmi = i.value
+            n = size(solver.W[i],1);
             k = kk[ilmi];
-            F = eigen(solver.W[ilmi]); 
+            F = eigen(solver.W[i]); 
             lambdaf = F.values 
             lambda_s = lambdaf[1:n-k]
 
@@ -623,7 +642,7 @@ function Prec_for_CG_beta(solver,halpha)
             halpha.AAAATtau += ttau^2 .* ZZZ
         end
         if LRO.num_scalars(solver.model) > 0
-            halpha.AAAATtau .+= diag(schur_complement(solver.model, solver.X_lin .* solver.S_lin_inv, ScalarIndex))
+            halpha.AAAATtau .+= diag(schur_complement(solver.model, solver.X[LRO.ScalarIndex] .* solver.S_lin_inv, ScalarIndex))
         end
     end
 end
@@ -652,24 +671,25 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
     
     ntot=0
     if nlmi > 0
-        for ilmi=1:nlmi
-            ntot = ntot + size(solver.W[ilmi],1)
+        for i in LRO.matrix_indices(solver.model)
+            ntot = ntot + size(solver.W[i],1)
         end
     end
     sizeS=0
     if nlmi > 0
-        for ilmi=1:nlmi
-            sizeS += kk[ilmi] * size(solver.W[ilmi],1)
+        for i in LRO.matrix_indices(solver.model)
+            sizeS += kk[i.value] * size(solver.W[i],1)
         end
     end
     
     lbt = 1; lbs=1;
     if nlmi > 0
-        for ilmi = 1:nlmi
-            n = size(solver.W[ilmi],1);
-            k = kk[ilmi];
+        for i in LRO.matrix_indices(solver.model)
+            ilmi = i.value
+            n = size(solver.W[i],1)
+            k = kk[ilmi]
             
-            F = eigen(Float64.(solver.W[ilmi])); 
+            F = eigen(Float64.(solver.W[i]))
             vectf = F.vectors
             lambdaf = F.values 
 
@@ -707,21 +727,17 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
     end
     
     if LRO.num_scalars(solver.model) > 0
-        halpha.AAAATtau .+= schur_complement(solver.model, solver.X_lin .* solver.S_lin_inv, ScalarIndex)
+        halpha.AAAATtau .+= schur_complement(solver.model, solver.X[LRO.ScalarIndex] .* solver.S_lin_inv, ScalarIndex)
     end
     
-    didi = 0
-    for ilmi = 1:nlmi
-        didi += size(solver.W[ilmi],1)
-    end
     k = kk[1]
     if k > 1 #slow formula
         # @timeit solver.to "prec3" begin
-        t = zeros(nvar, k*didi)
+        t = zeros(nvar, k*ntot)
         if nlmi > 0
             for mat_idx in LRO.matrix_indices(solver.model)
                 ilmi = mat_idx.value
-                n = size(solver.W[ilmi],1)
+                n = size(solver.W[mat_idx],1)
                 k = kk[ilmi]
                 TT = kron(halpha.Umat[ilmi],halpha.Z[ilmi])
                 t[1:nvar,lbt:lbt+k*n-1] .= jac(solver.model, mat_idx)' * TT
@@ -737,7 +753,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         AAAATtau_d = spdiagm(sqrt.(1 ./ diag(halpha.AAAATtau)));
 
         # @timeit solver.to "prec3" begin
-        # t = zeros(nvar, k*didi)
+        # t = zeros(nvar, k*ntot)
         # if nlmi > 0
         #     for ilmi = 1:nlmi
         #         if kk[ilmi] == 0
@@ -764,7 +780,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         # # mul!(S,t',t)
         # end
 
-        S, lbt = prec_alpha_S!(solver,halpha,AAAATtau_d,kk,didi,lbt,sizeS)
+        S, lbt = prec_alpha_S!(solver,halpha,AAAATtau_d,kk,ntot,lbt,sizeS)
     end
     
     # Schur complement for the SMW formula
@@ -795,7 +811,7 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
             if kk[ilmi] == 0
                 continue 
             end
-            n = size(solver.W[ilmi],1) 
+            n = size(solver.W[mat_idx],1) 
             k = kk[ilmi] 
 
             @timeit solver.to "prec30" begin
@@ -803,7 +819,7 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
                 # because we directly apply the multiplication
                 # with `Umat`.
                 AU = reduce(vcat, [
-                    (jtprod!(
+                    (LRO.jtprod!(
                         solver.jtprod_buffer[ilmi],
                         solver.model,
                         mat_idx,
@@ -814,7 +830,7 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
             end
             if LRO.num_matrices(solver.model) > 1
                 # @timeit solver.to "prec32" begin
-                didi1 = size(solver.W[ilmi],1)
+                didi1 = size(solver.W[mat_idx],1)
                 ttmp = Matrix{T}(undef,nvar,kk[ilmi]*didi1)
                 mul!(ttmp, AU, halpha.Z[ilmi])
                 t[1:nvar,lbt:lbt+k*n-1] = ttmp
@@ -848,7 +864,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
     if nlmi > 0
         for mat_idx in LRO.matrix_indices(t.model)
             ilmi = mat_idx.value
-            y22 = -jtprod!(t.jtprod_buffer[ilmi], t.model, mat_idx, AAAAinvx)
+            y22 = -LRO.jtprod!(t.jtprod_buffer[ilmi], t.model, mat_idx, AAAAinvx)
             y33 = [y33; vec(t.Z[ilmi]' * y22 * t.Umat[ilmi])]
         end
     end
@@ -867,7 +883,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
                 yy .+= kron(t.Umat[ilmi][:,i],xx)
                 ii += n
             end
-            yy2 .+= jprod(t.model, mat_idx, yy)
+            LRO.add_jprod!(t.model, mat_idx, yy, yy2)
         end
     end
 
