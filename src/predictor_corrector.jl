@@ -9,14 +9,15 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 
     for mat_idx = LRO.matrix_indices(solver.model)
         i = mat_idx.value
-        solver.Rd[i] .= LRO.dual_cons!(solver.jtprod_buffer, solver.model, mat_idx, solver.y) .- solver.S[i]
+        solver.Rd[mat_idx] .= LRO.dual_cons!(solver.jtprod_buffer, solver.model, mat_idx, solver.y)
         solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
     if LRO.num_scalars(solver.model) > 0
-        solver.Rd_lin = LRO.dual_cons(solver.model, LRO.ScalarIndex, solver.y) - solver.S_lin
-        Rc_lin = solver.sigma * solver.mu .* ones(LRO.num_scalars(solver.model), 1) - solver.X[LRO.ScalarIndex] .* solver.S_lin
+        solver.Rd[LRO.ScalarIndex] = LRO.dual_cons(solver.model, LRO.ScalarIndex, solver.y)
+        Rc_lin = solver.sigma * solver.mu .* ones(LRO.num_scalars(solver.model), 1) - solver.X[LRO.ScalarIndex] .* solver.S[LRO.ScalarIndex]
     end
+    solver.Rd .-= solver.S
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
         BBBB = LRO.schur_complement(solver.schur_buffer, solver.model, solver.W)
@@ -26,11 +27,10 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     # RHS for the Hessian equation
     tmp = similar(solver.X)
     if !isempty(tmp[LRO.ScalarIndex])
-        tmp[LRO.ScalarIndex] .= spdiagm(solver.W[LRO.ScalarIndex]) * solver.Rd_lin + solver.X[LRO.ScalarIndex]
+        tmp[LRO.ScalarIndex] .= spdiagm(solver.W[LRO.ScalarIndex]) * solver.Rd[LRO.ScalarIndex] + solver.X[LRO.ScalarIndex]
     end
-    for mat_idx in LRO.matrix_indices(solver.model)
-        i = mat_idx.value
-        tmp[mat_idx] .= solver.W[mat_idx] * (solver.Rd[i] + solver.S[i]) * solver.W[mat_idx]
+    for i in LRO.matrix_indices(solver.model)
+        tmp[i] .= solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i]
     end
     h = solver.Rp + NLPModels.jprod(solver.model, solver.X, tmp)
 
@@ -147,20 +147,16 @@ function sigma_update(solver::MySolver{T}) where {T}
     else
             expon_used = max(1, min(solver.expon, T(3) * step_pred^2))
     end
-    if btrace(LRO.num_matrices(solver.model), solver.Xn, solver.Sn) .< 0
+    dotXnSn = isempty(solver.Xn) ? zero(T) : dot(solver.Xn, solver.Sn)
+    if dotXnSn .< 0
         solver.sigma = T(0.8)
     else
-        if LRO.num_matrices(solver.model) > 0
-            tmp1 = btrace(LRO.num_matrices(solver.model), solver.Xn, solver.Sn)
-        else
-            tmp1 = 0
-        end
         if LRO.num_scalars(solver.model) > 0
-                tmp2 = dot(solver.Xn_lin', solver.Sn_lin)
+            tmp2 = dot(solver.Xn_lin', solver.Sn_lin)
         else
-                tmp2 = 0
+            tmp2 = 0
         end
-        tmp12 = (tmp1 + tmp2) / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
+        tmp12 = (dotXnSn + tmp2) / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
         tmp12 = convert(Float64, tmp12)
         mu = Float64(solver.mu)
         solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
@@ -174,7 +170,7 @@ function corrector(solver::MySolver{T},halpha) where {T}
     X = similar(solver.X)
     if LRO.num_scalars(solver.model) > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
-        X[LRO.ScalarIndex] .= spdiagm((solver.X[LRO.ScalarIndex] .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X[LRO.ScalarIndex] + tmp
+        X[LRO.ScalarIndex] .= spdiagm((solver.X[LRO.ScalarIndex] .* solver.Si_lin)[:]) * solver.Rd[LRO.ScalarIndex] + solver.X[LRO.ScalarIndex] + tmp
     end
     for mat_idx in LRO.matrix_indices(solver.model)
         i = mat_idx.value
@@ -182,7 +178,7 @@ function corrector(solver::MySolver{T},halpha) where {T}
         X[mat_idx] .= my_kron(
             W.factor,
             W.factor,
-            W.factor' * solver.Rd[i] * W.factor + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
+            W.factor' * solver.Rd[mat_idx] * W.factor + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
         )
     end
     h = solver.Rp + NLPModels.jprod(solver.model, solver.X, X)
@@ -247,7 +243,7 @@ function find_step(solver::MySolver{T}) where {T}
         for mat_idx in LRO.matrix_indices(solver.model)
             i = mat_idx.value
             @timeit solver.to "find_step_A" begin
-            solver.delS[i] .= solver.Rd[i] .- LRO.jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
+            solver.delS[i] .= solver.Rd[mat_idx] .- LRO.jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
             Ξ = vec(my_kron(solver.W[mat_idx].matrix, solver.W[mat_idx], solver.delS[i]))
             if solver.predict
                 solver.delX[i] .= mat(-solver.X[mat_idx][:] .- Ξ)
@@ -303,7 +299,7 @@ function find_step(solver::MySolver{T}) where {T}
             for mat_idx in LRO.matrix_indices(solver.model)
                 i = mat_idx.value
                 solver.Xn[i] = solver.X[mat_idx] + solver.alpha[i] .* solver.delX[i]
-                solver.Sn[i] = solver.S[i] + solver.beta[i] .* solver.delS[i]
+                solver.Sn[i] = solver.S[mat_idx] + solver.beta[i] .* solver.delS[i]
                 dim = LRO.side_dimension(solver.model, mat_idx)
                 deed = solver.D[i] * ones(dim)' + ones(LRO.side_dimension(solver.model, mat_idx)) * solver.D[i]'
                 solver.RNT[i] = -(solver.W[mat_idx].factor_inv * solver.delX[i] * solver.delS[i] * solver.W[mat_idx].factor + solver.W[mat_idx].factor' * solver.delS[i] * solver.delX[i] * solver.W[mat_idx].factor_inv') ./ deed
@@ -316,8 +312,8 @@ function find_step(solver::MySolver{T}) where {T}
             i = mat_idx.value
             solver.X[mat_idx] .+= minimum([solver.alpha; solver.alpha_lin]) .* solver.delX[i]
             solver.X[mat_idx] .= (solver.X[mat_idx] .+ solver.X[mat_idx]') ./ 2
-            solver.S[i] = solver.S[i] + minimum([solver.beta; solver.beta_lin]) .* solver.delS[i]
-            solver.S[i] = (solver.S[i] + solver.S[i]') ./ 2
+            solver.S[mat_idx] .+= minimum([solver.beta; solver.beta_lin]) .* solver.delS[i]
+            solver.S[mat_idx] .= (solver.S[mat_idx] + solver.S[mat_idx]') ./ 2
         end       
     end  
 
@@ -326,7 +322,7 @@ end
 
 
 function find_step_lin(solver)
-    solver.delS_lin = solver.Rd_lin - LRO.jtprod(solver.model, LRO.ScalarIndex, solver.dely)
+    solver.delS_lin = solver.Rd[LRO.ScalarIndex] - LRO.jtprod(solver.model, LRO.ScalarIndex, solver.dely)
     if solver.predict
         solver.delX_lin = -solver.X[LRO.ScalarIndex] - (solver.X[LRO.ScalarIndex]) .* (solver.Si_lin) .* solver.delS_lin
     else
@@ -338,7 +334,7 @@ function find_step_lin(solver)
     else
         solver.alpha_lin = min(1, -solver.tau / mimiX_lin)
     end
-    mimiS_lin = minimum(solver.delS_lin ./ solver.S_lin)
+    mimiS_lin = minimum(solver.delS_lin ./ solver.S[LRO.ScalarIndex])
     if mimiS_lin .> -1e-6
         solver.beta_lin = 0.99
     else
@@ -348,15 +344,15 @@ function find_step_lin(solver)
     if solver.predict
         # solution update
         solver.Xn_lin = solver.X[LRO.ScalarIndex] + solver.alpha_lin .* solver.delX_lin
-        solver.Sn_lin = solver.S_lin + solver.beta_lin .* solver.delS_lin
+        solver.Sn_lin = solver.S[LRO.ScalarIndex] + solver.beta_lin .* solver.delS_lin
 
         solver.RNT_lin = -(solver.delX_lin .* solver.delS_lin) .* solver.Si_lin
     else
         # @show solver.X[LRO.ScalarIndex]
         # @show mimiX_lin
-        solver.X[LRO.ScalarIndex] = solver.X[LRO.ScalarIndex] + minimum([solver.alpha; solver.alpha_lin]) .* solver.delX_lin
-        solver.S_lin = solver.S_lin + minimum([solver.beta; solver.beta_lin]) .* solver.delS_lin
-        solver.S_lin_inv = 1 ./ solver.S_lin
+        solver.X[LRO.ScalarIndex] .+= minimum([solver.alpha; solver.alpha_lin]) .* solver.delX_lin
+        solver.S[LRO.ScalarIndex] .+= minimum([solver.beta; solver.beta_lin]) .* solver.delS_lin
+        solver.S_lin_inv = inv.(solver.S[LRO.ScalarIndex])
     end
     
     return 

@@ -33,9 +33,9 @@ function prepare_W(solver::MySolver{T}) where {T}
             i = mat_idx.value
             # @timeit to "prpr1" begin
                 Ctmp = try_cholesky(solver, solver.X[mat_idx], "X")
-                CtmpS = try_cholesky(solver, solver.S[i], "S")
-                # Ctmp = cholesky(solver.X[i])
-                # CtmpS = cholesky(solver.S[i])
+                CtmpS = try_cholesky(solver, solver.S[mat_idx], "S")
+                # Ctmp = cholesky(solver.X[mat_idx])
+                # CtmpS = cholesky(solver.S[mat_idx])
             @timeit solver.to "prep W SVD" begin
                 CCtmp = Matrix{T}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
@@ -71,7 +71,7 @@ function prepare_W(solver::MySolver{T}) where {T}
                 solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ (I(size(solver.Si[i],1))))  # S[i] inverse
                 # DDtmp = (CtmpS.U * solver.G[i])
                 # DDtmp = DDtmp' * DDtmp
-                DDtmp = solver.W[mat_idx].factor' * solver.S[i] * solver.W[mat_idx].factor
+                DDtmp = solver.W[mat_idx].factor' * solver.S[mat_idx] * solver.W[mat_idx].factor
                 DDtmp = (DDtmp + DDtmp') ./ 2.0
                 try
                     solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp,0)))
@@ -86,7 +86,7 @@ function prepare_W(solver::MySolver{T}) where {T}
             # end
         end
         if LRO.num_scalars(solver.model) > 0
-            solver.Si_lin = 1.0 ./ solver.S_lin
+            solver.Si_lin = inv.(solver.S[LRO.ScalarIndex])
         else
             solver.Si_lin = []
         end

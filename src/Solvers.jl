@@ -64,16 +64,11 @@ mutable struct MySolver{T,A,B,SB}
 
     regcount::Int
 
-    err1::T
-    err2::T
-    err3::T
-    err4::T
-    err5::T
-    err6::T
+    err::NTuple{6,T}
 
     X::LRO.VectorizedSolution{T}
-    S
-    y
+    S::LRO.VectorizedSolution{T}
+    y::Vector{T}
     yold
     delX
     delS
@@ -81,7 +76,6 @@ mutable struct MySolver{T,A,B,SB}
     Xn
     Sn
 
-    S_lin::Vector{T}
     Si_lin::Vector{T}
     S_lin_inv::Vector{T}
     delX_lin::Vector{T}
@@ -95,9 +89,8 @@ mutable struct MySolver{T,A,B,SB}
     DDsi
 
     Rp
-    Rd
+    Rd::LRO.VectorizedSolution{T}
     Rc
-    Rd_lin
 
     cg_iter_pre
     cg_iter_cor
@@ -396,7 +389,8 @@ end
 
 function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
-    solver.S = Matrix{T}[]
+    solver.S = similar(solver.X)
+    solver.Rd = similar(solver.X)
 
     solver.delX = Matrix{T}[]
     solver.delS = Matrix{T}[]
@@ -412,7 +406,6 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Si = Matrix{T}[]
     solver.DDsi = Vector{T}[]
 
-    solver.Rd = Matrix{T}[]
     solver.Rc = Matrix{T}[]
 
     solver.alpha = zeros(LRO.num_matrices(solver.model))
@@ -426,13 +419,11 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
  
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
-        push!(solver.S,zeros(dim, dim))
         push!(solver.delX,zeros(dim, dim))
         push!(solver.delS,zeros(dim, dim))
         push!(solver.D, zeros(dim))
         push!(solver.Si,zeros(dim, dim))
         push!(solver.DDsi,zeros(dim))
-        push!(solver.Rd,zeros(dim, dim))
         push!(solver.Rc,zeros(dim, dim))
         push!(solver.Xn,zeros(dim, dim))
         push!(solver.Sn,zeros(dim, dim))
@@ -501,55 +492,36 @@ function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
 end
 
 function find_mu(solver)
-    mu = btrace(LRO.num_matrices(solver.model), solver.X, solver.S)
-
-    if LRO.num_scalars(solver.model) > 0
-        mu = mu + dot(solver.X[LRO.ScalarIndex], solver.S_lin)
-    end
-    solver.mu = mu / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
+    solver.mu = dot(solver.X, solver.S) / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
     return solver.mu
 end
 
 function check_convergence(solver)
 
     # DIMACS error evaluation
-    b_den = 1 + norm(LRO.cons_constant(solver.model))
-    dobj = LRO.dual_obj(solver.model, solver.y)
-    solver.err1 = norm(solver.Rp) / b_den
-    solver.err2, solver.err3, solver.err4, solver.err5, solver.err6 = 0., 0., 0., 0., 0.
-    if LRO.num_matrices(solver.model) > 0
-        for mat_idx = LRO.matrix_indices(solver.model)
-            i = mat_idx.value
-            C_den = 1 + norm(NLPModels.grad(solver.model, mat_idx))
-            solver.err2 = solver.err2 + max(0, -eigmin(solver.X[mat_idx]) / b_den)
-            solver.err3 = solver.err3 + norm(solver.Rd[i], 2) / C_den
-            solver.err4 = solver.err4 + max(0, -eigmin(solver.S[i]) / C_den)
-            # err5 = err5 + (vecC[i]"*vec(X[i])-b'*y)/(1+abs(vecC[i]'*vec(X[i]))+abs(b"*y))
-            solver.err6 = solver.err6 + dot(solver.S[i], solver.X[mat_idx]) / (1 + abs(NLPModels.obj(solver.model, solver.X[mat_idx], mat_idx)) + abs(dobj))
-        end
-    end
-
     pobj = NLPModels.obj(solver.model, solver.X)
-    solver.err5 = (dobj - pobj) / (1 + abs(NLPModels.obj(solver.model, solver.X, LRO.MatrixIndex)) + abs(dobj))
-    if LRO.num_scalars(solver.model) > 0
-        solver.err2 += max(0, -minimum(solver.X[LRO.ScalarIndex]) / b_den)
-        solver.err3 += norm(solver.Rd_lin) / (1 + norm(NLPModels.grad(solver.model, LRO.ScalarIndex)))
-        solver.err4 += max(0, -minimum(solver.S_lin) / (1 + norm(NLPModels.grad(solver.model, LRO.ScalarIndex))))
-        solver.err6 += dot(solver.S_lin', solver.X[LRO.ScalarIndex]) / (1 + abs(NLPModels.obj(solver.model, solver.X, LRO.ScalarIndex)) + abs(dobj))
-    end
+    dobj = LRO.dual_obj(solver.model, solver.y)
+    solver.err = LRO.errors(
+        solver.model,
+        solver.X;
+        y = solver.y,
+        primal_err = solver.Rp,
+        dual_slack = solver.S,
+        dual_err = solver.Rd,
+        pobj,
+        dobj,
+    )
 
-    DIMACS_error = solver.err2 + solver.err3 + solver.err4 + abs(solver.err5) + solver.err6
-    if LRO.num_matrices(solver.model) > 0
-        DIMACS_error += solver.err1
-    end
+    # `err[5]` may be negative so we need `abs`
+    DIMACS_error = sum(abs, solver.err)
     if solver.verb > 0 && solver.status == 0 
-        #@sprintf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %8.1e %6.0d %8.2f\n', iter, y[1:ddnvar]"*ddc[:], DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, eq_norm, arank, titi)
-        # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err1, err2, err3, err4, err5, err6, cg_iter1, cg_iter2, cg_iter2)
+        #@sprintf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %8.1e %6.0d %8.2f\n', iter, y[1:ddnvar]"*ddc[:], DIMACS_error, err[1], err[2], err[3], err[4], err[5], err[6], cg_iter1, cg_iter2, eq_norm, arank, titi)
+        # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err[1], err[2], err[3], err[4], err[5], err[6], cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6,solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err[1], solver.err[2], solver.err[3], solver.err[4], solver.err[5], solver.err[6],solver.itertime)
             else
-                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err1, solver.err2, solver.err3, solver.err4, solver.err5, solver.err6, solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
+                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err[1], solver.err[2], solver.err[3], solver.err[4], solver.err[5], solver.err[6], solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
             end    
     else
             if solver.kit == 0

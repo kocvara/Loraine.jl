@@ -39,7 +39,7 @@ function  find_initial!(solver)
             mf = (1 + mf) / dim
             Eta = sqrt(dim).* max(1, mf)
         end
-        solver.S[i] = Eta * Matrix(1.0I, dim, dim)
+        solver.S[mat_idx] .= Eta * Matrix(1.0I, dim, dim)
     end
     
     p = zeros(n)
@@ -63,7 +63,7 @@ function  find_initial!(solver)
         mf = (0 + mf) ./ sqrt(LRO.num_scalars(solver.model))
         Etaa =  max(1, mf)
     end
-    solver.S_lin = 1 .* Etaa * ones(LRO.num_scalars(solver.model))
-    solver.S_lin_inv = 1 ./ solver.S_lin
+    solver.S[LRO.ScalarIndex] .= Etaa
+    solver.S_lin_inv = inv.(solver.S[LRO.ScalarIndex])
     
 end
