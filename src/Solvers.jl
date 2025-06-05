@@ -168,6 +168,7 @@ end
 
 struct Solver{T,A,B,SB} <: SolverCore.AbstractOptimizationSolver
     solver::MySolver{T,A,B,SB}
+    model::LRO.Model{T,A}
     halpha::Halpha
     stats::SolverCore.GenericExecutionStats{T,Vector{T},Vector{T},Any}
 end
@@ -178,14 +179,14 @@ function Solver{T}(model::LRO.Model; kws...) where {T}
     solver, halpha = load(model, options; T)
     solver.X = LRO.VectorizedSolution{T}(stats.solution, model.dim)
     solver.y = stats.multipliers
-    Solver(solver, halpha, stats)
+    Solver(solver, model, halpha, stats)
 end
 
 const STATUS_MAP = [
     :unknown,
     :first_order,
-    :infeasible,
-    :unbounded,
+    :unbounded, # the primal `max ⟨C,X⟩` has an unbounded ray so the primal is unbounded
+    :infeasible, # the dual `max ⟨b,y⟩` has an unbounded ray so the primal `min ⟨C,X⟩` is infeasible
     :max_iter,
     :exception,
 ]
@@ -544,17 +545,17 @@ function check_convergence(solver)
     if pobj < -1e55
         solver.status = 2
         if solver.verb > 0
-            @warn(": Problem probably infeasible (stopping status = 2)")
+            @warn("Problem probably infeasible (stopping status = 2)")
         end
     elseif dobj > 1e55
         solver.status = 3
         if solver.verb > 0
-            @warn(": Problem probably unbounded or infeasible (stopping status = 3)")
+            @warn("Problem probably unbounded (stopping status = 3)")
         end
     elseif any(isnan, solver.err)
         solver.status = 5
         if solver.verb > 0
-            @warn(": Got NaN (stopping status = 5)")
+            @warn("Got NaN (stopping status = 5)")
         end
     end
 
@@ -834,7 +835,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
     nvar = size(x,1)
     nlmi = LRO.num_matrices(t.model)
 
-    yy2 = zeros(nvar,1)
+    yy2 = zeros(nvar)
     y33 = zeros(T,0)
 
     AAAAinvx = t.AAAATtau\x
@@ -861,7 +862,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
                 yy .+= kron(t.Umat[ilmi][:,i],xx)
                 ii += n
             end
-            LRO.add_jprod!(t.model, mat_idx, yy, yy2)
+            LRO.add_jprod!(t.model, mat_idx, reshape(yy, n, n), yy2)
         end
     end
 
