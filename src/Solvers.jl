@@ -319,7 +319,7 @@ function solve(solver::MySolver,halpha::Halpha)
     if solver.verb > 0
         @printf("\n *** Loraine.jl v0.2.5 ***\n")
 
-        @printf(" Number of variables: %5d\n",LRO.num_constraints(solver.model))
+        @printf(" Number of variables: %5d\n",solver.model.meta.ncon)
         @printf(" LMI constraints    : %5d\n",LRO.num_matrices(solver.model))
         if LRO.num_matrices(solver.model) > 0
             @printf(" Matrix size(s)     :")
@@ -368,7 +368,7 @@ function solve(solver::MySolver,halpha::Halpha)
 
         if solver.preconditioner == 4
             #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
-            if (solver.cg_iter_cor / 2 > solver.erank * LRO.num_matrices(solver.model) * sqrt(LRO.num_constraints(solver.model))/20 && solver.iter > sqrt(LRO.num_constraints(solver.model)) / 60) || solver.cg_iter_cor > 100
+            if (solver.cg_iter_cor / 2 > solver.erank * LRO.num_matrices(solver.model) * sqrt(solver.model.meta.ncon)/20 && solver.iter > sqrt(solver.model.meta.ncon) / 60) || solver.cg_iter_cor > 100
                 solver.preconditioner = 1; solver.aamat = 2; 
                 if solver.verb > 0
                     println("Switching to preconditioner 1")
@@ -468,7 +468,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 end
 
 function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
-    mmm = Matrix{T}(undef, LRO.num_constraints(solver.model), LRO.num_constraints(solver.model))
+    mmm = Matrix{T}(undef, solver.model.meta.ncon, solver.model.meta.ncon)
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
@@ -594,7 +594,7 @@ function Prec_for_CG_beta(solver,halpha)
     
     nlmi = LRO.num_matrices(solver.model)
     kk = solver.erank .* ones(Int64,nlmi,1)  
-    nvar = LRO.num_constraints(solver.model)
+    nvar = solver.model.meta.ncon
         
     ntot=0
     if nlmi > 0
@@ -654,7 +654,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
     # halpha.Z = SparseMatrixCSC{T}[]
     halpha.Z = Matrix{T}[]
 
-    nvar = LRO.num_constraints(solver.model)
+    nvar = solver.model.meta.ncon
     
     halpha.AAAATtau = spzeros(nvar,nvar)
     
@@ -792,7 +792,7 @@ end
 function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) where {T}
     @timeit solver.to "prec3" begin
     S = Matrix{T}(undef,sizeS,sizeS)
-    nvar = LRO.num_constraints(solver.model)
+    nvar = solver.model.meta.ncon
     t = Matrix{T}(undef,nvar,kk[1]*didi)
     if LRO.num_matrices(solver.model) > 0
         for mat_idx in LRO.matrix_indices(solver.model)

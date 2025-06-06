@@ -42,18 +42,14 @@ function  find_initial!(solver)
         solver.S[mat_idx] .= Eta * Matrix(1.0I, dim, dim)
     end
     
-    p = zeros(n)
-    pp = zeros(n)
     if solver.initpoint == 0
-        Epss = 1.0
+        pp = zeros(n)
+        p = zeros(n)
     else
-        for con_idx in LRO.constraint_indices(solver.model)
-            j = con_idx.value
-            pp[j] = norm(NLPModels.jac(solver.model, con_idx, LRO.ScalarIndex))
-            p[j] = b2[j] / (1 + pp[j])
-        end
-        Epss = max(1.0, maximum(p, init = 0.0))
+        pp = [norm(NLPModels.jac(solver.model, j, LRO.ScalarIndex)) for j in 1:n]
+        p = b2 ./ (1 .+ pp)
     end
+    Epss = max(1.0, maximum(p, init = 0.0))
     solver.X[LRO.ScalarIndex] .= Epss
     
     if solver.initpoint == 0
