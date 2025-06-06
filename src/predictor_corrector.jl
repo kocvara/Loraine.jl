@@ -20,7 +20,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Rd .-= solver.S
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
-        BBBB = LRO.schur_complement(solver.schur_buffer, solver.model, solver.W)
+        LRO.schur_complement!(solver.schur_buffer, solver.model, solver.W, solver.BBBB)
     end
     # end
 
@@ -34,8 +34,11 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     end
     h = solver.Rp + NLPModels.jprod(solver.model, solver.X, tmp)
 
+
+
     # solving the linear system()
     if solver.kit == 0   # direct solver
+        BBBB = LinearAlgebra.Hermitian(solver.BBBB)
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
             if parent(BBBB) isa SparseMatrixCSC
@@ -64,7 +67,8 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                     return
                 end
                 while !isposdef(BBBB)
-                    BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
+                    solver.BBBB .= solver.BBBB .+ 1e-4 .* I(size(solver.BBBB, 1))
+                    BBBB = LinearAlgebra.Hermitian(BBBB)
                     icount = icount + 1
                     if icount > 1000
                         if solver.verb > 0

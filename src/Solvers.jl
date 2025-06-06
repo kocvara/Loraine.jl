@@ -58,6 +58,7 @@ mutable struct MySolver{T,A,B,SB}
     expon::T
     iter::Int64
     DIMACS_error::T
+    BBBB::Matrix{T}
     cholBBBB
 
     status::Int
@@ -435,6 +436,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     halpha.Umat = Matrix{T}[]
     halpha.Z = Matrix{T}[]
     halpha.AAAATtau = SparseMatrixCSC{T}[]
+    ncon = solver.model.meta.ncon
 
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
@@ -442,7 +444,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
         push!(halpha.Z,zeros(dim, dim))
         # tmp = Matrix(I(dim))
         # push!(halpha.cholS,cholesky(tmp))
-        push!(halpha.AAAATtau,spzeros(LRO.num_constraints(solver.model), LRO.num_constraints(solver.model)))
+        push!(halpha.AAAATtau, spzeros(ncon, ncon))
     end
 
     if solver.kit == 1
@@ -457,6 +459,10 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
             end
             solver.kit = 0
         end
+    end
+
+    if solver.kit == 0   # if direct solver; compute the Hessian matrix
+        solver.BBBB = zeros(T, ncon, ncon)
     end
 
 end
@@ -621,7 +627,11 @@ function Prec_for_CG_beta(solver,halpha)
             halpha.AAAATtau += ttau^2 .* ZZZ
         end
         if LRO.num_scalars(solver.model) > 0
-            halpha.AAAATtau .+= diag(schur_complement(solver.model, solver.X[LRO.ScalarIndex] .* solver.S_lin_inv, ScalarIndex))
+            for i in 1:solver.model.meta.ncon
+                solver.BBBB[i, i] = 0
+                LRO.add_schur_complement!(solver.model, solver.X[LRO.ScalarIndex] .* solver.S_lin_inv, ScalarIndex, solver.BBBB)
+            end
+            halpha.AAAATtau .+= diag(solver.BBBB)
         end
     end
 end
@@ -706,7 +716,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
     end
     
     if LRO.num_scalars(solver.model) > 0
-        halpha.AAAATtau .+= schur_complement(solver.model, solver.X[LRO.ScalarIndex] .* solver.S_lin_inv, ScalarIndex)
+        LRO.add_schur_complement!(solver.model, solver.X[LRO.ScalarIndex] .* solver.S_lin_inv, ScalarIndex, halpha.AAAATtau)
     end
     
     k = kk[1]
