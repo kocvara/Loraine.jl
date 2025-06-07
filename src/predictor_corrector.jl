@@ -20,7 +20,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Rd .-= solver.S
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
-        LRO.schur_complement!(solver.schur_buffer, solver.model, solver.W, solver.BBBB)
+        LRO.schur_complement!(solver.model, solver.W, solver.BBBB, solver.schur_buffer)
     end
     # end
 
