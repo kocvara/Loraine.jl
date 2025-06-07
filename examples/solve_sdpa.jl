@@ -61,6 +61,19 @@ using Test
 @test objective_value(model) ≈ 23 rtol = 1e-6
 # # value.(X)
 
+# With CG now
+set_attribute(model, "kit", 1)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
+
+set_attribute(model, "preconditioner", 0)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
+
+set_attribute(model, "preconditioner", 2)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
+
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient
 

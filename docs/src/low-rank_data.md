@@ -13,5 +13,5 @@ If we know that ``A_i`` have rank one, the decomposition ``A_i = b_i b_i^\top`` 
 
 The model is represented internally via the following `struct`:
 ```@docs
-Loraine.MyModel
+Loraine.LRO.Model
 ```

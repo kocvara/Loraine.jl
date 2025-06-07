@@ -16,66 +16,50 @@ end
 
 function  find_initial!(solver)
 
-    C_lin = solver.model.C_lin'
+    b2 = 1 .+ abs.(LRO.cons_constant(solver.model)')
+    n = length(b2)
+    solver.y .= 0
     
-    n = length(solver.model.b)
-    solver.y = zeros(n,1)
-    
-    b2 = 1 .+ abs.(solver.model.b')
-    f = zeros(1,n)
-    for i=1:solver.model.nlmi
+    f = zeros(n)
+    for mat_idx in LRO.matrix_indices(solver.model)
+        i = mat_idx.value
+        dim = LRO.side_dimension(solver.model, mat_idx)
         if solver.initpoint == 0
             Eps = 1.0
         else
-            f = norm(b2)/(1+norm(solver.model.AA[i]))
-            Eps = sqrt.(solver.model.msizes[i]).* max(1,sqrt.(solver.model.msizes[i]).* f)
+            f = norm(b2)/(1+LRO.norm_jac(solver.model, mat_idx))
+            Eps = sqrt(dim) * max(1, sqrt.(dim) * f)
         end
-        solver.X[i] = Eps * Matrix(1.0I, Int64(solver.model.msizes[i]), Int64(solver.model.msizes[i]))
+        solver.X[mat_idx] .= Eps * Matrix(1.0I, dim, dim)
         
         if solver.initpoint == 0
-            Eta = solver.model.n
+            Eta = n
         else
-            mf = max(f,norm(solver.model.C[i],2))
-            mf = (1 + mf)./ sqrt(solver.model.msizes[i])
-            Eta = sqrt(solver.model.msizes[i]).* max(1,mf)
+            mf = max(f, norm(NLPModels.grad(solver.model, mat_idx), 2))
+            mf = (1 + mf) / dim
+            Eta = sqrt(dim).* max(1, mf)
         end
-        solver.S[i] = Eta * Matrix(1.0I, Int64(solver.model.msizes[i]), Int64(solver.model.msizes[i]))
+        solver.S[mat_idx] .= Eta * Matrix(1.0I, dim, dim)
     end
     
-    p = zeros(1,n)
-    pp = zeros(1,n)
-    dd = size(solver.model.d_lin,1)
-    if solver.model.nlin>0
-        if solver.initpoint == 0
-            Epss = 1.0
-        else
-            for j=1:n
-                normClin = 1+norm(solver.model.C_lin[j,:])
-                p[j] = b2[j] ./ normClin;
-            end
-            Epss = max(1, maximum(p))
-        end
-        solver.X_lin = 1 .* Epss * ones(dd,1)
-        
-        if solver.initpoint == 0
-            Etaa = 1.0
-        else
-            for j=1:n
-                pp[j]=norm(solver.model.C_lin[j,:])
-            end
-            mf = max(maximum(pp),norm(solver.model.d_lin))
-            mf = (0 + mf) ./ sqrt(dd)
-            Etaa =  max(1,mf)
-        end
-        solver.S_lin = 1 .* Etaa * ones(dd,1)
-        solver.S_lin_inv = 1 ./ solver.S_lin
+    if solver.initpoint == 0
+        pp = zeros(n)
+        p = zeros(n)
     else
-        solver.X_lin = Float64[]; solver.S_lin = Float64[]
+        pp = [norm(NLPModels.jac(solver.model, j, LRO.ScalarIndex)) for j in 1:n]
+        p = b2 ./ (1 .+ pp)
     end
-    if solver.model.nlin==0
-        solver.X_lin=Float64[]
-        solver.S_lin=Float64[]
-        solver.S_lin_inv=Float64[]
+    Epss = max(1.0, maximum(p, init = 0.0))
+    solver.X[LRO.ScalarIndex] .= Epss
+    
+    if solver.initpoint == 0
+        Etaa = 1.0
+    else
+        mf = max(maximum(pp, init = 0.0), norm(NLPModels.grad(solver.model, LRO.ScalarIndex)))
+        mf = (0 + mf) ./ sqrt(LRO.num_scalars(solver.model))
+        Etaa =  max(1, mf)
     end
+    solver.S[LRO.ScalarIndex] .= Etaa
+    solver.S_lin_inv = inv.(solver.S[LRO.ScalarIndex])
     
 end
