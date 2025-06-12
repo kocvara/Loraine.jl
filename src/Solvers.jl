@@ -89,7 +89,7 @@ mutable struct MySolver{T,A,B,SB}
     Si
     DDsi
 
-    Rp
+    Rp::Vector{T}
     Rd::LRO.VectorizedSolution{T}
     Rc
 
@@ -107,6 +107,8 @@ mutable struct MySolver{T,A,B,SB}
 
     RNT
     RNT_lin
+
+    y_buffer::Vector{T} # Bufer of the same size as `y`
 
     function MySolver{T}(
         kit::Int64,
@@ -394,6 +396,8 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
     solver.S = similar(solver.X)
     solver.Rd = similar(solver.X)
+    solver.Rp = zeros(T, solver.model.meta.ncon)
+    solver.y_buffer = similar(solver.Rp)
 
     solver.delX = Matrix{T}[]
     solver.delS = Matrix{T}[]
@@ -780,9 +784,10 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
        
 end
 
-struct MyM{T,A,B}
+struct MyM{T,A,JTB,JB}
     model::LRO.Model{T,A}
-    jtprod_buffer::B
+    jtprod_buffer::JTB
+    jprod_buffer::JB
     AAAATtau
     Umat
     Z

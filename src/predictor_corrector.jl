@@ -5,7 +5,8 @@ using GenericLinearAlgebra
 function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     
     solver.predict = true
-    solver.Rp = -NLPModels.cons(solver.model, solver.X)
+    NLPModels.cons!(solver.model, solver.X, solver.Rp, solver.schur_buffer[1])
+    LinearAlgebra.rmul!(solver.Rp, -1)
 
     for mat_idx = LRO.matrix_indices(solver.model)
         i = mat_idx.value
@@ -32,7 +33,9 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     for i in LRO.matrix_indices(solver.model)
         tmp[i] .= solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i]
     end
-    h = solver.Rp + NLPModels.jprod(solver.model, solver.X, tmp)
+    h = solver.y_buffer
+    NLPModels.jprod!(solver.model, solver.X, tmp, h, solver.schur_buffer[1])
+    h .+= solver.Rp
 
 
 
@@ -116,7 +119,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
             Prec_for_CG_tilS_prep(solver,halpha)  
-            M = MyM(solver.model, solver.jtprod_buffer, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, solver.jtprod_buffer, solver.jprod_buffer[1], halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         elseif solver.preconditioner == 2 || solver.preconditioner == 4
             Prec_for_CG_beta(solver,halpha)  
             M = MyM_beta(solver.model, halpha.AAAATtau)
@@ -185,7 +188,9 @@ function corrector(solver::MySolver{T},halpha) where {T}
             W.factor' * solver.Rd[mat_idx] * W.factor + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
         )
     end
-    h = solver.Rp + NLPModels.jprod(solver.model, solver.X, X)
+    h = solver.y_buffer
+    NLPModels.jprod!(solver.model, solver.X, X, h, solver.schur_buffer[1])
+    h .+= solver.Rp
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
@@ -222,7 +227,7 @@ function corrector(solver::MySolver{T},halpha) where {T}
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
-            M = MyM(solver.model, solver.jtprod_buffer, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, solver.jtprod_buffer, solver.schur_buffer[1], halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         else
             M = MyM_beta(solver.model, halpha.AAAATtau)
         end
