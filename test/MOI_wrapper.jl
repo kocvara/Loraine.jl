@@ -34,23 +34,12 @@ function tests()
         exclude = [
             # No constraints
             r"test_solve_TerminationStatus_DUAL_INFEASIBLE$",
-
-            # Unable to bridge RotatedSecondOrderCone to PSD because the dimension is too small: got 2, expected >= 3
-            r"test_conic_SecondOrderCone_INFEASIBLE$",
-            r"test_constraint_PrimalStart_DualStart_SecondOrderCone$",
-
-            # MathOptInterface.ITERATION_LIMIT == MathOptInterface.DUAL_INFEASIBLE
-            r"test_linear_DUAL_INFEASIBLE_2$",
-            r"test_conic_SecondOrderCone_no_initial_bound$",
-            r"test_conic_SecondOrderCone_negative_post_bound_2$",
-            r"test_conic_SecondOrderCone_negative_post_bound_3$",
-
-            # PosDefException: matrix is not positive definite; Cholesky factorization failed.
             r"test_attribute_SolveTimeSec$",
             r"test_attribute_RawStatusString$",
             r"test_objective_ObjectiveFunction_blank$",
+
+            # Warning: too many regularizations of H, giving up
             r"test_linear_transform$",
-            r"test_linear_DUAL_INFEASIBLE$",
         ],
     )
     return

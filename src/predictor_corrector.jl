@@ -5,58 +5,57 @@ using GenericLinearAlgebra
 function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     
     solver.predict = true
-    solver.Rp = solver.model.b
+    NLPModels.cons!(solver.model, solver.X, solver.Rp, solver.schur_buffer[1])
+    LinearAlgebra.rmul!(solver.Rp, -1)
 
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
-            solver.Rp -= solver.model.AA[i] * solver.X[i][:]
-            solver.Rd[i] .= solver.model.C[i] - solver.S[i] - mat(solver.model.AA[i]' * solver.y)
-            solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
-        end
+    for mat_idx = LRO.matrix_indices(solver.model)
+        i = mat_idx.value
+        solver.Rd[mat_idx] .= LRO.dual_cons!(solver.jtprod_buffer, solver.model, mat_idx, solver.y)
+        solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
     end
 
-    if solver.model.nlin > 0
-        solver.Rp -= solver.model.C_lin * solver.X_lin[:]
-        solver.Rd_lin = solver.model.d_lin - solver.S_lin - solver.model.C_lin' * solver.y
-        Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
+    if LRO.num_scalars(solver.model) > 0
+        solver.Rd[LRO.ScalarIndex] = LRO.dual_cons(solver.model, LRO.ScalarIndex, solver.y)
+        Rc_lin = solver.sigma * solver.mu .* ones(LRO.num_scalars(solver.model), 1) - solver.X[LRO.ScalarIndex] .* solver.S[LRO.ScalarIndex]
     end
+    solver.Rd .-= solver.S
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
-    # @timeit solver.to "BBBB" begin
-        if solver.model.nlmi > 0
-            if solver.datarank == -1
-            # if 1 == 0
-                BBBB = makeBBBB_rank1(solver.model.n, solver.model.nlmi, solver.model.B, solver.G, solver.to)
-            else
-                BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
-            end
-        else
-            BBBB = zeros(T, solver.model.n, solver.model.n)
-        end
-        if solver.model.nlin > 0
-            BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
-        end
-        BBBB = Hermitian(BBBB, :L)
+        LRO.schur_complement!(solver.model, solver.W, solver.BBBB, solver.schur_buffer)
     end
     # end
 
-    if solver.model.nlmi > 0
-        h = makeRHS(solver.model.nlmi,solver.model.AA,solver.W,solver.S,solver.Rp,solver.Rd)
-    else
-        h = copy(solver.Rp)
+    # RHS for the Hessian equation
+    tmp = similar(solver.X)
+    if !isempty(tmp[LRO.ScalarIndex])
+        tmp[LRO.ScalarIndex] .= spdiagm(solver.W[LRO.ScalarIndex]) * solver.Rd[LRO.ScalarIndex] + solver.X[LRO.ScalarIndex]
     end
-    if solver.model.nlin > 0
-        h .+= solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin)
+    for i in LRO.matrix_indices(solver.model)
+        tmp[i] .= solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i]
     end
+    h = solver.y_buffer
+    NLPModels.jprod!(solver.model, solver.X, tmp, h, solver.schur_buffer[1])
+    h .+= solver.Rp
+
+
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
+        BBBB = LinearAlgebra.Hermitian(solver.BBBB)
     #     @timeit solver.to "backslash" begin
         if ishermitian(BBBB)
+            if parent(BBBB) isa SparseMatrixCSC
+                # Convert to dense because
+                # 1. Cholesky is not implemented for `MultiFloat` for sparse
+                # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
+                BBBB = LinearAlgebra.Hermitian(Matrix(parent(BBBB)), LinearAlgebra.sym_uplo(BBBB.uplo))
+            end
             try
-                cholBBBB1, cholBBBB2 = cholesky(BBBB)
-                solver.cholBBBB = cholBBBB1
+                solver.cholBBBB = cholesky(BBBB).L
             catch err
+                if !(err isa LinearAlgebra.PosDefException)
+                    rethrow(err)
+                end
                 if solver.verb > 0
                     println("Matrix H not positive definite, trying to regularize")
                 end
@@ -64,30 +63,29 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
                 solver.regcount += 1
                 if solver.regcount > 5
                     if solver.verb > 0
-                        println("WARNING: too many regularizations of H, giving up")
+                        @warn("too many regularizations of H, giving up")
                     end
                     solver.cholBBBB = I(size(BBBB, 1))
                     solver.status = 3
                     return
                 end
-                while isposdef(BBBB) == false
-                    BBBB = BBBB + 1e-4 .* I(size(BBBB, 1))
+                while !isposdef(BBBB)
+                    solver.BBBB .= solver.BBBB .+ 1e-4 .* I(size(solver.BBBB, 1))
+                    BBBB = LinearAlgebra.Hermitian(BBBB)
                     icount = icount + 1
                     if icount > 1000
                         if solver.verb > 0
-                            println("WARNING: H cannot be made positive definite, giving up")
+                            @warn("H cannot be made positive definite, giving up")
                         end
                         solver.cholBBBB = I(size(BBBB, 1))
                         solver.status = 3
                         return
                     end
                 end
-                solver.cholBBBB = cholesky(BBBB)
-            else
-                solver.cholBBBB = copy(solver.cholBBBB)
+                solver.cholBBBB = cholesky(BBBB).L
             end
             solver.dely = solver.cholBBBB \ h
-            solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+            solver.dely = solver.cholBBBB' \ solver.dely
             # delyy = solver.dely
         else
             @warn("System matrix not Hermitian, stopping Loraine")
@@ -116,15 +114,15 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 
     #     end
     else
-        A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
+        A = MyA(solver.W, solver.model, solver.jtprod_buffer, solver.to)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
             Prec_for_CG_tilS_prep(solver,halpha)  
-            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, solver.jtprod_buffer, solver.jprod_buffer[1], halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         elseif solver.preconditioner == 2 || solver.preconditioner == 4
             Prec_for_CG_beta(solver,halpha)  
-            M = MyM_beta(solver.model.AA, halpha.AAAATtau)
+            M = MyM_beta(solver.model, halpha.AAAATtau)
         end
 
         # @timeit solver.to "CG predictor" begin
@@ -156,40 +154,43 @@ function sigma_update(solver::MySolver{T}) where {T}
     else
             expon_used = max(1, min(solver.expon, T(3) * step_pred^2))
     end
-    if btrace(solver.model.nlmi, solver.Xn, solver.Sn) .< 0
+    dotXnSn = isempty(solver.Xn) ? zero(T) : dot(solver.Xn, solver.Sn)
+    if dotXnSn .< 0
         solver.sigma = T(0.8)
     else
-        if solver.model.nlmi > 0
-            tmp1 = btrace(solver.model.nlmi, solver.Xn, solver.Sn)
+        if LRO.num_scalars(solver.model) > 0
+            tmp2 = dot(solver.Xn_lin', solver.Sn_lin)
         else
-            tmp1 = 0
+            tmp2 = 0
         end
-        if solver.model.nlin > 0
-                tmp2 = dot(solver.Xn_lin', solver.Sn_lin)
-        else
-                tmp2 = 0
-        end
-        tmp12 = (tmp1 + tmp2) / (sum(solver.model.msizes) + solver.model.nlin)
+        tmp12 = (dotXnSn + tmp2) / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
         tmp12 = convert(Float64, tmp12)
         mu = Float64(solver.mu)
         solver.sigma = min(1.0, ((tmp12) / mu) ^ Float64(expon_used))
     end
 
     return solver.sigma
-end   
+end
 
-function corrector(solver,halpha)
+function corrector(solver::MySolver{T},halpha) where {T}
     solver.predict = false
-    h = solver.Rp #RHS for the linear system()
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
-            h += solver.model.AA[i] * my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i]))         # RHS using my_kron()
-        end
-    end
-    if solver.model.nlin > 0
+    X = similar(solver.X)
+    if LRO.num_scalars(solver.model) > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
-        h = h + solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp)
+        X[LRO.ScalarIndex] .= spdiagm((solver.X[LRO.ScalarIndex] .* solver.Si_lin)[:]) * solver.Rd[LRO.ScalarIndex] + solver.X[LRO.ScalarIndex] + tmp
     end
+    for mat_idx in LRO.matrix_indices(solver.model)
+        i = mat_idx.value
+        W = solver.W[mat_idx]
+        X[mat_idx] .= my_kron(
+            W.factor,
+            W.factor,
+            W.factor' * solver.Rd[mat_idx] * W.factor + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
+        )
+    end
+    h = solver.y_buffer
+    NLPModels.jprod!(solver.model, solver.X, X, h, solver.schur_buffer[1])
+    h .+= solver.Rp
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
@@ -222,17 +223,18 @@ function corrector(solver,halpha)
         #     end
         # end
     else
-        A = MyA(solver.W,solver.model.AA,solver.model.nlin,solver.model.C_lin,solver.X_lin,solver.S_lin_inv,solver.to)
+        A = MyA(solver.W, solver.model, solver.jtprod_buffer, solver.to)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
-            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model, solver.jtprod_buffer, solver.schur_buffer[1], halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
         else
-            M = MyM_beta(solver.model.AA, halpha.AAAATtau)
+            M = MyM_beta(solver.model, halpha.AAAATtau)
         end
 
         @timeit solver.to "CG corrector" begin
-        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = 10000, precon = M)
+        # `maxIter = 10000` fails on 32-bit, we need `maxIter = Int64(10000)`
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = Int64(10000), precon = M)
         end
         solver.cg_iter_cor += num_iters
         solver.cg_iter_tot += num_iters
@@ -246,22 +248,23 @@ function corrector(solver,halpha)
 end
 
 function find_step(solver::MySolver{T}) where {T}
-    if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
+    if LRO.num_matrices(solver.model) > 0
+        for mat_idx in LRO.matrix_indices(solver.model)
+            i = mat_idx.value
             @timeit solver.to "find_step_A" begin
-            solver.delS[i] .= solver.Rd[i] .- mat(solver.model.AA[i]' * solver.dely)
-            Ξ = my_kron(solver.W[i], solver.W[i], solver.delS[i])
+            solver.delS[i] .= solver.Rd[mat_idx] .- LRO.jtprod!(solver.jtprod_buffer[i], solver.model, mat_idx, solver.dely)
+            Ξ = vec(my_kron(solver.W[mat_idx].matrix, solver.W[mat_idx], solver.delS[i]))
             if solver.predict
-                solver.delX[i] .= mat(-solver.X[i][:] .- Ξ)
+                solver.delX[i] .= mat(-solver.X[mat_idx][:] .- Ξ)
             else
-                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[i])[:] .- Ξ .+ my_kron(solver.G[i], solver.G[i], solver.RNT[i]))
+                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[mat_idx])[:] .- Ξ .+ vec(my_kron(solver.W[mat_idx].factor, solver.W[mat_idx].factor, solver.RNT[i])))
             end
             end
 
             # determining steplength to stay feasible
             @timeit solver.to "find_step_B" begin
-            delSb = solver.G[i]' * solver.delS[i] * solver.G[i]
-            delXb = solver.Gi[i] * solver.delX[i] * solver.Gi[i]'
+            delSb = solver.W[mat_idx].factor' * solver.delS[i] * solver.W[mat_idx].factor
+            delXb = solver.W[mat_idx].factor_inv * solver.delX[i] * solver.W[mat_idx].factor_inv'
             end
 
             @timeit solver.to "find_step_C" begin
@@ -292,7 +295,7 @@ function find_step(solver::MySolver{T}) where {T}
         end
     end
 
-    if solver.model.nlin > 0
+    if LRO.num_scalars(solver.model) > 0
         find_step_lin(solver)
     else
         solver.alpha_lin = 1
@@ -301,25 +304,26 @@ function find_step(solver::MySolver{T}) where {T}
 
     if solver.predict
         # solution update
-        if solver.model.nlmi > 0
-            for i = 1:solver.model.nlmi
-                solver.Xn[i] = solver.X[i] + solver.alpha[i] .* solver.delX[i]
-                solver.Sn[i] = solver.S[i] + solver.beta[i] .* solver.delS[i]
-                deed = solver.D[i] * ones(1, Int(solver.model.msizes[i])) + ones(Int(solver.model.msizes[i]), 1) * solver.D[i]'
-                solver.RNT[i] = -(solver.Gi[i] * solver.delX[i] * solver.delS[i] * solver.G[i] + solver.G[i]' * solver.delS[i] * solver.delX[i] * solver.Gi[i]') ./ deed 
+        if LRO.num_matrices(solver.model) > 0
+            for mat_idx in LRO.matrix_indices(solver.model)
+                i = mat_idx.value
+                solver.Xn[i] = solver.X[mat_idx] + solver.alpha[i] .* solver.delX[i]
+                solver.Sn[i] = solver.S[mat_idx] + solver.beta[i] .* solver.delS[i]
+                dim = LRO.side_dimension(solver.model, mat_idx)
+                deed = solver.D[i] * ones(dim)' + ones(LRO.side_dimension(solver.model, mat_idx)) * solver.D[i]'
+                solver.RNT[i] = -(solver.W[mat_idx].factor_inv * solver.delX[i] * solver.delS[i] * solver.W[mat_idx].factor + solver.W[mat_idx].factor' * solver.delS[i] * solver.delX[i] * solver.W[mat_idx].factor_inv') ./ deed
             end
         end
     else
         solver.yold = solver.y
-        solver.y = solver.y + minimum([solver.beta; solver.beta_lin]) * solver.dely
-        if solver.model.nlmi > 0
-            for i = 1:solver.model.nlmi
-                solver.X[i] = solver.X[i] + minimum([solver.alpha; solver.alpha_lin]) .* solver.delX[i]
-                solver.X[i] = (solver.X[i] + solver.X[i]') ./ 2
-                solver.S[i] = solver.S[i] + minimum([solver.beta; solver.beta_lin]) .* solver.delS[i]
-                solver.S[i] = (solver.S[i] + solver.S[i]') ./ 2
-            end       
-        end
+        solver.y .+= minimum([solver.beta; solver.beta_lin]) * solver.dely
+        for mat_idx in LRO.matrix_indices(solver.model)
+            i = mat_idx.value
+            solver.X[mat_idx] .+= minimum([solver.alpha; solver.alpha_lin]) .* solver.delX[i]
+            solver.X[mat_idx] .= (solver.X[mat_idx] .+ solver.X[mat_idx]') ./ 2
+            solver.S[mat_idx] .+= minimum([solver.beta; solver.beta_lin]) .* solver.delS[i]
+            solver.S[mat_idx] .= (solver.S[mat_idx] + solver.S[mat_idx]') ./ 2
+        end       
     end  
 
     return
@@ -327,19 +331,19 @@ end
 
 
 function find_step_lin(solver)
-    solver.delS_lin = solver.Rd_lin - solver.model.C_lin' * solver.dely
+    solver.delS_lin = solver.Rd[LRO.ScalarIndex] - LRO.jtprod(solver.model, LRO.ScalarIndex, solver.dely)
     if solver.predict
-        solver.delX_lin = -solver.X_lin - (solver.X_lin) .* (solver.Si_lin) .* solver.delS_lin
+        solver.delX_lin = -solver.X[LRO.ScalarIndex] - (solver.X[LRO.ScalarIndex]) .* (solver.Si_lin) .* solver.delS_lin
     else
-        solver.delX_lin = -solver.X_lin - (solver.X_lin) .* (solver.Si_lin) .* solver.delS_lin + (solver.sigma * solver.mu) .* (solver.Si_lin) + solver.RNT_lin
+        solver.delX_lin = -solver.X[LRO.ScalarIndex] - (solver.X[LRO.ScalarIndex]) .* (solver.Si_lin) .* solver.delS_lin + (solver.sigma * solver.mu) .* (solver.Si_lin) + solver.RNT_lin
     end
-    mimiX_lin = minimum(solver.delX_lin ./ solver.X_lin)
+    mimiX_lin = minimum(solver.delX_lin ./ solver.X[LRO.ScalarIndex])
     if mimiX_lin .> -1e-6
         solver.alpha_lin = 0.99
     else
         solver.alpha_lin = min(1, -solver.tau / mimiX_lin)
     end
-    mimiS_lin = minimum(solver.delS_lin ./ solver.S_lin)
+    mimiS_lin = minimum(solver.delS_lin ./ solver.S[LRO.ScalarIndex])
     if mimiS_lin .> -1e-6
         solver.beta_lin = 0.99
     else
@@ -348,16 +352,16 @@ function find_step_lin(solver)
 
     if solver.predict
         # solution update
-        solver.Xn_lin = solver.X_lin + solver.alpha_lin .* solver.delX_lin
-        solver.Sn_lin = solver.S_lin + solver.beta_lin .* solver.delS_lin
+        solver.Xn_lin = solver.X[LRO.ScalarIndex] + solver.alpha_lin .* solver.delX_lin
+        solver.Sn_lin = solver.S[LRO.ScalarIndex] + solver.beta_lin .* solver.delS_lin
 
         solver.RNT_lin = -(solver.delX_lin .* solver.delS_lin) .* solver.Si_lin
     else
-        # @show solver.X_lin
+        # @show solver.X[LRO.ScalarIndex]
         # @show mimiX_lin
-        solver.X_lin = solver.X_lin + minimum([solver.alpha; solver.alpha_lin]) .* solver.delX_lin
-        solver.S_lin = solver.S_lin + minimum([solver.beta; solver.beta_lin]) .* solver.delS_lin
-        solver.S_lin_inv = 1 ./ solver.S_lin
+        solver.X[LRO.ScalarIndex] .+= minimum([solver.alpha; solver.alpha_lin]) .* solver.delX_lin
+        solver.S[LRO.ScalarIndex] .+= minimum([solver.beta; solver.beta_lin]) .* solver.delS_lin
+        solver.S_lin_inv = inv.(solver.S[LRO.ScalarIndex])
     end
     
     return 
