@@ -26,7 +26,7 @@ end
 
 # Select your semidefinite optimization problem in SDPA input format
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto2.dat-s")
-# model=read_from_file("/Users/michal/Dropbox/michal/sdplib/control3.dat-s")
+model=read_from_file("/Users/michal/Dropbox/michal/sdplib/maxG11.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib5.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 
