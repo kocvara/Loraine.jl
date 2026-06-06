@@ -13,14 +13,12 @@ end
 function mat(vecA)
     n = isqrt(length(vecA))
     Atmp = reshape(vecA, n, n)
-    return (Atmp + Atmp') ./ 2
-    # return Hermitian(reshape(vecA, n, n))
+    return @. (Atmp + Atmp') / 2
 end
 
 ###########################################################################
 function btrace(nlmi, X, S)
-    # compute sum of traces of products of block matrices
-    trXS = 0
+    trXS = zero(eltype(eltype(X)))
     @inbounds for i = 1:nlmi
         trXS += dot(X[i], S[i])
     end

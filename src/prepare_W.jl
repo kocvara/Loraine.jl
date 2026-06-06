@@ -39,9 +39,9 @@ function prepare_W(solver::MySolver{T}) where {T}
                 mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
                 @timeit solver.to "prep W SVD svd" begin
                 if T == Float64
-                    U, Dtmp, V = fsvd(T.(CCtmp))
+                    U, Dtmp, V = fsvd(CCtmp)
                 else
-                    U, Dtmp, V = svd(T.(CCtmp))
+                    U, Dtmp, V = svd(CCtmp)
                 end
                 end
             end
@@ -50,7 +50,7 @@ function prepare_W(solver::MySolver{T}) where {T}
             solver.D[i] = copy(Dtmp)
             Di2 = try
                 Diagonal(1.0 ./ sqrt.(Dtmp))
-            catch err
+            catch
                 println("WARNING: Numerical difficulties, giving up")
                     solver.status = 4
                 Diagonal(I(size(solver.Dtmp, 1)))
@@ -69,16 +69,14 @@ function prepare_W(solver::MySolver{T}) where {T}
                 # DDtmp = (CtmpS.U * solver.G[i])
                 # DDtmp = DDtmp' * DDtmp
                 DDtmp = solver.G[i]' * solver.S[i] * solver.G[i]
-                DDtmp = (DDtmp + DDtmp') ./ 2.0
+                DDtmp = @. (DDtmp + DDtmp') / 2.0
                 try
                     solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp,0)))
-                catch err
+                catch
                     println("WARNING: Numerical difficulties, giving up")
                     solver.DDsi[i] = diag(I(size(DDtmp, 1)))
                     solver.status = 4
                     return
-                else
-                    solver.DDsi[i] = copy(solver.DDsi[i])
                 end
             # end
         end

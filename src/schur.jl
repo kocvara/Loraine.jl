@@ -44,16 +44,12 @@ function buffer_for_schur_complement(model::MyModel, κ)
 end
 
 function makeBBBB_rank1(n,nlmi,B,G)
-    tmp = zeros(Float64, n, n)
     BBBB = zeros(Float64, n, n)
+    tmp = zeros(Float64, n, n)
     for ilmi = 1:nlmi
         BB = transpose(B[ilmi] * G[ilmi])
-        mul!(tmp,BB',BB)
-        if ilmi == 1
-            BBBB = tmp .^ 2
-        else
-            BBBB += tmp .^ 2
-        end
+        mul!(tmp, BB', BB)
+        @. BBBB += tmp * tmp
     end
     return BBBB
 end
@@ -64,7 +60,7 @@ function schur_complement(buffer, model::MyModel, W, ::Type{MatrixIndex})
     n = num_constraints(model)
     BBBB = zeros(eltype(eltype(W)), n, n)
     for mat_idx in matrix_indices(model)
-        BBBB += schur_complement(buffer, model, mat_idx, W[mat_idx.value])
+        BBBB .+= schur_complement(buffer, model, mat_idx, W[mat_idx.value])
     end
     return BBBB
 end
@@ -78,7 +74,7 @@ function schur_complement(buffer, model, mat_idx, W::AbstractMatrix{T}) where {T
     dim = side_dimension(model, mat_idx)
     @assert dim == size(W, 1) == size(W, 2)
     tmp1 = Matrix{T}(undef, size(W, 2), dim)
-    tmp  = zeros(T, size(W, 2), dim)
+    tmp  = Matrix{T}(undef, size(W, 2), dim)
 
     for ii = 1:n
         i = σ[ii,ilmi]
@@ -88,7 +84,7 @@ function schur_complement(buffer, model, mat_idx, W::AbstractMatrix{T}) where {T
                 mul!(tmp1, W, Ai)
                 mul!(tmp, tmp1, W)
                 tmp2 = jprod(model, mat_idx, tmp)
-                indi = σ[ii:end,ilmi]
+                indi = @view σ[ii:end,ilmi]
                 BBBB[indi,i] .= -tmp2[indi]
                 BBBB[i,indi] .= -tmp2[indi]
             else
