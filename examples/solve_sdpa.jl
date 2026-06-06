@@ -10,7 +10,6 @@ import Loraine
 # import Hypatia
 # using Dualization
 using MultiFloats
-using MathOptChordalDecomposition
 
 function read_sdpa(
     filename::String,
@@ -27,7 +26,7 @@ end
 
 # Select your semidefinite optimization problem in SDPA input format
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto2.dat-s")
-model=read_from_file("/Users/michal/Dropbox/michal/sdplib/mcp124-1.dat-s")
+model=read_from_file("/Users/michal/Dropbox/michal/sdplib/theta1.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib5.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/k.dat-s")
@@ -35,9 +34,9 @@ model=read_from_file("/Users/michal/Dropbox/michal/sdplib/mcp124-1.dat-s")
 # model=read_sdpa("examples/data/theta1.dat-s")
 # model=read_from_file(joinpath(dirname(@__DIR__), "examples/data/theta1.dat-s"))
 # model=read_from_file("examples/data/theta1.dat-s")
-# model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
+model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
-set_optimizer(model, Loraine.Optimizer{Float64})
+# set_optimizer(model, Loraine.Optimizer{Float64})
 # set_optimizer(model, () -> MathOptChordalDecomposition.Optimizer(Loraine.Optimizer))
 # set_optimizer(model, Loraine.Optimizer{Float64x4})
 
