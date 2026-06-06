@@ -16,6 +16,12 @@ function mat(vecA)
     return @. (Atmp + Atmp') / 2
 end
 
+function mat!(dst::AbstractMatrix, vecA)
+    n = isqrt(length(vecA))
+    Atmp = reshape(vecA, n, n)
+    @. dst = (Atmp + Atmp') / 2
+end
+
 ###########################################################################
 function btrace(nlmi, X, S)
     trXS = zero(eltype(eltype(X)))

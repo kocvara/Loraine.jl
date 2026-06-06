@@ -27,65 +27,48 @@ end
 
 function prepare_W(solver::MySolver{T}) where {T}
 
-    # @timeit solver.to "prpr" begin
-        for i = 1:solver.model.nlmi
-            # @timeit to "prpr1" begin
-                Ctmp = try_cholesky(solver, solver.X, i, "X")
-                CtmpS = try_cholesky(solver, solver.S, i, "S")
-                # Ctmp = cholesky(solver.X[i])
-                # CtmpS = cholesky(solver.S[i])
-            @timeit solver.to "prep W SVD" begin
-                CCtmp = Matrix{T}(undef,size(CtmpS.L,1),size(CtmpS.L,1))
-                mul!(CCtmp, (CtmpS.L)' , Ctmp.L)
-                @timeit solver.to "prep W SVD svd" begin
-                if T == Float64
-                    U, Dtmp, V = fsvd(CCtmp)
-                else
-                    U, Dtmp, V = svd(CCtmp)
-                end
-                end
-            end
-
-            # @show minimum(Dtmp)
-            solver.D[i] = copy(Dtmp)
-            Di2 = try
-                Diagonal(1.0 ./ sqrt.(Dtmp))
-            catch
-                println("WARNING: Numerical difficulties, giving up")
-                    solver.status = 4
-                Diagonal(I(size(solver.Dtmp, 1)))
-            end
-
-            # @timeit to "prpr3a" begin
-                solver.G[i] = Ctmp.L * V * Di2
-            # end
-            # @timeit to "prpr3" begin
-                solver.Gi[i] = inv(solver.G[i])
-                solver.W[i] =  solver.G[i] * solver.G[i]'
-            # end
-            # @timeit to "prpr4" begin
-                # solver.Si[i] = inv(solver.S[i])
-                solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ (I(size(solver.Si[i],1))))  # S[i] inverse
-                # DDtmp = (CtmpS.U * solver.G[i])
-                # DDtmp = DDtmp' * DDtmp
-                DDtmp = solver.G[i]' * solver.S[i] * solver.G[i]
-                DDtmp = @. (DDtmp + DDtmp') / 2.0
-                try
-                    solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp,0)))
-                catch
-                    println("WARNING: Numerical difficulties, giving up")
-                    solver.DDsi[i] = diag(I(size(DDtmp, 1)))
-                    solver.status = 4
-                    return
-                end
-            # end
-        end
-        if solver.model.nlin > 0
-            solver.Si_lin = 1.0 ./ solver.S_lin
+    @timeit solver.to "prepare_W" begin
+    Threads.@threads for i = 1:solver.model.nlmi
+        Ctmp = try_cholesky(solver, solver.X, i, "X")
+        CtmpS = try_cholesky(solver, solver.S, i, "S")
+        CCtmp = Matrix{T}(undef, size(CtmpS.L, 1), size(CtmpS.L, 1))
+        mul!(CCtmp, (CtmpS.L)', Ctmp.L)
+        if T == Float64
+            _, Dtmp, V = fsvd(CCtmp)
         else
-            solver.Si_lin = []
+            _, Dtmp, V = svd(CCtmp)
         end
-        # end
+
+        solver.D[i] = copy(Dtmp)
+        Di2 = try
+            Diagonal(1.0 ./ sqrt.(Dtmp))
+        catch
+            println("WARNING: Numerical difficulties, giving up")
+            solver.status = 4
+            Diagonal(ones(T, length(Dtmp)))
+        end
+
+        solver.G[i] = Ctmp.L * V * Di2
+        solver.Gi[i] = inv(solver.G[i])
+        solver.W[i] = solver.G[i] * solver.G[i]'
+        solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ I(size(solver.Si[i], 1)))
+        DDtmp = solver.G[i]' * solver.S[i] * solver.G[i]
+        DDtmp = @. (DDtmp + DDtmp') / 2.0
+        try
+            solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp, 0)))
+        catch
+            println("WARNING: Numerical difficulties, giving up")
+            solver.DDsi[i] = diag(I(size(DDtmp, 1)))
+            solver.status = 4
+        end
+    end
+    end
+
+    if solver.model.nlin > 0
+        solver.Si_lin = 1.0 ./ solver.S_lin
+    else
+        solver.Si_lin = []
+    end
 
     return solver.D, solver.G, solver.Gi, solver.W, solver.Si, solver.DDsi, solver.Si_lin
 

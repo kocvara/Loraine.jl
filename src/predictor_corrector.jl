@@ -5,27 +5,27 @@ using GenericLinearAlgebra
 function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 
     solver.predict = true
-    solver.Rp = solver.model.b
+    copyto!(solver.Rp, solver.model.b)
 
     if solver.model.nlmi > 0
         for i = 1:solver.model.nlmi
-            solver.Rp -= solver.model.AA[i] * vec(solver.X[i])
-            solver.Rd[i] .= solver.model.C[i] - solver.S[i] - mat(solver.model.AA[i]' * solver.y)
-            solver.Rc[i] .= solver.sigma .* solver.mu .* Matrix(I, length(solver.D[i]), 1) - solver.D[i] .^ 2
+            mul!(solver.Rp, solver.model.AA[i], vec(solver.X[i]), -1.0, 1.0)
+        end
+        Threads.@threads for i = 1:solver.model.nlmi
+            mul!(solver.work_m2[i], solver.model.AA[i]', solver.y)
+            mat!(solver.work_mm[i], solver.work_m2[i])
+            solver.Rd[i] .= solver.model.C[i] .- solver.S[i] .- solver.work_mm[i]
         end
     end
 
     if solver.model.nlin > 0
-        solver.Rp -= solver.model.C_lin * vec(solver.X_lin)
+        mul!(solver.Rp, solver.model.C_lin, solver.X_lin, -1.0, 1.0)
         solver.Rd_lin = solver.model.d_lin - solver.S_lin - solver.model.C_lin' * solver.y
-        Rc_lin = solver.sigma * solver.mu .* ones(solver.model.nlin, 1) - solver.X_lin .* solver.S_lin
     end
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
-    # @timeit solver.to "BBBB" begin
         if solver.model.nlmi > 0
             if solver.datarank == -1
-            # if 1 == 0
                 BBBB = makeBBBB_rank1(solver.model.n, solver.model.nlmi, solver.model.B, solver.G, solver.to)
             else
                 BBBB = makeBBBBs(solver.model.n, solver.model.nlmi, solver.model.A, solver.model.AA, solver.W, solver.to, solver.model.qA, solver.model.sigmaA)
@@ -34,7 +34,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
             BBBB = zeros(T, solver.model.n, solver.model.n)
         end
         if solver.model.nlin > 0
-            BBBB .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
+            BBBB .+= solver.model.C_lin * Diagonal(solver.X_lin .* solver.Si_lin) * solver.model.C_lin'
         end
         BBBB = Hermitian(BBBB, :L)
     end
@@ -46,7 +46,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
         h = copy(solver.Rp)
     end
     if solver.model.nlin > 0
-        h .+= solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin)
+        h .+= solver.model.C_lin * (Diagonal(solver.X_lin .* solver.Si_lin) * solver.Rd_lin + solver.X_lin)
     end
 
     # solving the linear system()
@@ -164,12 +164,12 @@ function corrector(solver,halpha)
     h = copy(solver.Rp)
     if solver.model.nlmi > 0
         for i = 1:solver.model.nlmi
-            mul!(h, solver.model.AA[i], my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i])), true, true)
+            mul!(h, solver.model.AA[i], my_kron(solver.G[i], solver.G[i], (solver.G[i]' * solver.Rd[i] * solver.G[i] + Diagonal(@. solver.D[i] - (solver.sigma * solver.mu) / solver.D[i]) - solver.RNT[i])), true, true)
         end
     end
     if solver.model.nlin > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
-        h .+= solver.model.C_lin * (spdiagm((solver.X_lin .* solver.Si_lin)[:]) * solver.Rd_lin + solver.X_lin + tmp)
+        h .+= solver.model.C_lin * (Diagonal(solver.X_lin .* solver.Si_lin) * solver.Rd_lin + solver.X_lin + tmp)
     end
 
     # solving the linear system()
@@ -202,48 +202,31 @@ end
 
 function find_step(solver::MySolver{T}) where {T}
     if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
-            @timeit solver.to "find_step_A" begin
-            solver.delS[i] .= solver.Rd[i] .- mat(solver.model.AA[i]' * solver.dely)
+        @timeit solver.to "find_step" begin
+        Threads.@threads for i = 1:solver.model.nlmi
+            mul!(solver.work_m2[i], solver.model.AA[i]', solver.dely)
+            mat!(solver.work_mm[i], solver.work_m2[i])
+            solver.delS[i] .= solver.Rd[i] .- solver.work_mm[i]
             Ξ = my_kron(solver.W[i], solver.W[i], solver.delS[i])
             if solver.predict
                 solver.delX[i] .= mat(-vec(solver.X[i]) .- Ξ)
             else
                 solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[i])[:] .- Ξ .+ my_kron(solver.G[i], solver.G[i], solver.RNT[i]))
             end
-            end
 
-            # determining steplength to stay feasible
-            @timeit solver.to "find_step_B" begin
             delSb = solver.G[i]' * solver.delS[i] * solver.G[i]
             delXb = solver.Gi[i] * solver.delX[i] * solver.Gi[i]'
-            end
 
-            @timeit solver.to "find_step_C" begin
             XXX = @. solver.DDsi[i]' * delXb * solver.DDsi[i]
             XXX .= (XXX .+ XXX') ./ 2
-            end
-            @timeit solver.to "find_step_D" begin
-            mimiX = eigmin(T.(XXX))
-            end
-            if mimiX > -1e-6
-                solver.alpha[i] = 0.99
-            else
-                solver.alpha[i] = min(1, -solver.tau / mimiX)
-            end
+            mimiX = eigmin(Symmetric(XXX))
+            solver.alpha[i] = mimiX > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiX)
 
-            @timeit solver.to "find_step_C" begin
             @. XXX = solver.DDsi[i]' * delSb * solver.DDsi[i]
             XXX .= (XXX .+ XXX') ./ 2
-            end
-            @timeit solver.to "find_step_D" begin
-            mimiS = eigmin(T.(XXX))
-            end
-            if mimiS > -1e-6
-                solver.beta[i] = 0.99
-            else
-                solver.beta[i] = min(1, -solver.tau / mimiS)
-            end
+            mimiS = eigmin(Symmetric(XXX))
+            solver.beta[i] = mimiS > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiS)
+        end
         end
     end
 
@@ -255,9 +238,8 @@ function find_step(solver::MySolver{T}) where {T}
     end
 
     if solver.predict
-        # solution update
         if solver.model.nlmi > 0
-            for i = 1:solver.model.nlmi
+            Threads.@threads for i = 1:solver.model.nlmi
                 @. solver.Xn[i] = solver.X[i] + solver.alpha[i] * solver.delX[i]
                 @. solver.Sn[i] = solver.S[i] + solver.beta[i] * solver.delS[i]
                 deed = solver.D[i] .+ solver.D[i]'
@@ -270,7 +252,7 @@ function find_step(solver::MySolver{T}) where {T}
         LinearAlgebra.axpy!(beta_step, solver.dely, solver.y)
         if solver.model.nlmi > 0
             alpha_step = min(minimum(solver.alpha), solver.alpha_lin)
-            for i = 1:solver.model.nlmi
+            Threads.@threads for i = 1:solver.model.nlmi
                 @. solver.X[i] += alpha_step * solver.delX[i]
                 solver.X[i] .= (solver.X[i] .+ solver.X[i]') ./ 2
                 @. solver.S[i] += beta_step * solver.delS[i]
