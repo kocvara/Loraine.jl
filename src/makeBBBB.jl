@@ -1,20 +1,12 @@
 function makeBBBB_rank1(n,nlmi,B,G,to)
     @timeit to "BBBB_rank1" begin
-    tmp = zeros(Float64, n, n)
     BBBB = zeros(Float64, n, n)
+    tmp = zeros(Float64, n, n)
     for ilmi = 1:nlmi
-        # @timeit to "BBBB_rank1_a" begin
-            BB = transpose(B[ilmi] * G[ilmi])
-        # end
-        # @timeit to "BBBB_rank1_b" begin
-            mul!(tmp,BB',BB)
-            if ilmi == 1
-                BBBB = tmp .^ 2
-            else
-                BBBB += tmp .^ 2
-            end
-        # end
-    end     
+        BB = transpose(B[ilmi] * G[ilmi])
+        mul!(tmp, BB', BB)
+        @. BBBB += tmp * tmp
+    end
     end
     return BBBB
 end
@@ -28,7 +20,7 @@ function makeBBBBs(n,nlmi,A,AA,W,to,qA,sigmaA)
         AAilmi = AA[ilmi]
         Ailmi = A[ilmi,:]
         @timeit to "BBBBs" begin
-        BBBB += makeBBBBsi(ilmi,Ailmi,AAilmi,Wilmi,n,to,qA,sigmaA)
+        makeBBBBsi!(BBBB,ilmi,Ailmi,AAilmi,Wilmi,n,to,qA,sigmaA)
         end
     end
 
@@ -64,47 +56,38 @@ function _dot(A::SparseMatrixCSC, B::SparseMatrixCSC, W::Matrix)
 end
 
 #####
-function makeBBBBsi(ilmi,Ailmi,AAilmi,Wilmi::Matrix{T},n,to,qA,sigmaA) where {T}
-    BBBB = zeros(T, n, n)
-    tmp1 = Matrix{T}(undef,size(Wilmi, 2), size(Ailmi[1], 1))
-    # tmp = Matrix{Float64}(undef,size(Wilmi, 1), size(Wilmi, 1))
-    tmp2 = Matrix{T}(undef,size(AAilmi, 1), 1)
-    tmp3 = Vector{Float64}(undef,size(Wilmi, 1))
-    ilmi1 = (ilmi-1)*n
-
-    # @timeit to "BBBBsi" begin
+function makeBBBBsi!(BBBB,ilmi,Ailmi,AAilmi,Wilmi::Matrix{T},n,to,qA,sigmaA) where {T}
+    m = size(Wilmi, 1)
+    tmp1 = Matrix{T}(undef, m, m)
+    tmp_mat = Matrix{T}(undef, m, m)
+    tmp2 = Vector{T}(undef, size(AAilmi, 1))
 
     @inbounds for ii = 1:n
-        # tmp1 = zeros(Float64,size(Wilmi, 2), size(Ailmi[1], 1))
         i = sigmaA[ii,ilmi]
         if nnz(Ailmi[i+1]) > 0
             if ii <= qA[1,ilmi]
-                tmp  = zeros(T,size(Wilmi, 2), size(Ailmi[1], 1))
-            # if 1==1
-                # @show "one"
-                # @show ii
                 @timeit to "BBBBone" begin
                     @timeit to "BBBBone1" begin
                         mul!(tmp1,Wilmi,Ailmi[i+1])
                     end
                     @timeit to "BBBBone2" begin
-                        # mul!(tmp,tmp1,Wilmi)
-                        tmp = tmp1 * Wilmi
+                        mul!(tmp_mat,tmp1,Wilmi)
                     end
                     @timeit to "BBBBone3" begin
-                        tmp2 = AAilmi * vec(tmp)
-                        # mul!(tmp2,AAilmi,vec(tmp))
+                        mul!(tmp2,AAilmi,vec(tmp_mat))
                     end
                     @timeit to "BBBBone4" begin
-                        indi = sigmaA[ii:end,ilmi]
-                        BBBB[indi,i] .= -tmp2[indi]
-                        BBBB[i,indi] .= -tmp2[indi]
-                        # @show BBBB[1:2,1:2]
+                        indi = @view sigmaA[ii:end,ilmi]
+                        @inbounds for k in indi
+                            v = -tmp2[k]
+                            BBBB[k,i] += v
+                            if k != i
+                                BBBB[i,k] += v
+                            end
+                        end
                     end
                 end
-            # elseif ii <= qA[2,ilmi]
             elseif 1==0
-            # @show "two"
                 @timeit to "BBBBtwo" begin
                 mul!(tmp1,Ailmi[i+1],Wilmi)
                 @inbounds for jj = ii:n
@@ -112,78 +95,35 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,Wilmi::Matrix{T},n,to,qA,sigmaA) where {T}
                     Ajjj = Ailmi[j+1]
                     if !iszero(nnz(Ajjj))
                         ttt = 0.0
-                        # @timeit to "BBBBtwo_i" begin
                         @inbounds for jjjjAj in axes(Ajjj, 2)
                             for k in nzrange(Ajjj, jjjjAj)
-                            # @timeit to "BBBBtwo_ii_A" begin
                                 iiijAj = rowvals(Ajjj)[k]
-                            # end
-                            # vvvj = -vvv_j[iAj]    
-                            # @timeit to "BBBBtwo_i_B" begin
                                 ttt1 = dot(tmp1[:,iiijAj],Wilmi[:,jjjjAj])
-                            # end
-                            # @timeit to "BBBBtwo_i_C" begin
                                 ttt += ttt1 * nonzeros(Ajjj)[k]
                             end
-                            # end
                         end
-                        # end
-                        BBBB[i,j] = ttt
+                        BBBB[i,j] += ttt
                         if !=(i,j)
-                            BBBB[j,i] = ttt
+                            BBBB[j,i] += ttt
                         end
                     end
-                end  
-                end       
-                # end
+                end
+                end
             else
                 @timeit to "BBBBthree" begin
-                # @show "three"
-                # @show ilmi
-                # @show ii
                 if !iszero(nnz(Ailmi[i+1]))
                     if nnz(Ailmi[i+1]) > 1
-                        # @timeit to "BBBBthree>1" begin
-                        # @show iii_i,myAiii.jind
-                        # iii_is = iii_i[1:Int64(sqrt(length(iii_i)))]
-                        # jjj_i = myAiii.jind
-                        # vvv_i = myAiii.nzval
                         @inbounds for jj = ii:n
                             j = sigmaA[jj,ilmi]
                             if !iszero(nnz(Ailmi[j+1]))
-                                # @timeit to "BBBBthree_1>1" begin
-                                # iii_js = iii_j[1:Int64(sqrt(length(iii_j)))]
-                                # jjj_j = myAjjj.jind
-                                # vvv_j = myAjjj.nzval
-                                # ttt = 0.0
-                                # end
-                                # @timeit to "BBBBthree_2>1" begin
                                 ttt = _dot(Ailmi[i+1], Ailmi[j+1], Wilmi)
-                                # end
-                                # @inbounds for iAj in eachindex(iii_j)
-                                #     ttt1 = 0.0
-                                #     iiijAj = iii_j[iAj]
-                                #     jjjjAj = jjj_j[iAj]
-                                #     vvvj = vvv_j[iAj]    
-                                #     @inbounds for iAi in eachindex(iii_i)
-                                #         iiiiAi = iii_i[iAi]
-                                #         jjjiAi = jjj_i[iAi]
-                                #         vvvi = vvv_i[iAi]    
-                                #         ttt1 += vvvi * Wilmi[iiiiAi,iiijAj] * Wilmi[jjjiAi,jjjjAj]
-                                #         # ttt1 -= vvv_i[iAi] * Wilmi[iii_i[iAi],iiijAj] * Wilmi[jjj_i[iAi],jjjjAj]
-                                #     end
-                                #     ttt += ttt1 * vvvj
-                                # end
-                                # @timeit to "BBBBthree_3>1" begin
                                 if i >= j
-                                    BBBB[i,j] = ttt
+                                    BBBB[i,j] += ttt
                                 else
-                                    BBBB[j,i] = ttt
+                                    BBBB[j,i] += ttt
                                 end
-                            # end
-                            end  
-                        # end    
-                        end   
+                            end
+                        end
                     else
                         @timeit to "BBBBthree=1" begin
                         # A is symmetric
@@ -200,29 +140,27 @@ function makeBBBBsi(ilmi,Ailmi,AAilmi,Wilmi::Matrix{T},n,to,qA,sigmaA) where {T}
                                 vvvj = only(nonzeros(Ajjj))
                                 ttt = vvvi * Wilmi[iiiiAi,iiijAj] * Wilmi[jjjiAi,jjjjAj] * vvvj
                                 if i >= j
-                                    BBBB[i,j] = ttt
+                                    BBBB[i,j] += ttt
                                 else
-                                    BBBB[j,i] = ttt
+                                    BBBB[j,i] += ttt
                                 end
                             end
-                        end  
-                        end 
-                    end   
+                        end
+                        end
+                    end
                 end
                 end
             end
         end
     end
-# end
-    return BBBB
 end
 
 
 function makeRHS(nlmi,AA,W,S,Rp,Rd)
-    h = Rp  # RHS for the Hessian equation
+    h = copy(Rp)
     for i = 1:nlmi
-        # h = h + AA[i] * my_kron(G[i], G[i], (G[i]' * Rd[i] * G[i] + diagm(D[i])))
-        h = h + AA[i]*vec(W[i]*(Rd[i]+S[i])*W[i]);  #equivalent
+        tmp = W[i]*(Rd[i]+S[i])*W[i]
+        mul!(h, AA[i], vec(tmp), true, true)
     end
-return h
+    return h
 end

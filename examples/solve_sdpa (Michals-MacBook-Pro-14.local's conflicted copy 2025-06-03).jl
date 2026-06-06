@@ -10,7 +10,6 @@ import Loraine
 # import Hypatia
 # using Dualization
 using MultiFloats
-using MathOptChordalDecomposition
 
 function read_sdpa(
     filename::String,
@@ -27,19 +26,17 @@ end
 
 # Select your semidefinite optimization problem in SDPA input format
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto2.dat-s")
-model=read_from_file("/Users/michal/Dropbox/michal/sdplib/mcp124-1.dat-s")
+# model=read_from_file("/Users/michal/Dropbox/michal/sdplib/control3.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib5.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
-# model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/k.dat-s")
 
 # model=read_sdpa("examples/data/theta1.dat-s")
-# model=read_from_file(joinpath(dirname(@__DIR__), "examples/data/theta1.dat-s"))
+model=read_from_file(joinpath(dirname(@__DIR__), "examples/data/theta1.dat-s"))
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/maxG11.dat-s") #use with "datarank = -1"
 
 set_optimizer(model, Loraine.Optimizer{Float64})
-# set_optimizer(model, () -> MathOptChordalDecomposition.Optimizer(Loraine.Optimizer))
-# set_optimizer(model, Loraine.Optimizer{Float64x4})
+# set_optimizer(model, Loraine.Optimizer{Float64x2})
 
 # Loraine options
 
@@ -53,7 +50,7 @@ set_attribute(model, "aamat", 2)
 set_attribute(model, "verb", 1)
 set_attribute(model, "datarank", 0)
 set_attribute(model, "initpoint", 1)
-set_attribute(model, "maxit", 200)
+set_attribute(model, "maxit", 100)
 set_attribute(model, "datasparsity", 8)
 
 # set_optimizer(model, CSDP.Optimizer)
@@ -63,6 +60,19 @@ optimize!(model)
 using Test
 @test objective_value(model) ≈ 23 rtol = 1e-6
 # # value.(X)
+
+# With CG now
+set_attribute(model, "kit", 1)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
+
+set_attribute(model, "preconditioner", 0)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
+
+set_attribute(model, "preconditioner", 2)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
 
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient
