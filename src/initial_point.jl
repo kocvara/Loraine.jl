@@ -19,7 +19,7 @@ function  find_initial!(solver)
     C_lin = solver.model.C_lin'
     
     n = length(solver.model.b)
-    solver.y = zeros(n)
+    solver.y = zeros(eltype(eltype(solver.X)), n)
 
     b2 = @. 1 + abs(solver.model.b)
     f = 0.0
