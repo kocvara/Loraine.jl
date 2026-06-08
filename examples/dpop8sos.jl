@@ -7,7 +7,7 @@ using Loraine
 using SumOfSquares
 using MultiFloats
 
-loraine = Loraine.Optimizer{Float64x4}
+loraine = Loraine.Optimizer{Float64x6}
 import Dualization
 dual_loraine = Dualization.dual_optimizer(loraine)
 solver = optimizer_with_attributes(dual_loraine, MOI.Silent() => false)

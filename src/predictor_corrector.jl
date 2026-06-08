@@ -203,7 +203,7 @@ end
 function find_step(solver::MySolver{T}) where {T}
     if solver.model.nlmi > 0
         @timeit solver.to "find_step" begin
-        Threads.@threads for i = 1:solver.model.nlmi
+        for i = 1:solver.model.nlmi
             mul!(solver.work_m2[i], solver.model.AA[i]', solver.dely)
             mat!(solver.work_mm[i], solver.work_m2[i])
             solver.delS[i] .= solver.Rd[i] .- solver.work_mm[i]
@@ -219,12 +219,12 @@ function find_step(solver::MySolver{T}) where {T}
 
             XXX = @. solver.DDsi[i]' * delXb * solver.DDsi[i]
             XXX .= (XXX .+ XXX') ./ 2
-            mimiX = eigmin(Symmetric(XXX))
+            mimiX = minimum(eigvals(Symmetric(XXX)))
             solver.alpha[i] = mimiX > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiX)
 
             @. XXX = solver.DDsi[i]' * delSb * solver.DDsi[i]
             XXX .= (XXX .+ XXX') ./ 2
-            mimiS = eigmin(Symmetric(XXX))
+            mimiS = minimum(eigvals(Symmetric(XXX)))
             solver.beta[i] = mimiS > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiS)
         end
         end

@@ -14,7 +14,8 @@ end
 #########################
 
 function makeBBBBs(n,nlmi,A,AA,W,to,qA,sigmaA)
-    BBBB = zeros(Float64, n, n)
+    T = eltype(eltype(W))
+    BBBB = zeros(T, n, n)
     @inbounds for ilmi = 1:nlmi
         Wilmi = W[ilmi]
         AAilmi = AA[ilmi]

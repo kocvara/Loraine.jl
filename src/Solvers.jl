@@ -522,9 +522,9 @@ function check_convergence(solver)
         err6_v = Vector{Float64}(undef, nlmi)
         Threads.@threads for i = 1:nlmi
             inv_1pnC = 1 / (1 + solver.norm_C[i])
-            err2_v[i] = max(0.0, -eigmin(solver.X[i]) * inv_1pnb)
+            err2_v[i] = max(0.0, -minimum(eigvals(Symmetric(solver.X[i]))) * inv_1pnb)
             err3_v[i] = norm(solver.Rd[i], 2) * inv_1pnC
-            err4_v[i] = max(0.0, -eigmin(solver.S[i]) * inv_1pnC)
+            err4_v[i] = max(0.0, -minimum(eigvals(Symmetric(solver.S[i]))) * inv_1pnC)
             err6_v[i] = dot(solver.S[i], solver.X[i]) / (1 + abs(dot(solver.model.C[i], solver.X[i])) + abs(b_dot_y))
         end
         solver.err2 = sum(err2_v)
