@@ -26,6 +26,7 @@ include("initial_point.jl")
 include("predictor_corrector.jl")
 include("prepare_W.jl")
 include("MOI_wrapper.jl")
+include("multithreading.jl")
 
 function loraine(d, options::Dict)
 
