@@ -30,7 +30,9 @@ end
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib5.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 
-model=read_sdpa("examples/data/theta1.dat-s")
+# model=read_sdpa("examples/data/theta1.dat-s")
+model=read_sdpa(joinpath(@__DIR__, "data", "theta1.dat-s"))
+filename = joinpath(@__DIR__, "data", "theta1.dat-s")
 # model=read_from_file(joinpath(dirname(@__DIR__), "examples/data/theta1.dat-s"))
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/vib9.dat-s") #use with "datarank = -1"
