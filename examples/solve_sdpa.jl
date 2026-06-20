@@ -32,7 +32,6 @@ end
 
 # model=read_sdpa("examples/data/theta1.dat-s")
 model=read_sdpa(joinpath(@__DIR__, "data", "theta1.dat-s"))
-filename = joinpath(@__DIR__, "data", "theta1.dat-s")
 # model=read_from_file(joinpath(dirname(@__DIR__), "examples/data/theta1.dat-s"))
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_from_file("examples/data/vib9.dat-s") #use with "datarank = -1"
@@ -52,7 +51,7 @@ set_attribute(model, "aamat", 2)
 set_attribute(model, "verb", 1)
 set_attribute(model, "datarank", 0)
 set_attribute(model, "initpoint", 1)
-set_attribute(model, "maxit", 100)
+set_attribute(model, "maxit", Int64(100))
 set_attribute(model, "datasparsity", 8)
 
 # set_optimizer(model, CSDP.Optimizer)
