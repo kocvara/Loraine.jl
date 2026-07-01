@@ -34,25 +34,32 @@ function fmt_obj(o)
     return Printf.@sprintf("%.6g", o)
 end
 
-function main(baseline = ARGS[1], comparison = ARGS[2])
+function fmt_int(i)
+    (ismissing(i) || i < 0) && return "—" # `-1` marks TIMEOUT/ERROR rows
+    return string(i)
+end
+
+function merge(baseline = ARGS[1], comparison = ARGS[2])
     base, base_label = load(baseline)
     comp, comp_label = load(comparison)
 
-    # Compare on `solve_time_s` (the solver's own time, free of compilation and
-    # the worker harness) rather than the wall-clock `time_s`.
+    # Compare on `time_s`: the robust (Chairmarks minimum) warm-solve time,
+    # free of compilation and one-shot noise.
     a = select(
         base,
         :problem,
         :n,
         :m,
-        :solve_time_s => :t_base,
+        :time_s => :t_base,
+        :iterations => :it_base,
         :objective => :obj_base,
         :status => :st_base,
     )
     b = select(
         comp,
         :problem,
-        :solve_time_s => :t_comp,
+        :time_s => :t_comp,
+        :iterations => :it_comp,
         :objective => :obj_comp,
         :status => :st_comp,
     )
@@ -61,8 +68,8 @@ function main(baseline = ARGS[1], comparison = ARGS[2])
     sort!(df, [:speedup])
 
     # --- markdown table ---
-    header = "| problem | n | m | $base_label (s) | $comp_label (s) | speedup | obj $base_label | obj $comp_label |"
-    sep = "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    header = "| problem | n | m | $base_label (s) | $comp_label (s) | speedup | it $base_label | it $comp_label | obj $base_label | obj $comp_label |"
+    sep = "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     println(header)
     println(sep)
     for r in eachrow(df)
@@ -79,6 +86,10 @@ function main(baseline = ARGS[1], comparison = ARGS[2])
             fmt_time(r.t_comp),
             " | ",
             fmt_speedup(r.speedup),
+            " | ",
+            fmt_int(r.it_base),
+            " | ",
+            fmt_int(r.it_comp),
             " | ",
             fmt_obj(r.obj_base),
             " | ",
@@ -110,5 +121,3 @@ function main(baseline = ARGS[1], comparison = ARGS[2])
         ".",
     )
 end
-
-#main()

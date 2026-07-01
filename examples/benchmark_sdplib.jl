@@ -21,7 +21,10 @@
 #
 # Only options common to both `main` and `nlpmodel` are used, so the same
 # script produces comparable CSVs on either branch. The CSV is written with a
-# plain `print` (no CSV.jl dependency) so it runs in Loraine's own project.
+# plain `print` (no CSV.jl dependency).
+#
+# The active project must have `Chairmarks` (used on the worker for a robust
+# minimum solve time) in addition to `JuMP` and `Loraine`.
 
 using Distributed
 import Printf
@@ -60,9 +63,14 @@ end
 function start_worker()
     pid = addprocs(1; exeflags = `--project=$(Base.active_project())`)[1]
     ospid = remotecall_fetch(getpid, pid)
+    # Load in a separate eval from the function definition below: `@b` must be
+    # macro-expanded *after* `using Chairmarks` has taken effect.
     remotecall_wait(Core.eval, pid, Main, quote
         using JuMP
         import Loraine
+        using Chairmarks
+    end)
+    remotecall_wait(Core.eval, pid, Main, quote
         function solve_problem(path, kit)
             model = read_from_file(path)
             set_optimizer(model, Loraine.Optimizer{Float64})
@@ -71,10 +79,19 @@ function start_worker()
             set_attribute(model, "verb", 0)
             set_attribute(model, "maxit", 100)
             set_attribute(model, "datasparsity", 8)
+            optimize!(model) # warm up: absorb this problem's compilation
             t = @elapsed optimize!(model)
+            # Millisecond solves are noise-dominated (GC/scheduler jitter), so
+            # take a robust minimum over repeated warm re-solves. Multi-second
+            # solves are measured once: they aren't noisy, and re-running them
+            # would risk blowing past the per-problem timeout.
+            if t < 0.5
+                t = (@b optimize!(model) seconds = 1).time
+            end
             return (
                 t,
                 solve_time(model), # solver's own elapsed time (no harness)
+                barrier_iterations(model),
                 objective_value(model),
                 string(termination_status(model)),
             )
@@ -104,7 +121,7 @@ function solve_capped(pid, path, kit, timeout)
     return (:timeout, nothing)
 end
 
-function main(;
+function bench(;
     out = get(ARGS, 1, "sdplib_results.csv"),
     label = get(ARGS, 2, "loraine"),
     maxn = parse(Int, get(ENV, "SDPLIB_MAXN", "1000")),
@@ -137,16 +154,16 @@ function main(;
     open(out, "w") do io
         println(
             io,
-            "label,problem,m,n,status,time_s,solve_time_s,objective,optimal,rel_gap",
+            "label,problem,m,n,status,time_s,solve_time_s,iterations,objective,optimal,rel_gap",
         )
         ntot = length(problems)
         for (idx, name) in enumerate(problems)
             r = ref[name]
-            status, t, st, obj = "ok", NaN, NaN, NaN
+            status, t, st, iters, obj = "ok", NaN, NaN, -1, NaN
             outcome, payload =
                 solve_capped(pid, joinpath(DATA, name * ".dat-s"), kit, timeout)
             if outcome === :ok
-                t, st, obj, status = payload
+                t, st, iters, obj, status = payload
             elseif outcome === :error
                 status = "ERROR: " * sprint(showerror, payload)[1:min(end, 60)]
             else
@@ -171,6 +188,7 @@ function main(;
                         "\"$status\"",
                         round(t, sigdigits = 5),
                         round(st, sigdigits = 5),
+                        iters,
                         obj,
                         r.opt,
                         gap,
@@ -179,7 +197,7 @@ function main(;
                 ),
             )
             Printf.@printf(
-                "[%2d/%2d] %-12s n=%-5d m=%-5d  %8.3fs (solve %8.3fs)  obj=%-14.6g %s\n",
+                "[%2d/%2d] %-12s n=%-5d m=%-5d  %8.3fs (solve %8.3fs, %3d it)  obj=%-14.6g %s\n",
                 idx,
                 ntot,
                 name,
@@ -187,6 +205,7 @@ function main(;
                 r.m,
                 t,
                 st,
+                iters,
                 obj,
                 status,
             )
@@ -197,4 +216,4 @@ function main(;
     println("\nWrote ", out)
 end
 
-main()
+bench()
