@@ -1,6 +1,7 @@
 using Test
 import MathOptInterface as MOI
 import Loraine
+using JuMP
 
 function tests()
     optimizer = Loraine.Optimizer()
@@ -58,4 +59,19 @@ end
 
 @testset "MOI tests" begin
     tests()
+end
+
+@testset "BarrierIterations" begin
+    # min 2 X₁₂ s.t. diag(X) = 1, X ⪰ 0  (optimal X₁₂ = -1)
+    model = Model(Loraine.Optimizer)
+    set_silent(model)
+    @variable(model, X[1:2, 1:2] in PSDCone())
+    @constraint(model, X[1, 1] == 1)
+    @constraint(model, X[2, 2] == 1)
+    @objective(model, Min, 2 * X[1, 2])
+    optimize!(model)
+    @test termination_status(model) == MOI.OPTIMAL
+    iters = MOI.get(model, MOI.BarrierIterations())
+    @test iters isa Integer
+    @test 0 < iters <= 100 # solver default `maxit`
 end

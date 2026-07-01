@@ -2,7 +2,7 @@ using Test
 
 function run_examples(dir)
     for file in readdir(dir)
-        if endswith(file, ".jl")
+        if endswith(file, ".jl") && !(file in ["benchmark_sdplib.jl", "merge_results.jl"])
             @testset "$file" begin
                 include(joinpath(dir, file))
             end
