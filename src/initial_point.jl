@@ -36,7 +36,7 @@ function  find_initial!(solver)
             Eta = n
         else
             mf = max(f, norm(LRO.grad(solver.model, mat_idx), 2))
-            mf = (1 + mf) / dim
+            mf = (1 + mf) / sqrt(dim)
             Eta = sqrt(dim).* max(1, mf)
         end
         solver.S[mat_idx] .= Eta * Matrix(1.0I, dim, dim)
