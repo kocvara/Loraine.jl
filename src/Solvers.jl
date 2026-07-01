@@ -241,6 +241,7 @@ function SolverCore.solve!(
     solver.stats.status = STATUS_MAP[solver.solver.status + 1]
     solver.stats.objective = NLPModels.obj(solver.solver.model, solver.solver.X)
     solver.stats.elapsed_time = solver.solver.tottime
+    solver.stats.iter = solver.solver.iter
     return
 end
 
