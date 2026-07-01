@@ -21,10 +21,7 @@
 #
 # Only options common to both `main` and `nlpmodel` are used, so the same
 # script produces comparable CSVs on either branch. The CSV is written with a
-# plain `print` (no CSV.jl dependency).
-#
-# The active project must have `Chairmarks` (used on the worker for a robust
-# minimum solve time) in addition to `JuMP` and `Loraine`.
+# plain `print` (no CSV.jl dependency), and it needs only `JuMP` and `Loraine`.
 
 using Distributed
 import Printf
@@ -63,14 +60,9 @@ end
 function start_worker()
     pid = addprocs(1; exeflags = `--project=$(Base.active_project())`)[1]
     ospid = remotecall_fetch(getpid, pid)
-    # Load in a separate eval from the function definition below: `@b` must be
-    # macro-expanded *after* `using Chairmarks` has taken effect.
     remotecall_wait(Core.eval, pid, Main, quote
         using JuMP
         import Loraine
-        using Chairmarks
-    end)
-    remotecall_wait(Core.eval, pid, Main, quote
         function solve_problem(path, kit)
             model = read_from_file(path)
             set_optimizer(model, Loraine.Optimizer{Float64})
@@ -80,17 +72,10 @@ function start_worker()
             set_attribute(model, "maxit", 100)
             set_attribute(model, "datasparsity", 8)
             optimize!(model) # warm up: absorb this problem's compilation
-            t = @elapsed optimize!(model)
-            # Millisecond solves are noise-dominated (GC/scheduler jitter), so
-            # take a robust minimum over repeated warm re-solves. Multi-second
-            # solves are measured once: they aren't noisy, and re-running them
-            # would risk blowing past the per-problem timeout.
-            if t < 0.5
-                t = (@b optimize!(model) seconds = 1).time
-            end
+            wall = @elapsed optimize!(model)
             return (
-                t,
-                solve_time(model), # solver's own elapsed time (no harness)
+                wall,
+                solve_time(model), # solver's own `SolveTimeSec`
                 barrier_iterations(model),
                 objective_value(model),
                 string(termination_status(model)),
@@ -121,9 +106,8 @@ function solve_capped(pid, path, kit, timeout)
     return (:timeout, nothing)
 end
 
-function bench(;
-    out = get(ARGS, 1, "sdplib_results.csv"),
-    label = get(ARGS, 2, "loraine"),
+function bench(label;
+    out = label * ".csv",
     maxn = parse(Int, get(ENV, "SDPLIB_MAXN", "1000")),
     maxm = parse(Int, get(ENV, "SDPLIB_MAXM", "3000")),
     kit = parse(Int, get(ENV, "SDPLIB_KIT", "0")),
@@ -151,11 +135,16 @@ function bench(;
     warmup = joinpath(DATA, problems[1] * ".dat-s")
     fetch(launch(pid, warmup, kit))
 
-    open(out, "w") do io
-        println(
-            io,
-            "label,problem,m,n,status,time_s,solve_time_s,iterations,objective,optimal,rel_gap",
-        )
+    # Append so re-running accumulates more rows (one solve = one row); the
+    # minimum over rows is taken later, in `merge_results.jl`.
+    write_header = !isfile(out) || filesize(out) == 0
+    open(out, "a") do io
+        if write_header
+            println(
+                io,
+                "label,problem,m,n,status,time_s,solve_time_s,iterations,objective,optimal,rel_gap",
+            )
+        end
         ntot = length(problems)
         for (idx, name) in enumerate(problems)
             r = ref[name]
@@ -215,5 +204,3 @@ function bench(;
     rmprocs(pid)
     println("\nWrote ", out)
 end
-
-bench()

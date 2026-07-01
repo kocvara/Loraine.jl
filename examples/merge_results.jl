@@ -14,9 +14,18 @@ using CSV
 using DataFrames
 import Printf
 
+# Load a CSV that may hold several rows per problem (from repeated/appended
+# runs) and collapse each problem to its best run — the row with the smallest
+# finite `solve_time_s` (falling back to the first row if none finished).
 function load(path)
     df = CSV.read(path, DataFrame)
-    return df, isempty(df.label) ? basename(path) : first(df.label)
+    label = isempty(df.label) ? basename(path) : first(df.label)
+    best = combine(groupby(df, :problem)) do sub
+        fin = findall(x -> !ismissing(x) && isfinite(x), sub.solve_time_s)
+        i = isempty(fin) ? 1 : fin[argmin(sub.solve_time_s[fin])]
+        sub[i, :]
+    end
+    return best, label
 end
 
 function fmt_time(t)
@@ -43,14 +52,15 @@ function merge(baseline = ARGS[1], comparison = ARGS[2])
     base, base_label = load(baseline)
     comp, comp_label = load(comparison)
 
-    # Compare on `time_s`: the robust (Chairmarks minimum) warm-solve time,
-    # free of compilation and one-shot noise.
+    # Compare on `solve_time_s`: the solver's own `SolveTimeSec` (minimum over
+    # the repeated warm re-solves), free of the worker harness. `time_s` (wall)
+    # is kept in the CSV as a cross-check.
     a = select(
         base,
         :problem,
         :n,
         :m,
-        :time_s => :t_base,
+        :solve_time_s => :t_base,
         :iterations => :it_base,
         :objective => :obj_base,
         :status => :st_base,
@@ -58,7 +68,7 @@ function merge(baseline = ARGS[1], comparison = ARGS[2])
     b = select(
         comp,
         :problem,
-        :time_s => :t_comp,
+        :solve_time_s => :t_comp,
         :iterations => :it_comp,
         :objective => :obj_comp,
         :status => :st_comp,
