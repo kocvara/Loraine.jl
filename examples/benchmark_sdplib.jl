@@ -72,14 +72,24 @@ function start_worker()
             set_attribute(model, "maxit", 100)
             set_attribute(model, "datasparsity", 8)
             optimize!(model) # warm up: absorb this problem's compilation
-            wall = @elapsed optimize!(model)
-            return (
-                wall,
+            sample() = (
                 solve_time(model), # solver's own `SolveTimeSec`
                 barrier_iterations(model),
                 objective_value(model),
                 string(termination_status(model)),
             )
+            # Fast problems are re-solved several times (one row per solve, so
+            # `merge` can take the minimum); each row records its own wall time
+            # and `SolveTimeSec`. `reps` targets ~2s of solving, capped at 30,
+            # so slow problems are solved once.
+            wall = @elapsed optimize!(model)
+            samples = [(wall, sample()...)]
+            reps = clamp(round(Int, 2.0 / wall), 1, 30)
+            for _ in 2:reps
+                w = @elapsed optimize!(model)
+                push!(samples, (w, sample()...))
+            end
+            return samples
         end
     end)
     return pid, ospid
@@ -106,15 +116,21 @@ function solve_capped(pid, path, kit, timeout)
     return (:timeout, nothing)
 end
 
-function bench(label;
+function bench(
+    label,
+    only = get(ENV, "SDPLIB_ONLY", nothing);
     out = label * ".csv",
     maxn = parse(Int, get(ENV, "SDPLIB_MAXN", "1000")),
     maxm = parse(Int, get(ENV, "SDPLIB_MAXM", "3000")),
     kit = parse(Int, get(ENV, "SDPLIB_KIT", "0")),
     timeout = parse(Float64, get(ENV, "SDPLIB_TIMEOUT", "60")),
 )
-    only = haskey(ENV, "SDPLIB_ONLY") ? Set(split(ENV["SDPLIB_ONLY"], ",")) :
-           nothing
+    # `only`: `nothing` (all problems within the size caps), a single name or a
+    # comma-separated string (e.g. "truss1" or "truss1,qap8"), or any iterable
+    # of names.
+    only =
+        isnothing(only) ? nothing :
+        only isa AbstractString ? Set(split(only, ",")) : Set(string.(only))
     ref = read_reference()
 
     problems = String[]
@@ -148,57 +164,63 @@ function bench(label;
         ntot = length(problems)
         for (idx, name) in enumerate(problems)
             r = ref[name]
-            status, t, st, iters, obj = "ok", NaN, NaN, -1, NaN
             outcome, payload =
                 solve_capped(pid, joinpath(DATA, name * ".dat-s"), kit, timeout)
-            if outcome === :ok
-                t, st, iters, obj, status = payload
+            # `samples`: one `(wall, solve_time, iters, obj, status)` per solve.
+            # Error/timeout collapse to a single synthetic sample.
+            samples = if outcome === :ok
+                payload
             elseif outcome === :error
-                status = "ERROR: " * sprint(showerror, payload)[1:min(end, 60)]
+                msg = "ERROR: " * sprint(showerror, payload)[1:min(end, 60)]
+                [(NaN, NaN, -1, NaN, msg)]
             else
                 # Stuck: SIGKILL the worker's OS process, then respawn a fresh
                 # one (and re-warm it) for the remaining problems.
                 run(`kill -9 $ospid`)
                 rmprocs(pid; waitfor = 0)
-                status, t = "TIMEOUT", timeout
                 pid, ospid = start_worker()
                 fetch(launch(pid, warmup, kit))
+                [(timeout, NaN, -1, NaN, "TIMEOUT")]
             end
-            gap = isfinite(obj) && isfinite(r.opt) ?
-                  abs(obj - r.opt) / max(1, abs(r.opt)) : NaN
-            println(
-                io,
-                join(
-                    [
-                        label,
-                        name,
-                        r.m,
-                        r.n,
-                        "\"$status\"",
-                        round(t, sigdigits = 5),
-                        round(st, sigdigits = 5),
-                        iters,
-                        obj,
-                        r.opt,
-                        gap,
-                    ],
-                    ",",
-                ),
-            )
+            for (t, st, iters, obj, status) in samples
+                gap = isfinite(obj) && isfinite(r.opt) ?
+                      abs(obj - r.opt) / max(1, abs(r.opt)) : NaN
+                println(
+                    io,
+                    join(
+                        [
+                            label,
+                            name,
+                            r.m,
+                            r.n,
+                            "\"$status\"",
+                            round(t, sigdigits = 5),
+                            round(st, sigdigits = 5),
+                            iters,
+                            obj,
+                            r.opt,
+                            gap,
+                        ],
+                        ",",
+                    ),
+                )
+            end
+            flush(io)
+            # console: minimum solve time over the samples, and the count
+            fin = filter(isfinite, [s[2] for s in samples])
             Printf.@printf(
-                "[%2d/%2d] %-12s n=%-5d m=%-5d  %8.3fs (solve %8.3fs, %3d it)  obj=%-14.6g %s\n",
+                "[%2d/%2d] %-12s n=%-5d m=%-5d  min solve %8.3fs (%2d runs, %3d it)  obj=%-14.6g %s\n",
                 idx,
                 ntot,
                 name,
                 r.n,
                 r.m,
-                t,
-                st,
-                iters,
-                obj,
-                status,
+                isempty(fin) ? NaN : minimum(fin),
+                length(samples),
+                samples[end][3],
+                samples[end][4],
+                samples[end][5],
             )
-            flush(io)
         end
     end
     rmprocs(pid)
