@@ -63,7 +63,8 @@ function start_worker()
     remotecall_wait(Core.eval, pid, Main, quote
         using JuMP
         import Loraine
-        function solve_problem(path, kit)
+        function solve_problem(path, kit, timeout)
+            t0 = time()
             model = read_from_file(path)
             set_optimizer(model, Loraine.Optimizer{Float64})
             set_attribute(model, "kit", kit)
@@ -78,14 +79,17 @@ function start_worker()
                 objective_value(model),
                 string(termination_status(model)),
             )
-            # Fast problems are re-solved several times (one row per solve, so
-            # `merge` can take the minimum); each row records its own wall time
-            # and `SolveTimeSec`. `reps` targets ~2s of solving, capped at 30,
-            # so slow problems are solved once.
+            # Re-solve for more samples (one row per solve, so `merge` can take
+            # the minimum), but only while another solve fits the budget (85% of
+            # the timeout). This keeps the whole call under the per-problem
+            # timeout while letting a larger `timeout` buy more samples; a solve
+            # slower than ~half the timeout just yields a single sample.
             wall = @elapsed optimize!(model)
             samples = [(wall, sample()...)]
-            reps = clamp(round(Int, 2.0 / wall), 1, 30)
-            for _ in 2:reps
+            # The 32-sample cap only binds for fast problems (slow ones are
+            # limited by the budget, so a larger `timeout` buys them more rows).
+            budget = 0.85 * timeout
+            while length(samples) < 32 && (time() - t0) + wall < budget
                 w = @elapsed optimize!(model)
                 push!(samples, (w, sample()...))
             end
@@ -95,8 +99,8 @@ function start_worker()
     return pid, ospid
 end
 
-launch(pid, path, kit) =
-    remotecall((p, k) -> Main.solve_problem(p, k), pid, path, kit)
+launch(pid, path, kit, timeout) =
+    remotecall((p, k, t) -> Main.solve_problem(p, k, t), pid, path, kit, timeout)
 
 # Solve with a wall-clock cap. `isready` on a *remote* Future blocks while the
 # worker is busy (it has to query the worker), so we instead let an async task
@@ -105,7 +109,7 @@ launch(pid, path, kit) =
 function solve_capped(pid, path, kit, timeout)
     ch = Channel{Any}(1)
     @async put!(ch, try
-        fetch(launch(pid, path, kit))
+        fetch(launch(pid, path, kit, timeout))
     catch err
         err
     end)
@@ -149,7 +153,7 @@ function bench(
     pid, ospid = start_worker()
     # Warm up compilation on the smallest problem so timings exclude it.
     warmup = joinpath(DATA, problems[1] * ".dat-s")
-    fetch(launch(pid, warmup, kit))
+    fetch(launch(pid, warmup, kit, timeout))
 
     # Append so re-running accumulates more rows (one solve = one row); the
     # minimum over rows is taken later, in `merge_results.jl`.
@@ -179,7 +183,7 @@ function bench(
                 run(`kill -9 $ospid`)
                 rmprocs(pid; waitfor = 0)
                 pid, ospid = start_worker()
-                fetch(launch(pid, warmup, kit))
+                fetch(launch(pid, warmup, kit, timeout))
                 [(timeout, NaN, -1, NaN, "TIMEOUT")]
             end
             for (t, st, iters, obj, status) in samples
