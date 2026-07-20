@@ -111,7 +111,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
         # ConjugateGradients.jl needs `tol` to be `Float64`,
         # maybe we can fix this in that package but in the mean time, we just
         # convert the tolerance to `Float64`
-        solver.dely, _, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = 10000, precon = M)
+        solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = Int64(10000), precon = M)
         # end
 
         # print(num_iters, exit_code)
@@ -187,7 +187,7 @@ function corrector(solver,halpha)
         end
 
         @timeit solver.to "CG corrector" begin
-        solver.dely, _, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = 10000, precon = M)
+            solver.dely, exit_code, num_iters = cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = Int64(10000), precon = M)
         end
         solver.cg_iter_cor += num_iters
         solver.cg_iter_tot += num_iters
