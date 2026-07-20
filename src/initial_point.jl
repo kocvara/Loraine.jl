@@ -19,10 +19,10 @@ function  find_initial!(solver)
     C_lin = solver.model.C_lin'
     
     n = length(solver.model.b)
-    solver.y = zeros(n,1)
-    
-    b2 = 1 .+ abs.(solver.model.b')
-    f = zeros(1,n)
+    solver.y = zeros(eltype(eltype(solver.X)), n)
+
+    b2 = @. 1 + abs(solver.model.b)
+    f = 0.0
     for i=1:solver.model.nlmi
         if solver.initpoint == 0
             Eps = 1.0
@@ -42,8 +42,8 @@ function  find_initial!(solver)
         solver.S[i] = Eta * Matrix(1.0I, Int64(solver.model.msizes[i]), Int64(solver.model.msizes[i]))
     end
     
-    p = zeros(1,n)
-    pp = zeros(1,n)
+    p = zeros(n)
+    pp = zeros(n)
     dd = size(solver.model.d_lin,1)
     if solver.model.nlin>0
         if solver.initpoint == 0
@@ -55,7 +55,7 @@ function  find_initial!(solver)
             end
             Epss = max(1, maximum(p))
         end
-        solver.X_lin = 1 .* Epss * ones(dd,1)
+        solver.X_lin = fill(Epss, dd)
         
         if solver.initpoint == 0
             Etaa = 1.0
@@ -67,7 +67,7 @@ function  find_initial!(solver)
             mf = (0 + mf) ./ sqrt(dd)
             Etaa =  max(1,mf)
         end
-        solver.S_lin = 1 .* Etaa * ones(dd,1)
+        solver.S_lin = fill(Etaa, dd)
         solver.S_lin_inv = 1 ./ solver.S_lin
     else
         solver.X_lin = Float64[]; solver.S_lin = Float64[]

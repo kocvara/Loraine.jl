@@ -86,10 +86,15 @@ mutable struct MySolver{T}
     Si
     DDsi
 
+    norm_b::Float64
+    norm_C::Vector{Float64}
+    norm_d::Float64
+
     Rp
     Rd
-    Rc
     Rd_lin
+    work_m2
+    work_mm
 
     cg_iter_pre
     cg_iter_cor
@@ -200,7 +205,7 @@ function load(model, options::Dict; T = Float64)
     initpoint = Int64(get(options, "initpoint", 0))
     timing = Int64(get(options, "timing", 1))
     maxit = Int64(get(options, "maxit", 100))
-    datasparsity = Int64(get(options, "maxit", 8))
+    datasparsity = Int64(get(options, "datasparsity", 8))
 
     solver = MySolver{T}(kit,
         tol_cg,
@@ -377,7 +382,6 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.DDsi = Vector{T}[]
 
     solver.Rd = Matrix{T}[]
-    solver.Rc = Matrix{T}[]
 
     solver.alpha = zeros(solver.model.nlmi)
     solver.beta = zeros(solver.model.nlmi)
@@ -386,25 +390,35 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Sn = Matrix{T}[]
     solver.RNT = Matrix{T}[]
 
+    solver.work_m2 = Vector{T}[]
+    solver.work_mm = Matrix{T}[]
+
     solver.regcount = 0
- 
+
     for i = 1:solver.model.nlmi
-        push!(solver.X,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.S,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.delX,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.delS,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.D, zeros(solver.model.msizes[i]))
-        push!(solver.G,zeros(solver.model.msizes[i],  solver.model.msizes[i]))
-        push!(solver.Gi,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.W,zeros(solver.model.msizes[i],  solver.model.msizes[i]))
-        push!(solver.Si,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.DDsi,zeros(solver.model.msizes[i]))
-        push!(solver.Rd,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Rc,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Xn,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.Sn,zeros(solver.model.msizes[i], solver.model.msizes[i]))
-        push!(solver.RNT,zeros(solver.model.msizes[i], solver.model.msizes[i]))
+        m = solver.model.msizes[i]
+        push!(solver.X,zeros(T, m, m))
+        push!(solver.S,zeros(T, m, m))
+        push!(solver.delX,zeros(T, m, m))
+        push!(solver.delS,zeros(T, m, m))
+        push!(solver.D, zeros(T, m))
+        push!(solver.G,zeros(T, m, m))
+        push!(solver.Gi,zeros(T, m, m))
+        push!(solver.W,zeros(T, m, m))
+        push!(solver.Si,zeros(T, m, m))
+        push!(solver.DDsi,zeros(T, m))
+        push!(solver.Rd,zeros(T, m, m))
+        push!(solver.Xn,zeros(T, m, m))
+        push!(solver.Sn,zeros(T, m, m))
+        push!(solver.RNT,zeros(T, m, m))
+        push!(solver.work_m2, Vector{T}(undef, m*m))
+        push!(solver.work_mm, Matrix{T}(undef, m, m))
     end
+
+    solver.norm_b = Float64(norm(solver.model.b))
+    solver.norm_C = [Float64(norm(solver.model.C[i])) for i in 1:solver.model.nlmi]
+    solver.norm_d = solver.model.nlin > 0 ? Float64(norm(solver.model.d_lin)) : 0.0
+    solver.Rp = Vector{T}(undef, solver.model.n)
 
     halpha.Umat = Matrix{T}[]
     halpha.Z = Matrix{T}[]
@@ -446,7 +460,6 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 end
 
 function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
-    mmm = Matrix{T}(undef, solver.model.n, solver.model.n)
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
@@ -478,16 +491,16 @@ function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
 end
 
 function find_mu(solver)
-    trXS = 0
+    trXS = zero(eltype(eltype(solver.X)))
     if solver.model.nlmi > 0
         for i = 1:solver.model.nlmi
-            trXS = trXS + sum(sum(solver.X[i] .* solver.S[i]))
+            trXS += dot(solver.X[i], solver.S[i])
         end
-    end 
+    end
     mu = trXS
 
     if solver.model.nlin > 0
-        mu = mu + tr(solver.X_lin' * solver.S_lin)
+        mu += dot(solver.X_lin, solver.S_lin)
     end
     solver.mu = mu / (sum(solver.model.msizes) + solver.model.nlin)
     return solver.mu
@@ -496,25 +509,37 @@ end
 function check_convergence(solver)
 
     # DIMACS error evaluation
-    solver.err1 = norm(solver.Rp) / (1 + norm(solver.model.b))
-    (solver.err2,solver.err3,solver.err4,solver.err5,solver.err6) = [0.,0.,0.,0.,0.]
+    solver.err1 = norm(solver.Rp) / (1 + solver.norm_b)
+    solver.err2 = solver.err3 = solver.err4 = solver.err5 = solver.err6 = 0.0
+    btrace_CX = btrace(solver.model.nlmi, solver.model.C, solver.X)
+    b_dot_y = dot(solver.model.b, solver.y)
+    inv_1pnb = 1 / (1 + solver.norm_b)
     if solver.model.nlmi > 0
-        for i = 1:solver.model.nlmi
-            solver.err2 = solver.err2 + max(0, -eigmin(solver.X[i]) / (1 + norm(solver.model.b)))
-            solver.err3 = solver.err3 + norm(solver.Rd[i], 2) / (1 + norm(solver.model.C[i]))
-            solver.err4 = solver.err4 + max(0, -eigmin(solver.S[i]) / (1 + norm(solver.model.C[i])))
-            # err5 = err5 + (vecC[i]"*vec(X[i])-b'*y)/(1+abs(vecC[i]'*vec(X[i]))+abs(b"*y))
-            solver.err6 = solver.err6 + (vec(solver.S[i]))' * vec(solver.X[i]) / (1 + abs(vec(solver.model.C[i])' * vec(solver.X[i])) + abs(dot(solver.model.b', solver.y)))
+        nlmi = solver.model.nlmi
+        err2_v = Vector{Float64}(undef, nlmi)
+        err3_v = Vector{Float64}(undef, nlmi)
+        err4_v = Vector{Float64}(undef, nlmi)
+        err6_v = Vector{Float64}(undef, nlmi)
+        Threads.@threads for i = 1:nlmi
+            inv_1pnC = 1 / (1 + solver.norm_C[i])
+            err2_v[i] = max(0.0, -minimum(eigvals(Symmetric(solver.X[i]))) * inv_1pnb)
+            err3_v[i] = norm(solver.Rd[i], 2) * inv_1pnC
+            err4_v[i] = max(0.0, -minimum(eigvals(Symmetric(solver.S[i]))) * inv_1pnC)
+            err6_v[i] = dot(solver.S[i], solver.X[i]) / (1 + abs(dot(solver.model.C[i], solver.X[i])) + abs(b_dot_y))
         end
+        solver.err2 = sum(err2_v)
+        solver.err3 = sum(err3_v)
+        solver.err4 = sum(err4_v)
+        solver.err6 = sum(err6_v)
     end
 
-    solver.err5 = (btrace(solver.model.nlmi, solver.model.C, solver.X) - dot(solver.model.b', solver.y)) / (1 + abs(btrace(solver.model.nlmi, solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
+    solver.err5 = (btrace_CX - b_dot_y) / (1 + abs(btrace_CX) + abs(b_dot_y))
     if solver.model.nlin > 0
-        solver.err2 = solver.err2 + max(0, -minimum(solver.X_lin) / (1 + norm(solver.model.b)))
-        solver.err3 = solver.err3 + norm(solver.Rd_lin) / (1 + norm(solver.model.d_lin))
-        solver.err4 = solver.err4 + max(0, -minimum(solver.S_lin) / (1 + norm(solver.model.d_lin)))
-        solver.err5 = (btrace(solver.model.nlmi, solver.model.C, solver.X) + dot(solver.model.d_lin', solver.X_lin) - dot(solver.model.b',solver.y)) / (1 + abs(btrace(solver.model.nlmi, solver.model.C, solver.X)) + abs(dot(solver.model.b', solver.y)))
-        solver.err6 = solver.err6 + dot(solver.S_lin' , solver.X_lin) / (1 + abs(dot(solver.model.d_lin', solver.X_lin)) + abs(dot(solver.model.b', solver.y)))
+        solver.err2 += max(0.0, -minimum(solver.X_lin) * inv_1pnb)
+        solver.err3 += norm(solver.Rd_lin) / (1 + solver.norm_d)
+        solver.err4 += max(0.0, -minimum(solver.S_lin) / (1 + solver.norm_d))
+        solver.err5 = (btrace_CX + dot(solver.model.d_lin, solver.X_lin) - b_dot_y) / (1 + abs(btrace_CX) + abs(b_dot_y))
+        solver.err6 += dot(solver.S_lin, solver.X_lin) / (1 + abs(dot(solver.model.d_lin, solver.X_lin)) + abs(b_dot_y))
     end
 
     if solver.model.nlmi > 0
@@ -542,15 +567,14 @@ function check_convergence(solver)
 
     if DIMACS_error < solver.eDIMACS
         solver.status = 1
-        solver.y = solver.y
         if solver.verb > 0
-            println("Primal objective: ", -dot(solver.y, solver.model.b') + solver.model.b_const)
+            println("Primal objective: ", -b_dot_y + solver.model.b_const)
             if solver.model.nlin > 0
-                println("Dual objective:   ", -btrace(solver.model.nlmi, solver.model.C, solver.X) - dot(solver.model.d_lin', solver.X_lin))
+                println("Dual objective:   ", -btrace_CX - dot(solver.model.d_lin, solver.X_lin) + solver.model.b_const)
             else
-                println("Dual objective:   ", -btrace(solver.model.nlmi, solver.model.C, solver.X) )
+                println("Dual objective:   ", -btrace_CX + solver.model.b_const)
             end
-            end
+        end
     end
 
     if DIMACS_error > 1e55 
@@ -583,33 +607,23 @@ function (t::MyA)(Ax::Vector{T}, x::Vector{T}) where {T}
     @timeit t.to "Ax" begin
     nlmi = length(t.AA)
     m = size(t.AA[1],1)
-    ax1 = zeros(m,1)
+    ax1 = zeros(T, m)
     if nlmi > 0
         for ilmi = 1:nlmi
             waxwtmp = Matrix{T}(undef,size(t.W[ilmi]))
             waxw = Matrix{T}(undef,size(t.W[ilmi]))
-            # @timeit t.to "Ax1" begin
             ax = Vector{T}(undef,size(t.AA[ilmi],2))
-            # end
-            # @timeit t.to "Ax2" begin
             mul!(ax, transpose(t.AA[ilmi]), x)
-            # ax = transpose(t.AA[ilmi]) * x
-            # end
-            # @timeit t.to "Ax3" begin
-            # waxw .= t.W[ilmi] * mat(ax) * t.W[ilmi]
             mul!(waxwtmp,t.W[ilmi], mat(ax))
             mul!(waxw, waxwtmp, t.W[ilmi])
-            # end
-            # @timeit t.to "Ax4" begin
-            ax1 .+= t.AA[ilmi] * waxw[:]
-            # end
+            ax1 .+= t.AA[ilmi] * vec(waxw)
         end
     end
     if t.nlin>0
         ax1 .+= t.C_lin * ((t.X_lin .* t.S_lin_inv) .* (t.C_lin' * x))
     end
 
-    mul!(Ax,I(m),ax1[:])
+    copyto!(Ax, ax1)
     end
 end
 
@@ -657,7 +671,7 @@ function Prec_for_CG_beta(solver,halpha)
             halpha.AAAATtau += ttau^2 .* ZZZ
         end
         if solver.model.nlin > 0
-            halpha.AAAATtau .+= diag(solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin')
+            halpha.AAAATtau .+= diag(solver.model.C_lin * Diagonal(solver.X_lin .* solver.S_lin_inv) * solver.model.C_lin')
         end
     end
 end
@@ -718,30 +732,26 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
                 ttau = (minimum(lambda_s) + mean(lambda_s))/2 - 1.0e-14
             end
             
-            halpha.Umat[ilmi] = sqrt.(spdiagm(lambda_l) - ttau .* I(k))
-            halpha.Umat[ilmi] = vect_l * halpha.Umat[ilmi]
+            halpha.Umat[ilmi] = vect_l .* sqrt.(lambda_l .- ttau)'
             
             # @timeit solver.to "prec1" begin
             W0 = [vect_s vect_l]*[spdiagm(lambda_s[:]) spzeros(n-k,k); spzeros(k,n-k) ttau * I(k)] * [vect_s vect_l]'
             # end
 
             # @timeit solver.to "prec2" begin
-            W0 = (W0 + W0') ./ 2
+            W0 = @. (W0 + W0') / 2
             Ztmp = cholesky(2 .* W0 + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
             push!(halpha.Z,Ztmp.L)
             # end
             
             if solver.aamat < 3
-                ZZZ = spdiagm(ones(nvar))
-            else
-                ZZZ = spzeros(nvar,nvar)
+                halpha.AAAATtau += ttau^2 * I(nvar)
             end
-            halpha.AAAATtau .+= ttau^2 .* ZZZ
         end
     end
     
     if solver.model.nlin > 0
-        halpha.AAAATtau .+= solver.model.C_lin * spdiagm((solver.X_lin .* solver.S_lin_inv)[:]) * solver.model.C_lin'
+        halpha.AAAATtau .+= solver.model.C_lin * Diagonal(solver.X_lin .* solver.S_lin_inv) * solver.model.C_lin'
     end
     
     didi = 0
@@ -801,7 +811,8 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
     end
     
     # Schur complement for the SMW formula
-    S = (S + S') ./ 2 + I(size(S,1))
+    S = @. (S + S') / 2
+    S += I(size(S, 1))
     halpha.cholS = cholesky(S)
 
     end
@@ -868,18 +879,23 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
     nvar = size(x,1)
     nlmi = length(t.AA)
 
-    yy2 = zeros(nvar,1)
-    y33 = zeros(T,0)
+    yy2 = zeros(T, nvar)
 
     AAAAinvx = t.AAAATtau\x
 
+    y33_size = nlmi > 0 ? sum(size(t.Z[ilmi], 1) * size(t.Umat[ilmi], 2) for ilmi in 1:nlmi) : 0
+    y33 = Vector{T}(undef, y33_size)
+    offset = 0
     if nlmi > 0
         for ilmi = 1:nlmi
             y22 = t.AA[ilmi]' * AAAAinvx
-            y33 = [y33; vec(t.Z[ilmi]' * mat(y22) * t.Umat[ilmi])]
+            chunk = t.Z[ilmi]' * mat(y22) * t.Umat[ilmi]
+            n_chunk = length(chunk)
+            y33[offset+1:offset+n_chunk] .= vec(chunk)
+            offset += n_chunk
         end
     end
-    
+
     y33 = t.cholS \ y33
 
     ii = 0
@@ -887,10 +903,12 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
         for ilmi = 1:nlmi
             n = size(t.Umat[ilmi],1)
             k = size(t.Umat[ilmi],2)
-            yy = zeros(n*n)
+            yy = zeros(T, n*n)
+            outer = Matrix{T}(undef, n, n)
             for i = 1:k
-                xx = t.Z[ilmi] * y33[ii+1:ii+n]
-                yy .+= kron(t.Umat[ilmi][:,i],xx)
+                xx = t.Z[ilmi] * @view(y33[ii+1:ii+n])
+                outer .= xx .* (@view(t.Umat[ilmi][:,i]))'
+                yy .+= vec(outer)
                 ii += n
             end
             yy2 .+= t.AA[ilmi] * yy
@@ -899,7 +917,7 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
 
     yyy2 = t.AAAATtau \ yy2
 
-    copy!(Mx,(AAAAinvx - yyy2)[:])
+    @. Mx = AAAAinvx - yyy2
 
 end
 

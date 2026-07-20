@@ -156,7 +156,7 @@ function prep_sparse!(A,n,m,i,nzA,sigmaA,qA,κ)
     for j = 1:n
         nzA[j,i] = nnz(A[i,j+1])
     end
-    sigmaA[:,i] = sortperm(nzA[:,i], rev = true)
+    sigmaA[:,i] = sortperm(@view(nzA[:,i]), rev = true)
     sisi = nzA[sigmaA[:,i],i]
     # @show sisi
 
@@ -183,7 +183,7 @@ function prep_B(A,n,i)
         if !isempty(bidx)
             tmp = Matrix(A[i, k + 1][bidx, bidx])
             # utmp, vtmp = eigen(Hermitian(tmp))
-            utmp, vtmp = eigen((tmp + tmp') ./ 2)
+            utmp, vtmp = eigen(@. (tmp + tmp') / 2)
             bbb = sign.(vtmp[:, end]) .* sqrt.(diag(tmp))
             tmp2 = bbb * bbb'
             if norm(tmp - tmp2) > 5.0e-6
@@ -219,7 +219,7 @@ function prep_AA!(Ai,n)
         ii,vv = findnz(-(Ai[j+1])[:])
         lf = lb+length(ii)-1
         iii[lb:lf] = ii
-        jjj[lb:lf] = j .* ones(Int64,length(ii))
+        jjj[lb:lf] .= j
         vvv[lb:lf] = float(vv)
         lb = lf+1
     end

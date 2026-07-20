@@ -34,7 +34,7 @@ function loraine(d, options::Dict)
     timing = Int64(get(options, "timing", 1))
     kit    = Int64(get(options, "kit", 1))
     drank    = Int64(get(options, "datarank", 1))
-    κ = Int64(get(dest.options,"datasparsity",1))
+    κ = Int64(get(options,"datasparsity",1))
     if verb > 0
         t1 = time()
         # @printf("\n *** Loraine.jl v0.1 ***\n")
@@ -74,7 +74,7 @@ function loraine(d, options::Dict)
 
     ```SOLVE```
     @timeit solver.to "solver" begin
-    solve(solver::MySolver,halpha::Halpha)
+    solve(solver, halpha)
     end
 
     tottime = time() - t1

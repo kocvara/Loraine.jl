@@ -242,10 +242,6 @@ function MOI.get(optimizer::Optimizer, ::MOI.SolveTimeSec)
     return optimizer.solver.tottime
 end
 
-function MOI.get(optimizer::Optimizer, ::MOI.BarrierIterations)
-    return optimizer.solver.iter
-end
-
 function MOI.get(optimizer::Optimizer, ::MOI.RawStatusString)
     # TODO I'd probably do an `if`-`else` here like for `MOI.TerminationStatus`
     #      except that here you are free to communicate any message to the user,
