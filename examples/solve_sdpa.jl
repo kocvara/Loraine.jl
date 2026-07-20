@@ -26,7 +26,7 @@ end
 
 # Select your semidefinite optimization problem in SDPA input format
 # model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto2.dat-s")
-model=read_from_file("/Users/michal/Dropbox/michal/sdplib/theta4.dat-s")
+model=read_from_file("/Users/michal/Dropbox/michal/sdplib/theta1.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib5.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/k.dat-s")
@@ -49,7 +49,7 @@ set_attribute(model, "eDIMACS", 1e-6)
 set_attribute(model, "preconditioner", 1)
 set_attribute(model, "erank", 1)
 set_attribute(model, "aamat", 2)
-set_attribute(model, "verb", 1)
+set_attribute(model, "verb", 2)
 set_attribute(model, "datarank", 0)
 set_attribute(model, "initpoint", 1)
 set_attribute(model, "maxit", 200)
