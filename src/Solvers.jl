@@ -157,6 +157,7 @@ mutable struct Halpha
     Z
     cholS
     AAAATtau
+    AAAATtau_fact
     function Halpha(
         kit::Int64
     )
@@ -601,29 +602,53 @@ struct MyA{T}
     X_lin
     S_lin_inv
     to::TimerOutputs.TimerOutput
+    # preallocated workspace, reused across every CG iteration
+    ax1::Vector{T}
+    axvec::Vector{Vector{T}}
+    axmat::Vector{Matrix{T}}
+    waxwtmp::Vector{Matrix{T}}
+    waxw::Vector{Matrix{T}}
+    XSi::Vector{T}
+    Ctx::Vector{T}
+    tmp_nlin::Vector{T}
+end
+
+function MyA(W::Vector{Matrix{T}}, AA, nlin::Int64, C_lin, X_lin, S_lin_inv, to) where {T}
+    nlmi = length(AA)
+    ax1 = zeros(T, size(AA[1], 1))
+    axvec = [Vector{T}(undef, size(AA[ilmi], 2)) for ilmi in 1:nlmi]
+    axmat = [Matrix{T}(undef, size(W[ilmi])) for ilmi in 1:nlmi]
+    waxwtmp = [Matrix{T}(undef, size(W[ilmi])) for ilmi in 1:nlmi]
+    waxw = [Matrix{T}(undef, size(W[ilmi])) for ilmi in 1:nlmi]
+    XSi = Vector{T}(undef, nlin)
+    if nlin > 0
+        XSi .= X_lin .* S_lin_inv
+    end
+    Ctx = Vector{T}(undef, nlin)
+    tmp_nlin = Vector{T}(undef, nlin)
+    return MyA{T}(W, AA, nlin, C_lin, X_lin, S_lin_inv, to, ax1, axvec, axmat, waxwtmp, waxw, XSi, Ctx, tmp_nlin)
 end
 
 function (t::MyA)(Ax::Vector{T}, x::Vector{T}) where {T}
     @timeit t.to "Ax" begin
     nlmi = length(t.AA)
-    m = size(t.AA[1],1)
-    ax1 = zeros(T, m)
+    fill!(t.ax1, zero(T))
     if nlmi > 0
         for ilmi = 1:nlmi
-            waxwtmp = Matrix{T}(undef,size(t.W[ilmi]))
-            waxw = Matrix{T}(undef,size(t.W[ilmi]))
-            ax = Vector{T}(undef,size(t.AA[ilmi],2))
-            mul!(ax, transpose(t.AA[ilmi]), x)
-            mul!(waxwtmp,t.W[ilmi], mat(ax))
-            mul!(waxw, waxwtmp, t.W[ilmi])
-            ax1 .+= t.AA[ilmi] * vec(waxw)
+            mul!(t.axvec[ilmi], transpose(t.AA[ilmi]), x)
+            mat!(t.axmat[ilmi], t.axvec[ilmi])
+            mul!(t.waxwtmp[ilmi], t.W[ilmi], t.axmat[ilmi])
+            mul!(t.waxw[ilmi], t.waxwtmp[ilmi], t.W[ilmi])
+            mul!(t.ax1, t.AA[ilmi], vec(t.waxw[ilmi]), true, true)
         end
     end
     if t.nlin>0
-        ax1 .+= t.C_lin * ((t.X_lin .* t.S_lin_inv) .* (t.C_lin' * x))
+        mul!(t.Ctx, t.C_lin', x)
+        t.tmp_nlin .= t.XSi .* t.Ctx
+        mul!(t.ax1, t.C_lin, t.tmp_nlin, true, true)
     end
 
-    copyto!(Ax, ax1)
+    copyto!(Ax, t.ax1)
     end
 end
 
@@ -682,7 +707,7 @@ struct MyM_beta
 end
 
 function (t::MyM_beta)(Mx::Vector{T}, x::Vector{T}) where {T}
-    copy!(Mx, x ./ t.AAAATtau)
+    @. Mx = x / t.AAAATtau
 end
 
 function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T} 
@@ -753,7 +778,11 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
     if solver.model.nlin > 0
         halpha.AAAATtau .+= solver.model.C_lin * Diagonal(solver.X_lin .* solver.S_lin_inv) * solver.model.C_lin'
     end
-    
+
+    # Factorize once here; `AAAATtau` is constant for the whole predictor/corrector
+    # CG solve, so this avoids re-factorizing it on every single CG iteration.
+    halpha.AAAATtau_fact = factorize(halpha.AAAATtau)
+
     didi = 0
     for ilmi = 1:nlmi
         didi += size(solver.W[ilmi],1)
@@ -774,8 +803,8 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
         # end
         
         @timeit solver.to "prec4" begin
-        S = t' * (halpha.AAAATtau\t) 
-        end 
+        S = t' * (halpha.AAAATtau_fact \ t)
+        end
     else #fast formula
         AAAATtau_d = spdiagm(sqrt.(1 ./ diag(halpha.AAAATtau)));
 
@@ -819,12 +848,52 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
        
 end
 
-struct MyM
+struct MyM{T}
     AA
-    AAAATtau
-    Umat
-    Z
+    AAAATtau_fact
+    Umat::Vector{Matrix{T}}
+    Z::Vector{Matrix{T}}
     cholS
+    # preallocated workspace, reused across every CG iteration
+    AAAAinvx::Vector{T}
+    yy2::Vector{T}
+    yyy2::Vector{T}
+    y33::Vector{T}
+    y33_sol::Vector{T}
+    offsets::Vector{Int}
+    y22::Vector{Vector{T}}
+    y22mat::Vector{Matrix{T}}
+    ZY::Vector{Matrix{T}}
+    chunk::Vector{Matrix{T}}
+    xx::Vector{Vector{T}}
+    outer::Vector{Matrix{T}}
+    yy::Vector{Vector{T}}
+end
+
+function MyM(AA, AAAATtau_fact, Umat::Vector{Matrix{T}}, Z::Vector{Matrix{T}}, cholS) where {T}
+    nlmi = length(AA)
+    nvar = size(AA[1], 1)
+
+    offsets = Vector{Int}(undef, nlmi)
+    offset = 0
+    for ilmi = 1:nlmi
+        offsets[ilmi] = offset
+        offset += size(Z[ilmi], 1) * size(Umat[ilmi], 2)
+    end
+    sizeS = offset
+
+    y22 = [Vector{T}(undef, size(AA[ilmi], 2)) for ilmi in 1:nlmi]
+    y22mat = [Matrix{T}(undef, size(Umat[ilmi], 1), size(Umat[ilmi], 1)) for ilmi in 1:nlmi]
+    ZY = [Matrix{T}(undef, size(Umat[ilmi], 1), size(Umat[ilmi], 1)) for ilmi in 1:nlmi]
+    chunk = [Matrix{T}(undef, size(Umat[ilmi], 1), size(Umat[ilmi], 2)) for ilmi in 1:nlmi]
+    xx = [Vector{T}(undef, size(Umat[ilmi], 1)) for ilmi in 1:nlmi]
+    outer = [Matrix{T}(undef, size(Umat[ilmi], 1), size(Umat[ilmi], 1)) for ilmi in 1:nlmi]
+    yy = [Vector{T}(undef, size(Umat[ilmi], 1)^2) for ilmi in 1:nlmi]
+
+    return MyM{T}(AA, AAAATtau_fact, Umat, Z, cholS,
+        Vector{T}(undef, nvar), Vector{T}(undef, nvar), Vector{T}(undef, nvar),
+        Vector{T}(undef, sizeS), Vector{T}(undef, sizeS),
+        offsets, y22, y22mat, ZY, chunk, xx, outer, yy)
 end
 
 function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) where {T}
@@ -876,48 +945,43 @@ end
 
 function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
 
-    nvar = size(x,1)
     nlmi = length(t.AA)
 
-    yy2 = zeros(T, nvar)
+    ldiv!(t.AAAAinvx, t.AAAATtau_fact, x)
 
-    AAAAinvx = t.AAAATtau\x
-
-    y33_size = nlmi > 0 ? sum(size(t.Z[ilmi], 1) * size(t.Umat[ilmi], 2) for ilmi in 1:nlmi) : 0
-    y33 = Vector{T}(undef, y33_size)
-    offset = 0
     if nlmi > 0
         for ilmi = 1:nlmi
-            y22 = t.AA[ilmi]' * AAAAinvx
-            chunk = t.Z[ilmi]' * mat(y22) * t.Umat[ilmi]
-            n_chunk = length(chunk)
-            y33[offset+1:offset+n_chunk] .= vec(chunk)
-            offset += n_chunk
+            mul!(t.y22[ilmi], t.AA[ilmi]', t.AAAAinvx)
+            mat!(t.y22mat[ilmi], t.y22[ilmi])
+            mul!(t.ZY[ilmi], t.Z[ilmi]', t.y22mat[ilmi])
+            mul!(t.chunk[ilmi], t.ZY[ilmi], t.Umat[ilmi])
+            off = t.offsets[ilmi]
+            n_chunk = length(t.chunk[ilmi])
+            t.y33[off+1:off+n_chunk] .= vec(t.chunk[ilmi])
         end
     end
 
-    y33 = t.cholS \ y33
+    ldiv!(t.y33_sol, t.cholS, t.y33)
 
-    ii = 0
+    fill!(t.yy2, zero(T))
     if nlmi > 0
         for ilmi = 1:nlmi
             n = size(t.Umat[ilmi],1)
             k = size(t.Umat[ilmi],2)
-            yy = zeros(T, n*n)
-            outer = Matrix{T}(undef, n, n)
+            off = t.offsets[ilmi]
+            fill!(t.yy[ilmi], zero(T))
             for i = 1:k
-                xx = t.Z[ilmi] * @view(y33[ii+1:ii+n])
-                outer .= xx .* (@view(t.Umat[ilmi][:,i]))'
-                yy .+= vec(outer)
-                ii += n
+                mul!(t.xx[ilmi], t.Z[ilmi], @view(t.y33_sol[off+(i-1)*n+1:off+i*n]))
+                t.outer[ilmi] .= t.xx[ilmi] .* (@view(t.Umat[ilmi][:,i]))'
+                t.yy[ilmi] .+= vec(t.outer[ilmi])
             end
-            yy2 .+= t.AA[ilmi] * yy
+            mul!(t.yy2, t.AA[ilmi], t.yy[ilmi], true, true)
         end
     end
 
-    yyy2 = t.AAAATtau \ yy2
+    ldiv!(t.yyy2, t.AAAATtau_fact, t.yy2)
 
-    @. Mx = AAAAinvx - yyy2
+    @. Mx = t.AAAAinvx - t.yyy2
 
 end
 

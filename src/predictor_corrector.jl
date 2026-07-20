@@ -101,7 +101,7 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
             Prec_for_CG_tilS_prep(solver,halpha)
-            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model.AA, halpha.AAAATtau_fact, halpha.Umat, halpha.Z, halpha.cholS)
         elseif solver.preconditioner == 2 || solver.preconditioner == 4
             Prec_for_CG_beta(solver,halpha)
             M = MyM_beta(solver.model.AA, halpha.AAAATtau)
@@ -181,7 +181,7 @@ function corrector(solver,halpha)
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
-            M = MyM(solver.model.AA, halpha.AAAATtau, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(solver.model.AA, halpha.AAAATtau_fact, halpha.Umat, halpha.Z, halpha.cholS)
         else
             M = MyM_beta(solver.model.AA, halpha.AAAATtau)
         end
