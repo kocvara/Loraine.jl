@@ -127,9 +127,9 @@ end
 
 function sigma_update(solver::MySolver{T}) where {T}
     step_pred = min(
-        minimum(solver.alpha; init = zero(T)),
+        minimum(solver.alpha; init = one(T)),
         solver.alpha_lin,
-        minimum(solver.beta; init = zero(T)),
+        minimum(solver.beta; init = one(T)),
         solver.beta_lin,
     )
     if (solver.mu > 1e-6)
