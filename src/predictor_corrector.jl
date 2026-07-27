@@ -2,6 +2,17 @@
 using ConjugateGradients
 using GenericLinearAlgebra
 
+# Fill `chol_work` with the identity and store its (trivial) Cholesky, so that
+# `cholBBBB` stays a valid `Cholesky` even on the give-up path (status = 3).
+function set_identity_chol!(solver::MySolver)
+    fill!(solver.chol_work, 0)
+    for i in axes(solver.chol_work, 1)
+        @inbounds solver.chol_work[i, i] = 1
+    end
+    solver.cholBBBB = cholesky!(Hermitian(solver.chol_work))
+    return
+end
+
 function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     
     solver.predict = true
@@ -25,12 +36,18 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     # end
 
     # RHS for the Hessian equation
-    tmp = similar(solver.X)
+    tmp = solver.sol_buffer
     if !isempty(tmp[LRO.ScalarIndex])
         tmp[LRO.ScalarIndex] .= spdiagm(solver.W[LRO.ScalarIndex]) * solver.Rd[LRO.ScalarIndex] + solver.X[LRO.ScalarIndex]
     end
-    for i in LRO.matrix_indices(solver.model)
-        tmp[i] .= solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i]
+    for mat_idx in LRO.matrix_indices(solver.model)
+        i = mat_idx.value
+        # tmp[i] = W * (Rd[i] + S[i]) * W   (W is a FactoredMatrix, in place)
+        RS = solver.kron_tmp[i]
+        RS .= solver.Rd[mat_idx] .+ solver.S[mat_idx]
+        mul!(solver.kron_tmp2[i], solver.W[mat_idx], RS)
+        mul!(solver.kron_tmp3[i], solver.kron_tmp2[i], solver.W[mat_idx])
+        tmp[mat_idx] .= solver.kron_tmp3[i]
     end
     h = solver.y_buffer
     NLPModels.jprod!(solver.model, solver.X, tmp, h)
@@ -42,56 +59,50 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
     if solver.kit == 0   # direct solver
         BBBB = LinearAlgebra.Hermitian(solver.BBBB)
     #     @timeit solver.to "backslash" begin
-        if ishermitian(BBBB)
-            if parent(BBBB) isa SparseMatrixCSC
-                # Convert to dense because
-                # 1. Cholesky is not implemented for `MultiFloat` for sparse
-                # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
-                BBBB = LinearAlgebra.Hermitian(Matrix(parent(BBBB)), LinearAlgebra.sym_uplo(BBBB.uplo))
+        if parent(BBBB) isa SparseMatrixCSC
+            # Convert to dense because
+            # 1. Cholesky is not implemented for `MultiFloat` for sparse
+            # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
+            BBBB = LinearAlgebra.Hermitian(Matrix(parent(BBBB)), LinearAlgebra.sym_uplo(BBBB.uplo))
+        end
+        # Factorize into the reusable `chol_work` buffer (no per-iteration alloc).
+        # `check = false` returns an unsuccessful factorization instead of
+        # throwing, so we avoid building/catching a `PosDefException`.
+        uplo = LinearAlgebra.sym_uplo(BBBB.uplo)
+        copyto!(solver.chol_work, parent(BBBB))
+        chol = cholesky!(Hermitian(solver.chol_work, uplo); check = false)
+        if !issuccess(chol)
+            if solver.verb > 0
+                println("Matrix H not positive definite, trying to regularize")
             end
-            try
-                solver.cholBBBB = cholesky(BBBB).L
-            catch err
-                if !(err isa LinearAlgebra.PosDefException)
-                    rethrow(err)
-                end
+            icount = 0
+            solver.regcount += 1
+            if solver.regcount > 5
                 if solver.verb > 0
-                    println("Matrix H not positive definite, trying to regularize")
+                    @warn("too many regularizations of H, giving up")
                 end
-                icount = 0
-                solver.regcount += 1
-                if solver.regcount > 5
+                set_identity_chol!(solver)
+                solver.status = 3
+                return
+            end
+            while true
+                solver.BBBB .= solver.BBBB .+ 1e-4 .* I(size(solver.BBBB, 1))
+                copyto!(solver.chol_work, solver.BBBB)
+                chol = cholesky!(Hermitian(solver.chol_work, uplo); check = false)
+                issuccess(chol) && break
+                icount += 1
+                if icount > 1000
                     if solver.verb > 0
-                        @warn("too many regularizations of H, giving up")
+                        @warn("H cannot be made positive definite, giving up")
                     end
-                    solver.cholBBBB = I(size(BBBB, 1))
+                    set_identity_chol!(solver)
                     solver.status = 3
                     return
                 end
-                while !isposdef(BBBB)
-                    solver.BBBB .= solver.BBBB .+ 1e-4 .* I(size(solver.BBBB, 1))
-                    BBBB = LinearAlgebra.Hermitian(BBBB)
-                    icount = icount + 1
-                    if icount > 1000
-                        if solver.verb > 0
-                            @warn("H cannot be made positive definite, giving up")
-                        end
-                        solver.cholBBBB = I(size(BBBB, 1))
-                        solver.status = 3
-                        return
-                    end
-                end
-                solver.cholBBBB = cholesky(BBBB).L
             end
-            solver.dely = solver.cholBBBB \ h
-            solver.dely = solver.cholBBBB' \ solver.dely
-            # delyy = solver.dely
-        else
-            @warn("System matrix not Hermitian, stopping Loraine")
-            solver.maxit = 1e10
-            solver.status = 2
-            solver.cholBBBB = 0
         end
+        solver.cholBBBB = chol
+        ldiv!(solver.dely, solver.cholBBBB, h)
         # # Iterative refinement
         # resid = h - BBBB * solver.dely;
         # # @show norm(resid - (h[solver.cholBBBB.p] - solver.cholBBBB.L * solver.cholBBBB.U * solver.dely))
@@ -173,7 +184,7 @@ end
 
 function corrector(solver::MySolver{T},halpha) where {T}
     solver.predict = false
-    X = similar(solver.X)
+    X = solver.sol_buffer
     if LRO.num_scalars(solver.model) > 0
         tmp = (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) - (solver.sigma * solver.mu) .* (solver.Si_lin)
         X[LRO.ScalarIndex] .= spdiagm((solver.X[LRO.ScalarIndex] .* solver.Si_lin)[:]) * solver.Rd[LRO.ScalarIndex] + solver.X[LRO.ScalarIndex] + tmp
@@ -181,11 +192,19 @@ function corrector(solver::MySolver{T},halpha) where {T}
     for mat_idx in LRO.matrix_indices(solver.model)
         i = mat_idx.value
         W = solver.W[mat_idx]
-        X[mat_idx] .= my_kron(
-            W.factor,
-            W.factor,
-            W.factor' * solver.Rd[mat_idx] * W.factor + spdiagm(solver.D[i]) - Diagonal((solver.sigma * solver.mu) ./ solver.D[i]) - solver.RNT[i],
-        )
+        # C = W.factor' * Rd * W.factor + diag(D) - diag((σμ)/D) - RNT   (in place)
+        C = solver.kron_tmp2[i]
+        mul!(solver.kron_tmp[i], W.factor', solver.Rd[mat_idx])
+        mul!(C, solver.kron_tmp[i], W.factor)
+        C .-= solver.RNT[i]
+        d = solver.D[i]
+        sm = solver.sigma * solver.mu
+        @inbounds for k in eachindex(d)
+            C[k, k] += d[k] - sm / d[k]
+        end
+        # X[mat_idx] = W.factor * C * W.factor'
+        my_kron!(solver.kron_tmp3[i], W.factor, W.factor, C, solver.kron_tmp[i])
+        X[mat_idx] .= solver.kron_tmp3[i]
     end
     h = solver.y_buffer
     NLPModels.jprod!(solver.model, solver.X, X, h)
@@ -195,8 +214,7 @@ function corrector(solver::MySolver{T},halpha) where {T}
     if solver.kit == 0   # direct solver
     # @timeit to "corrector backsl" begin
         # solver.cholBBBB = cholesky(BBBB)
-        # solver.dely = solver.cholBBBB \ h
-        solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+        ldiv!(solver.dely, solver.cholBBBB, h)
         # # Iterative refinement
         # # resid = h - BBBB * solver.dely;
         # resid = h - solver.cholBBBB * solver.cholBBBB' * solver.dely
@@ -250,28 +268,43 @@ function find_step(solver::MySolver{T}) where {T}
     if LRO.num_matrices(solver.model) > 0
         for mat_idx in LRO.matrix_indices(solver.model)
             i = mat_idx.value
+            W = solver.W[mat_idx]
             @timeit solver.to "find_step_A" begin
             solver.delS[i] .= solver.Rd[mat_idx] .- LRO.unsafe_jtprod(solver.model, solver.dely, mat_idx)
-            Ξ = vec(my_kron(solver.W[mat_idx].matrix, solver.W[mat_idx], solver.delS[i]))
+            # Ξ = W * delS * W.matrix'   (into kron_tmp[i], scratch kron_tmp2[i])
+            Ξ = solver.kron_tmp[i]
+            my_kron!(Ξ, W.matrix, W, solver.delS[i], solver.kron_tmp2[i])
             if solver.predict
-                solver.delX[i] .= mat(-solver.X[mat_idx][:] .- Ξ)
+                # delX = symmetrize(-X - Ξ)
+                Ξ .= .-solver.X[mat_idx] .- Ξ
+                solver.delX[i] .= (Ξ .+ Ξ') ./ 2
             else
-                solver.delX[i] .= mat(((solver.sigma * solver.mu) .* solver.Si[i] .- solver.X[mat_idx])[:] .- Ξ .+ vec(my_kron(solver.W[mat_idx].factor, solver.W[mat_idx].factor, solver.RNT[i])))
+                # delX = symmetrize((σμ) Si - X - Ξ + W.factor RNT W.factor')
+                K2 = solver.kron_tmp3[i]
+                my_kron!(K2, W.factor, W.factor, solver.RNT[i], solver.kron_tmp2[i])
+                sm = solver.sigma * solver.mu
+                Ξ .= sm .* solver.Si[i] .- solver.X[mat_idx] .- Ξ .+ K2
+                solver.delX[i] .= (Ξ .+ Ξ') ./ 2
             end
             end
 
             # determining steplength to stay feasible
             @timeit solver.to "find_step_B" begin
-            delSb = solver.W[mat_idx].factor' * solver.delS[i] * solver.W[mat_idx].factor
-            delXb = solver.W[mat_idx].factor_inv * solver.delX[i] * solver.W[mat_idx].factor_inv'
+            delSb = solver.kron_tmp2[i]
+            mul!(solver.kron_tmp[i], W.factor', solver.delS[i])
+            mul!(delSb, solver.kron_tmp[i], W.factor)
+            delXb = solver.kron_tmp3[i]
+            mul!(solver.kron_tmp[i], W.factor_inv, solver.delX[i])
+            mul!(delXb, solver.kron_tmp[i], W.factor_inv')
             end
 
             @timeit solver.to "find_step_C" begin
-            XXX = solver.DDsi[i]' .* delXb .* solver.DDsi[i]
+            XXX = solver.kron_tmp[i]
+            XXX .= solver.DDsi[i]' .* delXb .* solver.DDsi[i]
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiX = eigmin(T.(XXX))
+            mimiX = eigmin(XXX)
             end
             if mimiX .> -1e-6
                 solver.alpha[i] = 0.99
@@ -280,11 +313,12 @@ function find_step(solver::MySolver{T}) where {T}
             end
 
             @timeit solver.to "find_step_C" begin
-            XXX = solver.DDsi[i]' .* delSb .* solver.DDsi[i]
+            XXX = solver.kron_tmp[i]
+            XXX .= solver.DDsi[i]' .* delSb .* solver.DDsi[i]
             XXX .= (XXX .+ XXX') ./ 2
             end
             @timeit solver.to "find_step_D" begin
-            mimiS = eigmin(T.(XXX))
+            mimiS = eigmin(XXX)
             end
             if mimiS .> -1e-6
                 solver.beta[i] = 0.99
@@ -306,11 +340,25 @@ function find_step(solver::MySolver{T}) where {T}
         if LRO.num_matrices(solver.model) > 0
             for mat_idx in LRO.matrix_indices(solver.model)
                 i = mat_idx.value
-                solver.Xn[i] = solver.X[mat_idx] + solver.alpha[i] .* solver.delX[i]
-                solver.Sn[i] = solver.S[mat_idx] + solver.beta[i] .* solver.delS[i]
-                dim = LRO.side_dimension(solver.model, mat_idx)
-                deed = solver.D[i] * ones(dim)' + ones(LRO.side_dimension(solver.model, mat_idx)) * solver.D[i]'
-                solver.RNT[i] = -(solver.W[mat_idx].factor_inv * solver.delX[i] * solver.delS[i] * solver.W[mat_idx].factor + solver.W[mat_idx].factor' * solver.delS[i] * solver.delX[i] * solver.W[mat_idx].factor_inv') ./ deed
+                W = solver.W[mat_idx]
+                solver.Xn[i] .= solver.X[mat_idx] .+ solver.alpha[i] .* solver.delX[i]
+                solver.Sn[i] .= solver.S[mat_idx] .+ solver.beta[i] .* solver.delS[i]
+                # R = W.factor_inv delX delS W.factor + W.factor' delS delX W.factor_inv'
+                A = solver.kron_tmp[i]
+                B = solver.kron_tmp2[i]
+                R = solver.kron_tmp3[i]
+                mul!(A, W.factor_inv, solver.delX[i])
+                mul!(B, A, solver.delS[i])
+                mul!(R, B, W.factor)
+                mul!(A, W.factor', solver.delS[i])
+                mul!(B, A, solver.delX[i])
+                mul!(R, B, W.factor_inv', 1, 1)
+                # RNT[i] = -R ./ deed  with  deed[k,l] = D[i][k] + D[i][l]
+                d = solver.D[i]
+                RNTi = solver.RNT[i]
+                @inbounds for l in axes(R, 2), k in axes(R, 1)
+                    RNTi[k, l] = -R[k, l] / (d[k] + d[l])
+                end
             end
         end
     else

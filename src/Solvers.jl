@@ -89,7 +89,8 @@ mutable struct MySolver{T,M}
     iter::Int64
     DIMACS_error::T
     BBBB::Matrix{T}
-    cholBBBB
+    chol_work::Matrix{T} # dense scratch that `cholesky!` factorizes in place
+    cholBBBB::Cholesky{T,Matrix{T}}
 
     status::Int
 
@@ -100,12 +101,12 @@ mutable struct MySolver{T,M}
     X::LRO.VectorizedSolution{T}
     S::LRO.VectorizedSolution{T}
     y::Vector{T}
-    yold
-    delX
-    delS
-    dely
-    Xn
-    Sn
+    yold::Vector{T}
+    delX::Vector{Matrix{T}}
+    delS::Vector{Matrix{T}}
+    dely::Vector{T}
+    Xn::Vector{Matrix{T}}
+    Sn::Vector{Matrix{T}}
 
     Si_lin::Vector{T}
     S_lin_inv::Vector{T}
@@ -114,31 +115,37 @@ mutable struct MySolver{T,M}
     Xn_lin::Vector{T}
     Sn_lin::Vector{T}
 
-    D
+    D::Vector{Vector{T}}
     W::LRO.ShapedSolution{T,FactoredMatrix{T}}
-    Si
-    DDsi
+    Si::Vector{Matrix{T}}
+    DDsi::Vector{Vector{T}}
 
     Rp::Vector{T}
     Rd::LRO.VectorizedSolution{T}
-    Rc
+    Rc::Vector{Matrix{T}}
 
-    cg_iter_pre
-    cg_iter_cor
-    cg_iter_tot
+    cg_iter_pre::Int64
+    cg_iter_cor::Int64
+    cg_iter_tot::Int64
 
-    alpha
-    beta
-    alpha_lin
-    beta_lin
+    alpha::Vector{T}
+    beta::Vector{T}
+    alpha_lin::T
+    beta_lin::T
 
     itertime
-    tottime
+    tottime::Float64
 
-    RNT
-    RNT_lin
+    RNT::Vector{Matrix{T}}
+    RNT_lin::Vector{T}
 
     y_buffer::Vector{T} # Bufer of the same size as `y`
+    # Per-block dim×dim scratch reused by `my_kron!` and the matrix products in
+    # `predictor`/`corrector`/`find_step`, so those iterations don't allocate.
+    kron_tmp::Vector{Matrix{T}}
+    kron_tmp2::Vector{Matrix{T}}
+    kron_tmp3::Vector{Matrix{T}}
+    sol_buffer::LRO.VectorizedSolution{T} # reused RHS-of-Newton-system buffer
 
     function MySolver{T}(
         kit::Int64,
@@ -430,6 +437,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Rd = similar(solver.X)
     solver.Rp = zeros(T, solver.model.meta.ncon)
     solver.y_buffer = similar(solver.Rp)
+    solver.dely = similar(solver.Rp)
 
     solver.delX = Matrix{T}[]
     solver.delS = Matrix{T}[]
@@ -454,8 +462,13 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Sn = Matrix{T}[]
     solver.RNT = Matrix{T}[]
 
+    solver.kron_tmp = Matrix{T}[]
+    solver.kron_tmp2 = Matrix{T}[]
+    solver.kron_tmp3 = Matrix{T}[]
+    solver.sol_buffer = similar(solver.X)
+
     solver.regcount = 0
- 
+
     solver.delS_lin = zeros(LRO.num_scalars(solver.model))
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
@@ -468,6 +481,9 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
         push!(solver.Xn,zeros(dim, dim))
         push!(solver.Sn,zeros(dim, dim))
         push!(solver.RNT,zeros(dim, dim))
+        push!(solver.kron_tmp,zeros(dim, dim))
+        push!(solver.kron_tmp2,zeros(dim, dim))
+        push!(solver.kron_tmp3,zeros(dim, dim))
     end
 
     halpha.Umat = Matrix{T}[]
@@ -500,6 +516,7 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
         solver.BBBB = zeros(T, ncon, ncon)
+        solver.chol_work = zeros(T, ncon, ncon)
     end
 
 end
