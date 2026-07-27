@@ -1,6 +1,6 @@
 module Solvers
 
-export  MySolver, solve, load, MyA, Halpha
+export MySolver, solve, load, MyA, Halpha
 
 using SparseArrays
 using LinearAlgebra
@@ -93,7 +93,8 @@ mutable struct MySolver{T,M}
     iter::Int64
     DIMACS_error::T
     BBBB::Matrix{T}
-    cholBBBB
+    chol_work::Matrix{T} # dense scratch that `cholesky!` factorizes in place
+    cholBBBB::Cholesky{T,Matrix{T}}
 
     status::Int
 
@@ -104,12 +105,12 @@ mutable struct MySolver{T,M}
     X::LRO.VectorizedSolution{T}
     S::LRO.VectorizedSolution{T}
     y::Vector{T}
-    yold
-    delX
-    delS
-    dely
-    Xn
-    Sn
+    yold::Vector{T}
+    delX::Vector{Matrix{T}}
+    delS::Vector{Matrix{T}}
+    dely::Vector{T}
+    Xn::Vector{Matrix{T}}
+    Sn::Vector{Matrix{T}}
 
     Si_lin::Vector{T}
     S_lin_inv::Vector{T}
@@ -118,37 +119,43 @@ mutable struct MySolver{T,M}
     Xn_lin::Vector{T}
     Sn_lin::Vector{T}
 
-    D
+    D::Vector{Vector{T}}
     W::LRO.ShapedSolution{T,FactoredMatrix{T}}
-    Si
-    DDsi
+    Si::Vector{Matrix{T}}
+    DDsi::Vector{Vector{T}}
 
     Rp::Vector{T}
     Rd::LRO.VectorizedSolution{T}
 
-    cg_iter_pre
-    cg_iter_cor
-    cg_iter_tot
+    cg_iter_pre::Int64
+    cg_iter_cor::Int64
+    cg_iter_tot::Int64
 
-    alpha
-    beta
-    alpha_lin
-    beta_lin
+    alpha::Vector{T}
+    beta::Vector{T}
+    alpha_lin::T
+    beta_lin::T
 
-    itertime
-    tottime
+    itertime::Any
+    tottime::Float64
 
-    RNT
-    RNT_lin
+    RNT::Vector{Matrix{T}}
+    RNT_lin::Vector{T}
 
     y_buffer::Vector{T} # Bufer of the same size as `y`
+    # Per-block dim×dim scratch reused by `my_kron!` and the matrix products in
+    # `predictor`/`corrector`/`find_step`, avoiding temporary matrix products.
+    kron_tmp::Vector{Matrix{T}}
+    kron_tmp2::Vector{Matrix{T}}
+    kron_tmp3::Vector{Matrix{T}}
+    sol_buffer::LRO.VectorizedSolution{T} # reused RHS-of-Newton-system buffer
 
     function MySolver{T}(
         kit::Int64,
-        tol_cg::Float64 ,
-        tol_cg_up::Float64 ,
-        tol_cg_min::Float64 ,
-        eDIMACS::Float64 ,
+        tol_cg::Float64,
+        tol_cg_up::Float64,
+        tol_cg_min::Float64,
+        eDIMACS::Float64,
         preconditioner::Int64,
         erank::Int64,
         aamat::Int64,
@@ -156,45 +163,43 @@ mutable struct MySolver{T,M}
         verb::Int64,
         initpoint::Int64,
         timing::Int64,
-        maxit::Int64, 
+        maxit::Int64,
         datasparsity::Int64,
-        model::LRO.Model{T,A}
+        model::LRO.Model{T,A},
     ) where {T,A}
 
         buffered_model = LRO.BufferedModelForSchur(model, datasparsity)
         solver = new{T,typeof(buffered_model)}()
-        solver.kit             = kit
-        solver.tol_cg          = tol_cg
-        solver.tol_cg_up       = tol_cg_up
-        solver.tol_cg_min      = tol_cg_min
-        solver.eDIMACS         = eDIMACS
-        solver.preconditioner  = preconditioner
-        solver.erank           = erank
-        solver.aamat           = aamat
-        solver.fig_ev          = fig_ev
-        solver.verb            = verb
-        solver.initpoint       = initpoint
-        solver.timing          = timing
-        solver.maxit           = maxit 
-        solver.datasparsity    = datasparsity
-        solver.model           = buffered_model
+        solver.kit = kit
+        solver.tol_cg = tol_cg
+        solver.tol_cg_up = tol_cg_up
+        solver.tol_cg_min = tol_cg_min
+        solver.eDIMACS = eDIMACS
+        solver.preconditioner = preconditioner
+        solver.erank = erank
+        solver.aamat = aamat
+        solver.fig_ev = fig_ev
+        solver.verb = verb
+        solver.initpoint = initpoint
+        solver.timing = timing
+        solver.maxit = maxit
+        solver.datasparsity = datasparsity
+        solver.model = buffered_model
         return solver
     end
 end
 
 mutable struct Halpha
-    kit
-    Umat
-    Z
-    cholS
-    AAAATtau
-    AAAATtau_fact
-    function Halpha(
-        kit::Int64
-    )
-    halpha = new()
-    halpha.kit             = kit
-    return halpha
+    kit::Any
+    Umat::Any
+    Z::Any
+    cholS::Any
+    AAAATtau::Any
+    AAAATtau_fact::Any
+    function Halpha(kit::Int64)
+        halpha = new()
+        halpha.kit = kit
+        return halpha
     end
 end
 
@@ -240,7 +245,7 @@ function SolverCore.solve!(
     end
     solver.solver.to = TimerOutput()
     solve(solver.solver, solver.halpha)
-    solver.stats.status = STATUS_MAP[solver.solver.status + 1]
+    solver.stats.status = STATUS_MAP[solver.solver.status+1]
     solver.stats.objective = NLPModels.obj(solver.solver.model, solver.solver.X)
     solver.stats.elapsed_time = solver.solver.tottime
     solver.stats.iter = solver.solver.iter
@@ -249,7 +254,7 @@ end
 
 
 include("initial_point.jl")
-include("prepare_W.jl") 
+include("prepare_W.jl")
 include("predictor_corrector.jl")
 
 const DEFAULT_OPTIONS = Dict{String,Any}(
@@ -286,7 +291,8 @@ function load(model, options::Dict; T = Float64)
     maxit = Int64(get(options, "maxit", 100))
     datasparsity = Int64(get(options, "datasparsity", 8))
 
-    solver = MySolver{T}(kit,
+    solver = MySolver{T}(
+        kit,
         tol_cg,
         tol_cg_up,
         tol_cg_min,
@@ -298,7 +304,7 @@ function load(model, options::Dict; T = Float64)
         verb,
         initpoint,
         timing,
-        maxit, 
+        maxit,
         datasparsity,
         model,
     )
@@ -313,7 +319,10 @@ function load(model, options::Dict; T = Float64)
     end
     if tol_cg < tol_cg_min && kit == 1
         solver.tol_cg = tol_cg_min
-        @printf(" ---Parameter tol_cg smaller than tol_cg_min, setting tol_cg = %7.1e\n", solver.tol_cg)
+        @printf(
+            " ---Parameter tol_cg smaller than tol_cg_min, setting tol_cg = %7.1e\n",
+            solver.tol_cg
+        )
     end
     if tol_cg_min > eDIMACS && kit == 1
         solver.tol_cg_min = eDIMACS
@@ -321,15 +330,21 @@ function load(model, options::Dict; T = Float64)
     end
     if kit == 1 && (preconditioner < 0 || preconditioner > 4)
         solver.preconditioner = 1
-        @printf(" ---Parameter preconditioner out of range, setting preconditioner = %1d\n", solver.preconditioner)
+        @printf(
+            " ---Parameter preconditioner out of range, setting preconditioner = %1d\n",
+            solver.preconditioner
+        )
     end
-    if erank < 0 
+    if erank < 0
         solver.erank = 1
         @printf(" ---Parameter erank negative, setting erank = %1d\n", solver.erank)
     end
     if initpoint < 0 || initpoint > 1
         solver.initpoint = 1
-        @printf(" ---Parameter kit out of range, setting initpoint = %1d\n", solver.initpoint)
+        @printf(
+            " ---Parameter kit out of range, setting initpoint = %1d\n",
+            solver.initpoint
+        )
     end
 
     # @show model.A
@@ -343,22 +358,23 @@ function load(model, options::Dict; T = Float64)
     return solver, halpha
 end
 
-function solve(solver::MySolver,halpha::Halpha)
+function solve(solver::MySolver, halpha::Halpha)
     t1 = time()
     if solver.verb > 0
         @printf("\n *** Loraine.jl v0.2.8 ***\n")
 
-        @printf(" Number of variables: %5d\n",solver.model.meta.ncon)
-        @printf(" LMI constraints    : %5d\n",LRO.num_matrices(solver.model))
+        @printf(" Number of variables: %5d\n", solver.model.meta.ncon)
+        @printf(" LMI constraints    : %5d\n", LRO.num_matrices(solver.model))
         if LRO.num_matrices(solver.model) > 0
             @printf(" Matrix size(s)     :")
-            msizes = LRO.side_dimension.(Ref(solver.model), LRO.matrix_indices(solver.model))
-            Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), msizes);
+            msizes =
+                LRO.side_dimension.(Ref(solver.model), LRO.matrix_indices(solver.model))
+            Printf.format.(Ref(stdout), Ref(Printf.Format("%6d")), msizes)
             @printf("\n")
         end
-        @printf(" Linear constraints : %5d\n",LRO.num_scalars(solver.model))
+        @printf(" Linear constraints : %5d\n", LRO.num_scalars(solver.model))
         if solver.kit>0
-            @printf(" Preconditioner     : %5d\n",solver.preconditioner)
+            @printf(" Preconditioner     : %5d\n", solver.preconditioner)
         else
             @printf(" Preconditioner     :  none, using direct solver\n")
         end
@@ -372,23 +388,31 @@ function solve(solver::MySolver,halpha::Halpha)
             end
         else
             if solver.kit == 0
-                @printf(" it        obj         error      err1      err2      err3      err4      err5      err6     CPU/it\n")
-                @printf("                                p-eq-con   p-feas   d-eq-con   d-feas     d-gap  slackness         \n")
-                @printf("---------------------------------------------------------------------------------------------------\n")
+                @printf(
+                    " it        obj         error      err1      err2      err3      err4      err5      err6     CPU/it\n"
+                )
+                @printf(
+                    "                                p-eq-con   p-feas   d-eq-con   d-feas     d-gap  slackness         \n"
+                )
+                @printf(
+                    "---------------------------------------------------------------------------------------------------\n"
+                )
             else
-                @printf(" it        obj         error      err1      err2      err3      err4      err5      err6    cg_pre  cg_cor  CPU/it\n")
+                @printf(
+                    " it        obj         error      err1      err2      err3      err4      err5      err6    cg_pre  cg_cor  CPU/it\n"
+                )
             end
         end
     end
 
-    setup_solver(solver::MySolver,halpha::Halpha)
+    setup_solver(solver::MySolver, halpha::Halpha)
 
     initial_point(solver)
 
-    while solver.status == 0 
+    while solver.status == 0
 
         t2 = time()
-        myIPstep(solver,halpha)
+        myIPstep(solver, halpha)
         solver.itertime = time()-t2
 
         solver.tol_cg = max(solver.tol_cg * solver.tol_cg_up, solver.tol_cg_min)
@@ -397,8 +421,15 @@ function solve(solver::MySolver,halpha::Halpha)
 
         if solver.preconditioner == 4
             #         if (cg_iter2>erank*nlmi*sqrt(n)/1 && iter>sqrt(n)/60)||cg_iter2>100 %for SNL problems
-            if (solver.cg_iter_cor / 2 > solver.erank * LRO.num_matrices(solver.model) * sqrt(solver.model.meta.ncon)/20 && solver.iter > sqrt(solver.model.meta.ncon) / 60) || solver.cg_iter_cor > 100
-                solver.preconditioner = 1; solver.aamat = 2; 
+            if (
+                solver.cg_iter_cor / 2 >
+                solver.erank *
+                LRO.num_matrices(solver.model) *
+                sqrt(solver.model.meta.ncon)/20 &&
+                solver.iter > sqrt(solver.model.meta.ncon) / 60
+            ) || solver.cg_iter_cor > 100
+                solver.preconditioner = 1
+                solver.aamat = 2
                 if solver.verb > 0
                     println("Switching to preconditioner 1")
                 end
@@ -419,12 +450,13 @@ function solve(solver::MySolver,halpha::Halpha)
 
 end
 
-function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
+function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
 
     solver.S = similar(solver.X)
     solver.Rd = similar(solver.X)
     solver.Rp = zeros(T, solver.model.meta.ncon)
     solver.y_buffer = similar(solver.Rp)
+    solver.dely = similar(solver.Rp)
 
     solver.delX = Matrix{T}[]
     solver.delS = Matrix{T}[]
@@ -447,19 +479,27 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
     solver.Sn = Matrix{T}[]
     solver.RNT = Matrix{T}[]
 
+    solver.kron_tmp = Matrix{T}[]
+    solver.kron_tmp2 = Matrix{T}[]
+    solver.kron_tmp3 = Matrix{T}[]
+    solver.sol_buffer = similar(solver.X)
+
     solver.regcount = 0
- 
+
     solver.delS_lin = zeros(T, LRO.num_scalars(solver.model))
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
-        push!(solver.delX,zeros(T, dim, dim))
-        push!(solver.delS,zeros(T, dim, dim))
+        push!(solver.delX, zeros(T, dim, dim))
+        push!(solver.delS, zeros(T, dim, dim))
         push!(solver.D, zeros(T, dim))
-        push!(solver.Si,zeros(T, dim, dim))
-        push!(solver.DDsi,zeros(T, dim))
-        push!(solver.Xn,zeros(T, dim, dim))
-        push!(solver.Sn,zeros(T, dim, dim))
-        push!(solver.RNT,zeros(T, dim, dim))
+        push!(solver.Si, zeros(T, dim, dim))
+        push!(solver.DDsi, zeros(T, dim))
+        push!(solver.Xn, zeros(T, dim, dim))
+        push!(solver.Sn, zeros(T, dim, dim))
+        push!(solver.RNT, zeros(T, dim, dim))
+        push!(solver.kron_tmp, zeros(T, dim, dim))
+        push!(solver.kron_tmp2, zeros(T, dim, dim))
+        push!(solver.kron_tmp3, zeros(T, dim, dim))
     end
 
     halpha.Umat = Matrix{T}[]
@@ -469,8 +509,8 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
-        push!(halpha.Umat,zeros(dim, solver.erank))
-        push!(halpha.Z,zeros(dim, dim))
+        push!(halpha.Umat, zeros(dim, solver.erank))
+        push!(halpha.Z, zeros(dim, dim))
         # tmp = Matrix(I(dim))
         # push!(halpha.cholS,cholesky(tmp))
         push!(halpha.AAAATtau, spzeros(ncon, ncon))
@@ -482,7 +522,12 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
                 @warn("Switching to a direct solver, no LMIs")
             end
             solver.kit = 0
-        elseif LRO.num_matrices(solver.model) > 0 && solver.erank >= maximum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model)) - 1
+        elseif LRO.num_matrices(solver.model) > 0 &&
+               solver.erank >=
+               maximum(
+            Base.Fix1(LRO.side_dimension, solver.model),
+            LRO.matrix_indices(solver.model),
+        ) - 1
             if solver.verb > 0
                 @warn("Switching to a direct solver, erank bigger than matrix size")
             end
@@ -492,11 +537,12 @@ function setup_solver(solver::MySolver{T},halpha::Halpha) where {T}
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
         solver.BBBB = zeros(T, ncon, ncon)
+        solver.chol_work = zeros(T, ncon, ncon)
     end
 
 end
 
-function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
+function myIPstep(solver::MySolver{T}, halpha::Halpha) where {T}
     solver.iter += 1
     if solver.iter > solver.maxit
         solver.status = 4
@@ -506,7 +552,7 @@ function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
     end
     solver.cg_iter_pre = 0
     solver.cg_iter_cor = 0
-    
+
     find_mu(solver)
 
     # @timeit solver.to "prepare W" begin
@@ -515,20 +561,27 @@ function myIPstep(solver::MySolver{T},halpha::Halpha) where {T}
 
     ## predictor
     @timeit solver.to "predictor" begin
-    predictor(solver,halpha::Halpha)
+        predictor(solver, halpha::Halpha)
     end
 
     sigma_update(solver)
 
     ## corrector
     @timeit solver.to "corrector" begin
-    corrector(solver,halpha)
+        corrector(solver, halpha)
     end
 
 end
 
 function find_mu(solver)
-    solver.mu = dot(solver.X, solver.S) / (LRO.num_scalars(solver.model) + sum(Base.Fix1(LRO.side_dimension, solver.model), LRO.matrix_indices(solver.model), init = 0))
+    solver.mu =
+        dot(solver.X, solver.S) / (
+            LRO.num_scalars(solver.model) + sum(
+                Base.Fix1(LRO.side_dimension, solver.model),
+                LRO.matrix_indices(solver.model),
+                init = 0,
+            )
+        )
     return solver.mu
 end
 
@@ -550,20 +603,59 @@ function check_convergence(solver)
 
     # `err[5]` may be negative so we need `abs`
     DIMACS_error = sum(abs, solver.err)
-    if solver.verb > 0 && solver.status == 0 
+    if solver.verb > 0 && solver.status == 0
         #@sprintf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %8.1e %6.0d %8.2f\n', iter, y[1:ddnvar]"*ddc[:], DIMACS_error, err[1], err[2], err[3], err[4], err[5], err[6], cg_iter1, cg_iter2, eq_norm, arank, titi)
         # @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.0d %9.0d %6.0d\n", iter, dot(y, ctmp'), DIMACS_error, err[1], err[2], err[3], err[4], err[5], err[6], cg_iter1, cg_iter2, cg_iter2)
         if solver.verb > 1
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err[1], solver.err[2], solver.err[3], solver.err[4], solver.err[5], solver.err[6],solver.itertime)
+                @printf(
+                    "%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %8.2f\n",
+                    solver.iter,
+                    dobj,
+                    DIMACS_error,
+                    solver.err[1],
+                    solver.err[2],
+                    solver.err[3],
+                    solver.err[4],
+                    solver.err[5],
+                    solver.err[6],
+                    solver.itertime
+                )
             else
-                @printf("%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n", solver.iter, dobj, DIMACS_error, solver.err[1], solver.err[2], solver.err[3], solver.err[4], solver.err[5], solver.err[6], solver.cg_iter_pre, solver.cg_iter_cor,solver.itertime)
-            end    
-    else
+                @printf(
+                    "%3.0d %16.8e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %9.2e %7.0d %7.0d %8.2f\n",
+                    solver.iter,
+                    dobj,
+                    DIMACS_error,
+                    solver.err[1],
+                    solver.err[2],
+                    solver.err[3],
+                    solver.err[4],
+                    solver.err[5],
+                    solver.err[6],
+                    solver.cg_iter_pre,
+                    solver.cg_iter_cor,
+                    solver.itertime
+                )
+            end
+        else
             if solver.kit == 0
-                @printf("%3.0d %16.8e %9.2e %8.2f\n", solver.iter, dobj, DIMACS_error, solver.itertime)
+                @printf(
+                    "%3.0d %16.8e %9.2e %8.2f\n",
+                    solver.iter,
+                    dobj,
+                    DIMACS_error,
+                    solver.itertime
+                )
             else
-                @printf("%3.0d %16.8e %9.2e %9.0d %8.2f\n", solver.iter, dobj, DIMACS_error, solver.cg_iter_pre + solver.cg_iter_cor, solver.itertime)
+                @printf(
+                    "%3.0d %16.8e %9.2e %9.0d %8.2f\n",
+                    solver.iter,
+                    dobj,
+                    DIMACS_error,
+                    solver.cg_iter_pre + solver.cg_iter_cor,
+                    solver.itertime
+                )
             end
         end
     end
@@ -614,31 +706,31 @@ struct MyM_no
 end
 
 function (t::MyM_no)(Mx::Vector{T}, x::Vector{T}) where {T}
-    copy!(Mx,x)
+    copy!(Mx, x)
 end
 
-function Prec_for_CG_beta(solver,halpha)    
-    
+function Prec_for_CG_beta(solver, halpha)
+
     nlmi = LRO.num_matrices(solver.model)
-    kk = solver.erank .* ones(Int64,nlmi,1)  
+    kk = solver.erank .* ones(Int64, nlmi, 1)
     nvar = solver.model.meta.ncon
-        
+
     ntot=0
     if nlmi > 0
         for i in LRO.matrix_indices(solver.model)
-            ntot = ntot + size(solver.W[i],1)
+            ntot = ntot + size(solver.W[i], 1)
         end
     end
-    
+
     halpha.AAAATtau = zeros(nvar)
     if nlmi > 0
         for i in LRO.matrix_indices(solver.model)
             ilmi = i.value
-            n = size(solver.W[i],1);
-            k = kk[ilmi];
-            F = eigen(solver.W[i]); 
-            lambdaf = F.values 
-            lambda_s = lambdaf[1:n-k]
+            n = size(solver.W[i], 1)
+            k = kk[ilmi]
+            F = eigen(solver.W[i])
+            lambdaf = F.values
+            lambda_s = lambdaf[1:(n-k)]
 
             if isempty(lambda_s)
                 # The selected rank covers this block (e.g. a 1x1 PSD block).
@@ -652,14 +744,19 @@ function Prec_for_CG_beta(solver,halpha)
             if solver.aamat < 3
                 ZZZ = ones(nvar)
             else
-                ZZZ = spzeros(nvar,1)
+                ZZZ = spzeros(nvar, 1)
             end
-            
+
             halpha.AAAATtau += ttau^2 .* ZZZ
         end
         if LRO.num_scalars(solver.model) > 0
             tmp = zeros(eltype(halpha.AAAATtau), nvar, nvar)
-            LRO.add_schur_complement!(solver.model, solver.X[LRO.ScalarIndex] .* solver.S_lin_inv, LRO.ScalarIndex, tmp)
+            LRO.add_schur_complement!(
+                solver.model,
+                solver.X[LRO.ScalarIndex] .* solver.S_lin_inv,
+                LRO.ScalarIndex,
+                tmp,
+            )
             halpha.AAAATtau .+= diag(tmp)
         end
     end
@@ -667,151 +764,160 @@ end
 
 struct MyM_beta{M}
     model::M
-    AAAATtau
+    AAAATtau::Any
 end
 
 function (t::MyM_beta)(Mx::Vector{T}, x::Vector{T}) where {T}
     @. Mx = x / t.AAAATtau
 end
 
-function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T} 
-    
+function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
+
     @timeit solver.to "prec" begin
-    nlmi = LRO.num_matrices(solver.model)
-    kk = solver.erank .* ones(Int64,nlmi)
-    # kk[2] = 3
-    # halpha.Z = SparseMatrixCSC{T}[]
-    halpha.Z = Matrix{T}[]
+        nlmi = LRO.num_matrices(solver.model)
+        kk = solver.erank .* ones(Int64, nlmi)
+        # kk[2] = 3
+        # halpha.Z = SparseMatrixCSC{T}[]
+        halpha.Z = Matrix{T}[]
 
-    nvar = solver.model.meta.ncon
-    
-    halpha.AAAATtau = spzeros(nvar,nvar)
-    
-    ntot=0
-    if nlmi > 0
-        for i in LRO.matrix_indices(solver.model)
-            ntot = ntot + size(solver.W[i],1)
-        end
-    end
-    sizeS=0
-    if nlmi > 0
-        for i in LRO.matrix_indices(solver.model)
-            sizeS += kk[i.value] * size(solver.W[i],1)
-        end
-    end
-    
-    lbt = 1; lbs=1;
-    if nlmi > 0
-        for i in LRO.matrix_indices(solver.model)
-            ilmi = i.value
-            n = size(solver.W[i],1)
-            k = kk[ilmi]
-            
-            F = eigen(Float64.(solver.W[i]))
-            vectf = F.vectors
-            lambdaf = F.values 
+        nvar = solver.model.meta.ncon
 
-            vect_l = vectf[:,n-k+1:n]
-            lambda_l = lambdaf[n-k+1:n]
-            vect_s = vectf[:,1:n-k]
-            lambda_s = lambdaf[1:n-k]
+        halpha.AAAATtau = spzeros(nvar, nvar)
 
-            if isempty(lambda_s)
-                # The selected rank covers this block (e.g. a 1x1 PSD block).
-                # Keep a positive baseline; for 1x1 this gives W0 = W and U = 0.
-                ttau = minimum(lambdaf)
-            elseif solver.aamat == 0
-                ttau = 1.0 * minimum(lambda_s)
-            else
-                ttau = (minimum(lambda_s) + mean(lambda_s))/2 - 1.0e-14
-            end
-            
-            halpha.Umat[ilmi] = vect_l .* sqrt.(lambda_l .- ttau)'
-
-            # @timeit solver.to "prec1" begin
-            W0 = [vect_s vect_l]*[spdiagm(lambda_s[:]) spzeros(n-k,k); spzeros(k,n-k) ttau * I(k)] * [vect_s vect_l]'
-            # end
-
-            # @timeit solver.to "prec2" begin
-            W0 = @. (W0 + W0') / 2
-            Ztmp = cholesky(2 .* W0 + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
-            push!(halpha.Z,Ztmp.L)
-            # end
-
-            if solver.aamat < 3
-                halpha.AAAATtau += ttau^2 * I(nvar)
-            end
-        end
-    end
-
-    if LRO.num_scalars(solver.model) > 0
-        LRO.add_schur_complement!(solver.model, solver.X[LRO.ScalarIndex] .* solver.S_lin_inv, LRO.ScalarIndex, halpha.AAAATtau)
-    end
-
-    # Factorize once here; `AAAATtau` is constant for the whole predictor/corrector
-    # CG solve, so this avoids re-factorizing it on every single CG iteration.
-    halpha.AAAATtau_fact = factorize(halpha.AAAATtau)
-
-    k = kk[1]
-    if k > 1 #slow formula
-        # @timeit solver.to "prec3" begin
-        t = zeros(nvar, k*ntot)
+        ntot=0
         if nlmi > 0
-            for mat_idx in LRO.matrix_indices(solver.model)
-                ilmi = mat_idx.value
-                n = size(solver.W[mat_idx],1)
-                k = kk[ilmi]
-                TT = kron(halpha.Umat[ilmi],halpha.Z[ilmi])
-                t[1:nvar,lbt:lbt+k*n-1] .= LRO.jac(solver.model, mat_idx)' * TT
-                lbt = lbt + k*n
+            for i in LRO.matrix_indices(solver.model)
+                ntot = ntot + size(solver.W[i], 1)
             end
         end
-        # end
-
-        @timeit solver.to "prec4" begin
-        S = t' * (halpha.AAAATtau_fact \ t)
+        sizeS=0
+        if nlmi > 0
+            for i in LRO.matrix_indices(solver.model)
+                sizeS += kk[i.value] * size(solver.W[i], 1)
+            end
         end
-    else #fast formula
-        AAAATtau_d = spdiagm(sqrt.(1 ./ diag(halpha.AAAATtau)));
 
-        # @timeit solver.to "prec3" begin
-        # t = zeros(nvar, k*ntot)
-        # if nlmi > 0
-        #     for ilmi = 1:nlmi
-        #         if kk[ilmi] == 0
-        #             continue 
-        #         end
-        #         n = size(solver.W[ilmi],1) 
-        #         k = kk[ilmi] 
-        #         AAs = AAAATtau_d * solver.model.AA[ilmi]
-        #         ii_, jj_, aa_ = findnz(AAs)
-        #         qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
-        #         pp_ = mod.(jj_ .- 1, n) .+ 1
-        #         UU = halpha.Umat[ilmi][qq_]
-        #         aau = aa_ .* UU
-        #         AU = sparse(ii_,pp_,aau,nvar,n)
-        #         if nlmi>1
-        #             t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
-        #         else
-        #             t .= AU * halpha.Z[1]
-        #         end
-        #         lbt = lbt + k*n
-        #     end 
-        # end
-        # S .= (t' * t)
-        # # mul!(S,t',t)
-        # end
+        lbt = 1
+        lbs=1
+        if nlmi > 0
+            for i in LRO.matrix_indices(solver.model)
+                ilmi = i.value
+                n = size(solver.W[i], 1)
+                k = kk[ilmi]
 
-        S, lbt = prec_alpha_S!(solver,halpha,AAAATtau_d,kk,ntot,lbt,sizeS)
+                F = eigen(Float64.(solver.W[i]))
+                vectf = F.vectors
+                lambdaf = F.values
+
+                vect_l = vectf[:, (n-k+1):n]
+                lambda_l = lambdaf[(n-k+1):n]
+                vect_s = vectf[:, 1:(n-k)]
+                lambda_s = lambdaf[1:(n-k)]
+
+                if isempty(lambda_s)
+                    # The selected rank covers this block (e.g. a 1x1 PSD block).
+                    # Keep a positive baseline; for 1x1 this gives W0 = W and U = 0.
+                    ttau = minimum(lambdaf)
+                elseif solver.aamat == 0
+                    ttau = 1.0 * minimum(lambda_s)
+                else
+                    ttau = (minimum(lambda_s) + mean(lambda_s))/2 - 1.0e-14
+                end
+
+                halpha.Umat[ilmi] = vect_l .* sqrt.(lambda_l .- ttau)'
+
+                # @timeit solver.to "prec1" begin
+                W0 =
+                    [vect_s vect_l] *
+                    [spdiagm(lambda_s[:]) spzeros(n-k, k); spzeros(k, n-k) ttau * I(k)] *
+                    [vect_s vect_l]'
+                # end
+
+                # @timeit solver.to "prec2" begin
+                W0 = @. (W0 + W0') / 2
+                Ztmp = cholesky(2 .* W0 + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
+                push!(halpha.Z, Ztmp.L)
+                # end
+
+                if solver.aamat < 3
+                    halpha.AAAATtau += ttau^2 * I(nvar)
+                end
+            end
+        end
+
+        if LRO.num_scalars(solver.model) > 0
+            LRO.add_schur_complement!(
+                solver.model,
+                solver.X[LRO.ScalarIndex] .* solver.S_lin_inv,
+                LRO.ScalarIndex,
+                halpha.AAAATtau,
+            )
+        end
+
+        # Factorize once here; `AAAATtau` is constant for the whole predictor/corrector
+        # CG solve, so this avoids re-factorizing it on every single CG iteration.
+        halpha.AAAATtau_fact = factorize(halpha.AAAATtau)
+
+        k = kk[1]
+        if k > 1 #slow formula
+            # @timeit solver.to "prec3" begin
+            t = zeros(nvar, k*ntot)
+            if nlmi > 0
+                for mat_idx in LRO.matrix_indices(solver.model)
+                    ilmi = mat_idx.value
+                    n = size(solver.W[mat_idx], 1)
+                    k = kk[ilmi]
+                    TT = kron(halpha.Umat[ilmi], halpha.Z[ilmi])
+                    t[1:nvar, lbt:(lbt+k*n-1)] .= LRO.jac(solver.model, mat_idx)' * TT
+                    lbt = lbt + k*n
+                end
+            end
+            # end
+
+            @timeit solver.to "prec4" begin
+                S = t' * (halpha.AAAATtau_fact \ t)
+            end
+        else #fast formula
+            AAAATtau_d = spdiagm(sqrt.(1 ./ diag(halpha.AAAATtau)))
+
+            # @timeit solver.to "prec3" begin
+            # t = zeros(nvar, k*ntot)
+            # if nlmi > 0
+            #     for ilmi = 1:nlmi
+            #         if kk[ilmi] == 0
+            #             continue
+            #         end
+            #         n = size(solver.W[ilmi],1)
+            #         k = kk[ilmi]
+            #         AAs = AAAATtau_d * solver.model.AA[ilmi]
+            #         ii_, jj_, aa_ = findnz(AAs)
+            #         qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
+            #         pp_ = mod.(jj_ .- 1, n) .+ 1
+            #         UU = halpha.Umat[ilmi][qq_]
+            #         aau = aa_ .* UU
+            #         AU = sparse(ii_,pp_,aau,nvar,n)
+            #         if nlmi>1
+            #             t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
+            #         else
+            #             t .= AU * halpha.Z[1]
+            #         end
+            #         lbt = lbt + k*n
+            #     end
+            # end
+            # S .= (t' * t)
+            # # mul!(S,t',t)
+            # end
+
+            S, lbt = prec_alpha_S!(solver, halpha, AAAATtau_d, kk, ntot, lbt, sizeS)
+        end
+
+        # Schur complement for the SMW formula
+        S = @. (S + S') / 2
+        S += I(size(S, 1))
+        halpha.cholS = cholesky(S)
+
     end
-    
-    # Schur complement for the SMW formula
-    S = @. (S + S') / 2
-    S += I(size(S, 1))
-    halpha.cholS = cholesky(S)
 
-    end
-       
 end
 
 # One workspace per predictor/corrector CG solve, reused by every application.
@@ -831,12 +937,25 @@ struct MyM{T,M,F,C}
     yy::Vector{Matrix{T}}
 end
 
-function MyM(model, AAAATtau_fact, Umat::Vector{Matrix{T}}, Z::Vector{Matrix{T}}, cholS) where {T}
+function MyM(
+    model,
+    AAAATtau_fact,
+    Umat::Vector{Matrix{T}},
+    Z::Vector{Matrix{T}},
+    cholS,
+) where {T}
     nvar = model.meta.ncon
     sizeS = sum(length, Umat; init = 0)
     return MyM(
-        model, AAAATtau_fact, Umat, Z, cholS,
-        zeros(T, nvar), zeros(T, nvar), zeros(T, nvar), zeros(T, sizeS),
+        model,
+        AAAATtau_fact,
+        Umat,
+        Z,
+        cholS,
+        zeros(T, nvar),
+        zeros(T, nvar),
+        zeros(T, nvar),
+        zeros(T, sizeS),
         [zeros(T, size(u)) for u in Umat],
         [zeros(T, size(u)) for u in Umat],
         [zeros(T, size(u, 1)) for u in Umat],
@@ -844,58 +963,66 @@ function MyM(model, AAAATtau_fact, Umat::Vector{Matrix{T}}, Z::Vector{Matrix{T}}
     )
 end
 
-function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) where {T}
+function prec_alpha_S!(
+    solver::MySolver{T},
+    halpha,
+    AAAATtau_d,
+    kk,
+    didi,
+    lbt,
+    sizeS,
+) where {T}
     @timeit solver.to "prec3" begin
-    S = Matrix{T}(undef,sizeS,sizeS)
-    nvar = solver.model.meta.ncon
-    t = Matrix{T}(undef,nvar,kk[1]*didi)
-    if LRO.num_matrices(solver.model) > 0
-        for mat_idx in LRO.matrix_indices(solver.model)
-            ilmi = mat_idx.value
-            if kk[ilmi] == 0
-                continue 
-            end
-            n = size(solver.W[mat_idx],1) 
-            k = kk[ilmi] 
+        S = Matrix{T}(undef, sizeS, sizeS)
+        nvar = solver.model.meta.ncon
+        t = Matrix{T}(undef, nvar, kk[1]*didi)
+        if LRO.num_matrices(solver.model) > 0
+            for mat_idx in LRO.matrix_indices(solver.model)
+                ilmi = mat_idx.value
+                if kk[ilmi] == 0
+                    continue
+                end
+                n = size(solver.W[mat_idx], 1)
+                k = kk[ilmi]
 
-            @timeit solver.to "prec30" begin
-                # `A(y) * U` is linear in `y`, so instead of forming the
-                # `n × n` matrix `A(y)` for each of the `nvar` rows of
-                # `AAAATtau_d` -- which costs `nvar` dense `n × n` buffers per
-                # preconditioner build -- multiply by `𝐀ᵢ` once to get every
-                # `vec(A(y))` at once, and contract with `Umat` on the
-                # nonzeros only. `𝐀ᵢ`'s column `j` is `vec(Aᵢⱼ)`, so its
-                # transpose is the `AA` matrix this used to be written with.
-                AAs = (-AAAATtau_d) * transpose(solver.model.jprod_buffer[ilmi])
-                ii_, jj_, aa_ = findnz(AAs)
-                # `jj_` indexes into `vec` of an `n × n` matrix
-                qq_ = div.(jj_ .- 1, n) .+ 1
-                pp_ = mod.(jj_ .- 1, n) .+ 1
-                aau = aa_ .* halpha.Umat[ilmi][qq_]
-                # Sparse/dense multiplication needs native indices on 32-bit.
-                AU = sparse(Int.(ii_), Int.(pp_), aau, nvar, n)
+                @timeit solver.to "prec30" begin
+                    # `A(y) * U` is linear in `y`, so instead of forming the
+                    # `n × n` matrix `A(y)` for each of the `nvar` rows of
+                    # `AAAATtau_d` -- which costs `nvar` dense `n × n` buffers per
+                    # preconditioner build -- multiply by `𝐀ᵢ` once to get every
+                    # `vec(A(y))` at once, and contract with `Umat` on the
+                    # nonzeros only. `𝐀ᵢ`'s column `j` is `vec(Aᵢⱼ)`, so its
+                    # transpose is the `AA` matrix this used to be written with.
+                    AAs = (-AAAATtau_d) * transpose(solver.model.jprod_buffer[ilmi])
+                    ii_, jj_, aa_ = findnz(AAs)
+                    # `jj_` indexes into `vec` of an `n × n` matrix
+                    qq_ = div.(jj_ .- 1, n) .+ 1
+                    pp_ = mod.(jj_ .- 1, n) .+ 1
+                    aau = aa_ .* halpha.Umat[ilmi][qq_]
+                    # Sparse/dense multiplication needs native indices on 32-bit.
+                    AU = sparse(Int.(ii_), Int.(pp_), aau, nvar, n)
+                end
+                if LRO.num_matrices(solver.model) > 1
+                    # @timeit solver.to "prec32" begin
+                    didi1 = size(solver.W[mat_idx], 1)
+                    ttmp = Matrix{T}(undef, nvar, kk[ilmi]*didi1)
+                    mul!(ttmp, AU, halpha.Z[ilmi])
+                    t[1:nvar, lbt:(lbt+k*n-1)] = ttmp
+                    # end
+                else
+                    # @timeit solver.to "prec32" begin
+                    mul!(t, AU, halpha.Z[1])
+                    # end
+                end
+                lbt = lbt + k*n
             end
-            if LRO.num_matrices(solver.model) > 1
-                # @timeit solver.to "prec32" begin
-                didi1 = size(solver.W[mat_idx],1)
-                ttmp = Matrix{T}(undef,nvar,kk[ilmi]*didi1)
-                mul!(ttmp, AU, halpha.Z[ilmi])
-                t[1:nvar,lbt:lbt+k*n-1] = ttmp
-                # end
-            else
-                # @timeit solver.to "prec32" begin
-                mul!(t, AU, halpha.Z[1])
-                # end
-            end
-            lbt = lbt + k*n
-        end 
+        end
+        @timeit solver.to "prec33" begin
+            mul!(S, t', t)
+        end
     end
-    @timeit solver.to "prec33" begin
-    mul!(S , t', t)
-    end
-end
 
-return S, lbt
+    return S, lbt
 end
 
 function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
@@ -918,10 +1045,10 @@ function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
         i = mat_idx.value
         n, k = size(t.Umat[i])
         fill!(t.yy[i], zero(T))
-        for j in 1:k
-            mul!(t.xx[i], t.Z[i], view(t.y33, offset + 1:offset + n))
+        for j = 1:k
+            mul!(t.xx[i], t.Z[i], view(t.y33, (offset+1):(offset+n)))
             # Accumulate the outer product without allocating a Kronecker product.
-            for col in 1:n, row in 1:n
+            for col = 1:n, row = 1:n
                 t.yy[i][row, col] += t.xx[i][row] * t.Umat[i][col, j]
             end
             offset += n
