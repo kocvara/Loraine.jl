@@ -126,7 +126,12 @@ function predictor(solver::MySolver{T},halpha::Halpha) where {T}
 end
 
 function sigma_update(solver::MySolver{T}) where {T}
-    step_pred = min(min(minimum(solver.alpha), solver.alpha_lin), min(minimum(solver.beta), solver.beta_lin))
+    step_pred = min(
+        minimum(solver.alpha; init = one(T)),
+        solver.alpha_lin,
+        minimum(solver.beta; init = one(T)),
+        solver.beta_lin,
+    )
     if (solver.mu > 1e-6)
         if (step_pred < 1 / sqrt(3))
                 expon_used = 1.0
