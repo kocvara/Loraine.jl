@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(julia --version)",
+      "Read(//Applications/**)",
+      "Bash(find / -maxdepth 4 -iname \"julia\" -type f)",
+      "Read(//Users/michal/**)",
+      "Bash(/Users/michal/.juliaup/bin/julialauncher --version)"
+    ]
+  }
+}
