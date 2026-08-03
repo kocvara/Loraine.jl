@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh --version)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(julia --project=. -e 'include\\(\"examples/k.jl\"\\)')",
+      "Bash(julia --project=test test/runtests.jl)",
+      "Bash(julia --project=. -e 'using Pkg; Pkg.instantiate\\(\\)')",
+      "Bash(git fetch *)",
+      "Bash(julia --project=test -e ' *)"
+    ]
+  }
+}
