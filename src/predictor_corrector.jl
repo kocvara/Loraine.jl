@@ -253,7 +253,7 @@ function find_step(solver::MySolver{T}) where {T}
         end
     else
         solver.yold = copy(solver.y)
-        beta_step = min(minimum(solver.beta), solver.beta_lin)
+        beta_step = min(minimum(solver.beta; init = one(T)), solver.beta_lin)
         LinearAlgebra.axpy!(beta_step, solver.dely, solver.y)
         if solver.model.nlmi > 0
             alpha_step = min(minimum(solver.alpha), solver.alpha_lin)
@@ -297,8 +297,8 @@ function find_step_lin(solver)
 
         solver.RNT_lin = -(solver.delX_lin .* solver.delS_lin) .* solver.Si_lin
     else
-        solver.X_lin = solver.X_lin + min(minimum(solver.alpha), solver.alpha_lin) .* solver.delX_lin
-        solver.S_lin = solver.S_lin + min(minimum(solver.beta), solver.beta_lin) .* solver.delS_lin
+        solver.X_lin = solver.X_lin + min(minimum(solver.alpha; init = one(eltype(solver.alpha_lin))), solver.alpha_lin) .* solver.delX_lin
+        solver.S_lin = solver.S_lin + min(minimum(solver.beta; init = one(eltype(solver.beta_lin))), solver.beta_lin) .* solver.delS_lin
         solver.S_lin_inv = 1 ./ solver.S_lin
     end
 
