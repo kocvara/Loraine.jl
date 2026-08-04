@@ -68,7 +68,6 @@ mutable struct MySolver{T,M}
     aamat::Int64
     fig_ev::Int64
     verb::Int64
-    datarank::Int64
     initpoint::Int64
     timing::Int64
     maxit::Int64
@@ -150,7 +149,6 @@ mutable struct MySolver{T,M}
         aamat::Int64,
         fig_ev::Int64,
         verb::Int64,
-        datarank::Int64,
         initpoint::Int64,
         timing::Int64,
         maxit::Int64, 
@@ -169,9 +167,8 @@ mutable struct MySolver{T,M}
         solver.erank           = erank
         solver.aamat           = aamat
         solver.fig_ev          = fig_ev
-        solver.verb            = verb   
-        solver.datarank        = datarank
-        solver.initpoint       = initpoint   
+        solver.verb            = verb
+        solver.initpoint       = initpoint
         solver.timing          = timing
         solver.maxit           = maxit 
         solver.datasparsity    = datasparsity
@@ -261,7 +258,6 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
     "aamat" => 1,
     "fig_ev" => 0,
     "verb" => 1,
-    "datarank" => 0,
     "initpoint" => 0,
     "timing" => 1,
     "maxit" => 100,
@@ -280,7 +276,6 @@ function load(model, options::Dict; T = Float64)
     aamat = Int64(get(options, "aamat", 1))
     fig_ev = Int64(get(options, "fig_ev", 0))
     verb = Int64(get(options, "verb", 1))
-    datarank = Int64(get(options, "datarank", 0))
     initpoint = Int64(get(options, "initpoint", 0))
     timing = Int64(get(options, "timing", 1))
     maxit = Int64(get(options, "maxit", 100))
@@ -296,7 +291,6 @@ function load(model, options::Dict; T = Float64)
         aamat,
         fig_ev,
         verb,
-        datarank,
         initpoint,
         timing,
         maxit, 
@@ -327,10 +321,6 @@ function load(model, options::Dict; T = Float64)
     if erank < 0 
         solver.erank = 1
         @printf(" ---Parameter erank negative, setting erank = %1d\n", solver.erank)
-    end
-    if datarank < -1 
-        solver.datarank = 0
-        @printf(" ---Parameter datarank out of range, setting datarank = %1d\n", solver.datarank)
     end
     if initpoint < 0 || initpoint > 1
         solver.initpoint = 1

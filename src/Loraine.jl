@@ -41,100 +41,35 @@ include("initial_point.jl")
 include("predictor_corrector.jl")
 include("prepare_W.jl")
 
-function prepare_model_data(d,drank)
-    msizes = Vector{Int64}
-    n = Int64(get(d, "nvar", 1));
-    msizesa = get(d, "msizes", 1)
-    if length(msizesa) == 1
-        msizes = [convert.(Int64,msizesa)]
-    else
-        msizes = convert.(Int64,msizesa[:])
+"""
+    loraine(filename::AbstractString, options::Dict = Dict{String,Any}(); T::Type = Float64)
+
+Read the semidefinite program in SDPA format from `filename`, solve it with
+Loraine in the arithmetic `T` and return the optimizer, which can then be
+queried with `MOI.get`, e.g. with `MOI.ObjectiveValue()`.
+
+Each entry of `options` is set as a `MOI.RawOptimizerAttribute`, see
+[Options](@ref) for the list of available options.
+
+```julia
+model = loraine("theta1.dat-s", Dict("kit" => 1))
+MOI.get(model, MOI.ObjectiveValue())
+```
+"""
+function loraine(
+    filename::AbstractString,
+    options::Dict = Dict{String,Any}();
+    T::Type = Float64,
+)
+    src = MOI.FileFormats.SDPA.Model{T}()
+    MOI.read_from_file(src, filename)
+    model = MOI.instantiate(Optimizer{T}; with_bridge_type = T)
+    for (name, value) in options
+        MOI.set(model, MOI.RawOptimizerAttribute(name), value)
     end
-    nlin = Int64(get(d, "nlin", 1))
-    nlmi = Int64(get(d, "nlmi", 1))
-    A = get(d, "A", 1);
-    @assert size(A, 1) == nlmi
-    b = -get(d, "c", 1);
-    @assert length(b) == n
-    b_const = -get(d, "b_const", 1);
-
-    if nlin > 0
-        d_lin = -get(d, "d", 1)
-        d_lin = d_lin[:]
-        C_lin = -get(d, "C", 1)
-    else
-        d_lin = sparse([0.; 0.])
-        C_lin = sparse([0. 0.;0. 0.])
-    end
-
-    model = LRO.Model(A[:,2:end], _prepare_A(A,drank,κ)..., b, b_const, d_lin, C_lin, msizes)
-
+    MOI.copy_to(model, src)
+    MOI.optimize!(model)
     return model
-end
-
-function loraine(d, options::Dict)
-
-    verb   = Int64(get(options, "verb", 1))
-    timing = Int64(get(options, "timing", 1))
-    kit    = Int64(get(options, "kit", 1))
-    drank    = Int64(get(options, "datarank", 1))
-    κ = Int64(get(options,"datasparsity",1))
-    if verb > 0
-        t1 = time()
-        # @printf("\n *** Loraine.jl v0.1 ***\n")
-        # @printf(" *** Initialisation STARTS\n")
-    end
-
-    ```PREPARE MODEL```
-    model = prepare_model_data(d,drank,κ)
-
-    ```LOAD MODEL```
-    solver, halpha = load(model,options)
-
-    tottime = time() - t1
-    # if verb > 0
-    #     @printf(" *** Preprocessing finished in %8.2f seconds\n", tottime)
-    # end
-
-    solver.to = TimerOutput()
-    t1 = time()
-
-    # if verb > 0
-    #     @printf(" *** IP STARTS\n")
-    #     if verb < 2
-    #         if kit == 0
-    #             @printf(" it        obj         error     CPU/it\n")
-    #         else
-    #             @printf(" it        obj         error     cg_iter   CPU/it\n")
-    #         end
-    #     else
-    #         if kit == 0
-    #             @printf(" it        obj         error      err1      err2      err3      err4      err5      err6     CPU/it\n")
-    #         else
-    #             @printf(" it        obj         error      err1      err2      err3      err4      err5      err6     cg_pre cg_cor  CPU/it\n")
-    #         end
-    #     end
-    # end
-
-    ```SOLVE```
-    @timeit solver.to "solver" begin
-    solve(solver, halpha)
-    end
-
-    tottime = time() - t1
-
-    if verb > 0
-        # if kit == 1
-        #     @printf(" *** Total CG iterations: %8.0d \n", solver.cg_iter_tot)
-        # end
-        # @printf(" *** Optimal solution found in %8.2f seconds\n", tottime)
-    end
-    
-    if timing > 0
-        show(solver.to)
-    end
-    @printf("\n")
-
 end
 
 end #module
