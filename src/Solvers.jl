@@ -824,17 +824,20 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
             k = kk[ilmi] 
 
             @timeit solver.to "prec30" begin
-                # We can reuse the buffer for different `i`
-                # because we directly apply the multiplication
-                # with `Umat`.
-                AU = reduce(vcat, [
-                    (LRO.unsafe_jtprod(
-                        solver.model,
-                        -AAAATtau_d[i,:],
-                        mat_idx,
-                    ) * halpha.Umat[ilmi])'
-                    for i in axes(AAAATtau_d, 1)
-                ])
+                # `A(y) * U` is linear in `y`, so instead of forming the
+                # `n × n` matrix `A(y)` for each of the `nvar` rows of
+                # `AAAATtau_d` -- which costs `nvar` dense `n × n` buffers per
+                # preconditioner build -- multiply by `𝐀ᵢ` once to get every
+                # `vec(A(y))` at once, and contract with `Umat` on the
+                # nonzeros only. `𝐀ᵢ`'s column `j` is `vec(Aᵢⱼ)`, so its
+                # transpose is the `AA` matrix this used to be written with.
+                AAs = (-AAAATtau_d) * transpose(solver.model.jprod_buffer[ilmi])
+                ii_, jj_, aa_ = findnz(AAs)
+                # `jj_` indexes into `vec` of an `n × n` matrix
+                qq_ = div.(jj_ .- 1, n) .+ 1
+                pp_ = mod.(jj_ .- 1, n) .+ 1
+                aau = aa_ .* halpha.Umat[ilmi][qq_]
+                AU = sparse(ii_, pp_, aau, nvar, n)
             end
             if LRO.num_matrices(solver.model) > 1
                 # @timeit solver.to "prec32" begin
