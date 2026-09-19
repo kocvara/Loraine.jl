@@ -48,6 +48,19 @@ set_optimizer(model, Loraine.Optimizer)
 optimize!(model)
 ```
 
+## Use without JuMP
+
+An SDP problem stored in SDPA format can also be solved without JuMP with
+[`loraine`](@ref):
+```julia
+using Loraine
+model = loraine("examples/data/theta1.dat-s", Dict("kit" => 1))
+```
+
+```@docs
+loraine
+```
+
 ## License and Original Contributors
 
 Loraine is licensed under the [MIT License](https://github.com/kocvara/Loraine.jl/blob/main/LICENSE.md).

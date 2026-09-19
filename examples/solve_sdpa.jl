@@ -35,7 +35,7 @@ model=read_sdpa(joinpath(@__DIR__, "data", "theta1.dat-s"))
 # model=read_from_file(joinpath(dirname(@__DIR__), "examples/data/theta1.dat-s"))
 # model=read_from_file("examples/data/theta1.dat-s")
 # model=read_sdpa(joinpath(@__DIR__, "data", "vib9.dat-s"))
-# model=read_from_file("examples/data/vib9.dat-s") #use with "datarank = -1"
+# model=read_from_file("examples/data/vib9.dat-s")
 
 set_optimizer(model, Loraine.Optimizer{Float64})
 # set_optimizer(model, Loraine.Optimizer{Float64x2})
@@ -50,7 +50,6 @@ set_attribute(model, "preconditioner", 1)
 set_attribute(model, "erank", 1)
 set_attribute(model, "aamat", 2)
 set_attribute(model, "verb", 1)
-set_attribute(model, "datarank", 0)
 set_attribute(model, "initpoint", 1)
 set_attribute(model, "maxit", Int64(100))
 set_attribute(model, "datasparsity", 8)
@@ -62,6 +61,19 @@ optimize!(model)
 using Test
 @test objective_value(model) ≈ 23 rtol = 1e-6
 # # value.(X)
+
+# With CG now
+set_attribute(model, "kit", 1)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
+
+set_attribute(model, "preconditioner", 0)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
+
+set_attribute(model, "preconditioner", 2)
+optimize!(model)
+@test objective_value(model) ≈ 23 rtol = 1e-6
 
 # Mosek (CSDP, etc) for a comparison
 # Mosek must solve the dualized problem to be efficient

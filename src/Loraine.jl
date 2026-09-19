@@ -16,81 +16,60 @@ using FameSVD
 # using MKLSparse
 # using MKL
 
+import MathOptInterface as MOI
+import LowRankOpt as LRO
+struct Optimizer{T}
+    dummy::T
+end
+function Optimizer{T}() where {T}
+    model = LRO.Optimizer{T}()
+    MOI.set(
+        model,
+        MOI.RawOptimizerAttribute("solver"),
+        Solvers.Solver{T},
+    )
+    return model
+end
+Optimizer() = Optimizer{Float64}()
+
 #modules
 include("Solvers.jl")
 using .Solvers
 
 include("kron_etc.jl")
-include("makeBBBB.jl")
 include("initial_point.jl")
 include("predictor_corrector.jl")
 include("prepare_W.jl")
-include("MOI_wrapper.jl")
-include("multithreading.jl")
 
-function loraine(d, options::Dict)
+"""
+    loraine(filename::AbstractString, options::Dict = Dict{String,Any}(); T::Type = Float64)
 
-    verb   = Int64(get(options, "verb", 1))
-    timing = Int64(get(options, "timing", 1))
-    kit    = Int64(get(options, "kit", 1))
-    drank    = Int64(get(options, "datarank", 1))
-    κ = Int64(get(options,"datasparsity",1))
-    if verb > 0
-        t1 = time()
-        # @printf("\n *** Loraine.jl v0.1 ***\n")
-        # @printf(" *** Initialisation STARTS\n")
+Read the semidefinite program in SDPA format from `filename`, solve it with
+Loraine in the arithmetic `T` and return the optimizer, which can then be
+queried with `MOI.get`, e.g. with `MOI.ObjectiveValue()`.
+
+Each entry of `options` is set as a `MOI.RawOptimizerAttribute`, see
+[Options](@ref) for the list of available options.
+
+```julia
+model = loraine("theta1.dat-s", Dict("kit" => 1))
+MOI.get(model, MOI.ObjectiveValue())
+```
+"""
+function loraine(
+    filename::AbstractString,
+    options::Dict = Dict{String,Any}();
+    T::Type = Float64,
+)
+    src = MOI.FileFormats.SDPA.Model{T}()
+    MOI.read_from_file(src, filename)
+    model = MOI.instantiate(Optimizer{T}; with_bridge_type = T)
+    for (name, value) in options
+        MOI.set(model, MOI.RawOptimizerAttribute(name), value)
     end
-
-    ```PREPARE MODEL```
-    model = prepare_model_data(d,drank,κ)
-
-    ```LOAD MODEL```
-    solver, halpha = load(model,options)
-
-    tottime = time() - t1
-    # if verb > 0
-    #     @printf(" *** Preprocessing finished in %8.2f seconds\n", tottime)
-    # end
-
-    solver.to = TimerOutput()
-    t1 = time()
-
-    # if verb > 0
-    #     @printf(" *** IP STARTS\n")
-    #     if verb < 2
-    #         if kit == 0
-    #             @printf(" it        obj         error     CPU/it\n")
-    #         else
-    #             @printf(" it        obj         error     cg_iter   CPU/it\n")
-    #         end
-    #     else
-    #         if kit == 0
-    #             @printf(" it        obj         error      err1      err2      err3      err4      err5      err6     CPU/it\n")
-    #         else
-    #             @printf(" it        obj         error      err1      err2      err3      err4      err5      err6     cg_pre cg_cor  CPU/it\n")
-    #         end
-    #     end
-    # end
-
-    ```SOLVE```
-    @timeit solver.to "solver" begin
-    solve(solver, halpha)
-    end
-
-    tottime = time() - t1
-
-    if verb > 0
-        # if kit == 1
-        #     @printf(" *** Total CG iterations: %8.0d \n", solver.cg_iter_tot)
-        # end
-        # @printf(" *** Optimal solution found in %8.2f seconds\n", tottime)
-    end
-    
-    if timing > 0
-        show(solver.to)
-    end
-    @printf("\n")
-
+    MOI.copy_to(model, src)
+    MOI.optimize!(model)
+    return model
 end
 
 end #module
