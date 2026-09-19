@@ -635,7 +635,11 @@ function Prec_for_CG_beta(solver,halpha)
             lambdaf = F.values 
             lambda_s = lambdaf[1:n-k]
 
-            if solver.aamat == 0
+            if isempty(lambda_s)
+                # The selected rank covers this block (e.g. a 1x1 PSD block).
+                # Keep a positive baseline; for 1x1 this gives W0 = W and U = 0.
+                ttau = minimum(lambdaf)
+            elseif solver.aamat == 0
                 ttau = 1.0 * minimum(lambda_s)
             else
                 ttau = (minimum(lambda_s) + mean(lambda_s))/2.0 - 1.0e-14
@@ -707,7 +711,11 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
             vect_s = vectf[:,1:n-k]
             lambda_s = lambdaf[1:n-k]
 
-            if solver.aamat == 0
+            if isempty(lambda_s)
+                # The selected rank covers this block (e.g. a 1x1 PSD block).
+                # Keep a positive baseline; for 1x1 this gives W0 = W and U = 0.
+                ttau = minimum(lambdaf)
+            elseif solver.aamat == 0
                 ttau = 1.0 * minimum(lambda_s)
             else
                 ttau = (minimum(lambda_s) + mean(lambda_s))/2 - 1.0e-14
