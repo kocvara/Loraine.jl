@@ -12,4 +12,5 @@ end
 run_examples(joinpath(dirname(@__DIR__), "examples"))
 
 include("loraine.jl")
+include("cg_workspace.jl")
 include("MOI_wrapper.jl")

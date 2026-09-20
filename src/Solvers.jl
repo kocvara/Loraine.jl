@@ -809,12 +809,34 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T},halpha) where {T}
        
 end
 
-struct MyM{M}
+# One workspace per predictor/corrector CG solve, reused by every application.
+struct MyM{T,M,F,C}
     model::M
-    AAAATtau_fact
-    Umat
-    Z
-    cholS
+    AAAATtau_fact::F
+    Umat::Vector{Matrix{T}}
+    Z::Vector{Matrix{T}}
+    cholS::C
+    AAAAinvx::Vector{T}
+    yy2::Vector{T}
+    yyy2::Vector{T}
+    y33::Vector{T}
+    AyU::Vector{Matrix{T}}
+    chunk::Vector{Matrix{T}}
+    xx::Vector{Vector{T}}
+    yy::Vector{Matrix{T}}
+end
+
+function MyM(model, AAAATtau_fact, Umat::Vector{Matrix{T}}, Z::Vector{Matrix{T}}, cholS) where {T}
+    nvar = model.meta.ncon
+    sizeS = sum(length, Umat; init = 0)
+    return MyM(
+        model, AAAATtau_fact, Umat, Z, cholS,
+        zeros(T, nvar), zeros(T, nvar), zeros(T, nvar), zeros(T, sizeS),
+        [zeros(T, size(u)) for u in Umat],
+        [zeros(T, size(u)) for u in Umat],
+        [zeros(T, size(u, 1)) for u in Umat],
+        [zeros(T, size(z)) for z in Z],
+    )
 end
 
 function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) where {T}
@@ -871,45 +893,38 @@ return S, lbt
 end
 
 function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
-
-    nvar = size(x,1)
-    nlmi = LRO.num_matrices(t.model)
-
-    yy2 = zeros(nvar)
-    y33 = zeros(T,0)
-
-    AAAAinvx = t.AAAATtau_fact \ x
-
-    if nlmi > 0
-        for mat_idx in LRO.matrix_indices(t.model)
-            ilmi = mat_idx.value
-            y22 = LRO.unsafe_jtprod(t.model, AAAAinvx, mat_idx)
-            y33 = [y33; vec(t.Z[ilmi]' * y22 * t.Umat[ilmi])]
-        end
+    ldiv!(t.AAAAinvx, t.AAAATtau_fact, x)
+    offset = 0
+    for mat_idx in LRO.matrix_indices(t.model)
+        i = mat_idx.value
+        y22 = LRO.unsafe_jtprod(t.model, t.AAAAinvx, mat_idx)
+        # U is thin: preserve the cheaper right-first multiplication order.
+        mul!(t.AyU[i], y22, t.Umat[i])
+        mul!(t.chunk[i], t.Z[i]', t.AyU[i])
+        copyto!(t.y33, offset + 1, t.chunk[i], 1, length(t.chunk[i]))
+        offset += length(t.chunk[i])
     end
-    
-    y33 = t.cholS \ y33
+    ldiv!(t.cholS, t.y33)
 
-    ii = 0
-    if nlmi > 0
-        for mat_idx in LRO.matrix_indices(t.model)
-            ilmi = mat_idx.value
-            n = size(t.Umat[ilmi],1)
-            k = size(t.Umat[ilmi],2)
-            yy = zeros(n*n)
-            for i = 1:k
-                xx = t.Z[ilmi] * y33[ii+1:ii+n]
-                yy .+= kron(t.Umat[ilmi][:,i],xx)
-                ii += n
+    fill!(t.yy2, zero(T))
+    offset = 0
+    for mat_idx in LRO.matrix_indices(t.model)
+        i = mat_idx.value
+        n, k = size(t.Umat[i])
+        fill!(t.yy[i], zero(T))
+        for j in 1:k
+            mul!(t.xx[i], t.Z[i], view(t.y33, offset + 1:offset + n))
+            # Accumulate the outer product without allocating a Kronecker product.
+            for col in 1:n, row in 1:n
+                t.yy[i][row, col] += t.xx[i][row] * t.Umat[i][col, j]
             end
-            LRO.add_jprod!(t.model, reshape(yy, n, n), yy2, mat_idx)
+            offset += n
         end
+        LRO.add_jprod!(t.model, t.yy[i], t.yy2, mat_idx)
     end
-
-    yyy2 = t.AAAATtau_fact \ yy2
-
-    copy!(Mx,(AAAAinvx - yyy2)[:])
-
+    ldiv!(t.yyy2, t.AAAATtau_fact, t.yy2)
+    @. Mx = t.AAAAinvx - t.yyy2
+    return Mx
 end
 
 end #module
