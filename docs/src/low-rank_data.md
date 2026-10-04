@@ -9,9 +9,4 @@ with data matrices ``B_i\in{\mathbb R}^{m\times k}`` and with ``k \ll n``.
 The complexity of ``H`` assembly is then reduced from ``nm^3`` to ``knm^2``.
 
 *In particular:*
-If we know that ``A_i`` have rank one, the decomposition ``A_i = b_i b_i^\top`` is performed by Loraine automatically (`datarank = -1`).
-
-The model is represented internally via the following `struct`:
-```@docs
-Loraine.MyModel
-```
+If we know that ``A_i`` have rank one, the decomposition ``A_i = b_i b_i^\top`` is performed by [LowRankOpt](https://github.com/blegat/LowRankOpt.jl/) automatically (`detect_rank_1_tol = 1e-6`).
