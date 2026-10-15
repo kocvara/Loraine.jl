@@ -23,10 +23,15 @@ struct FactoredMatrix{T} <: AbstractMatrix{T}
 end
 Base.size(A::FactoredMatrix) = size(A.matrix)
 Base.getindex(A::FactoredMatrix, i, j) = Base.getindex(A.matrix, i, j)
+# Sparse/dense multiplication requires native indices on 32-bit Julia.
+_native_sparse_indices(A) = A
+function _native_sparse_indices(A::SparseMatrixCSC{T}) where {T}
+    return convert(SparseMatrixCSC{T,Int}, A)
+end
 # Multiply through the dense `matrix` field so we hit BLAS instead of the
 # generic `AbstractMatrix` (getindex-based) fallback.
-Base.:*(A::FactoredMatrix, B::AbstractMatrix) = A.matrix * B
-Base.:*(A::AbstractMatrix, B::FactoredMatrix) = A * B.matrix
+Base.:*(A::FactoredMatrix, B::AbstractMatrix) = A.matrix * _native_sparse_indices(B)
+Base.:*(A::AbstractMatrix, B::FactoredMatrix) = _native_sparse_indices(A) * B.matrix
 Base.:*(A::FactoredMatrix, B::FactoredMatrix) = A.matrix * B.matrix
 function LinearAlgebra.mul!(
     C::AbstractMatrix,
@@ -35,7 +40,7 @@ function LinearAlgebra.mul!(
     α::Number,
     β::Number,
 )
-    return LinearAlgebra.mul!(C, A.matrix, B, α, β)
+    return LinearAlgebra.mul!(C, A.matrix, _native_sparse_indices(B), α, β)
 end
 function LinearAlgebra.mul!(
     C::AbstractMatrix,
@@ -44,7 +49,7 @@ function LinearAlgebra.mul!(
     α::Number,
     β::Number,
 )
-    return LinearAlgebra.mul!(C, A, B.matrix, α, β)
+    return LinearAlgebra.mul!(C, _native_sparse_indices(A), B.matrix, α, β)
 end
 function LinearAlgebra.mul!(
     C::AbstractMatrix,
