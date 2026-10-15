@@ -867,7 +867,8 @@ function prec_alpha_S!(solver::MySolver{T},halpha,AAAATtau_d,kk,didi,lbt,sizeS) 
                 qq_ = div.(jj_ .- 1, n) .+ 1
                 pp_ = mod.(jj_ .- 1, n) .+ 1
                 aau = aa_ .* halpha.Umat[ilmi][qq_]
-                AU = sparse(ii_, pp_, aau, nvar, n)
+                # Sparse/dense multiplication needs native indices on 32-bit.
+                AU = sparse(Int.(ii_), Int.(pp_), aau, nvar, n)
             end
             if LRO.num_matrices(solver.model) > 1
                 # @timeit solver.to "prec32" begin
