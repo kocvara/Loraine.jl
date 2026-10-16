@@ -69,4 +69,4 @@ Further assumptions
 - *At the moment, Loraine can only handle rank-one data.*
 - *This feature is only relevant for Loraine used with the **direct solver**.*
 
-If you know (or strongly suspect) that *all* data matrices ``A_i`` have rank one, select the option `datarank = -1`. Loraine will factorize the matrices as ``A_i = b_i b_i^\top`` and use only the vectors ``b_i`` in the interior point algorithm. This will gravely reduce the complexity (and the elapsed time) of Loraine.
+If *all* data matrices ``A_i`` have rank one, the factorization ``A_i = b_i b_i^\top`` is detected by [LowRankOpt](https://github.com/blegat/LowRankOpt.jl/) and only the vectors ``b_i`` are used in the interior point algorithm. This gravely reduces the complexity (and the elapsed time) of Loraine. See [Low-rank data, more details](@ref) for details.

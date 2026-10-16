@@ -5,7 +5,7 @@ import Loraine
 using MultiFloats
 
 # model = Model(Loraine.Optimizer)
-model = Model(Loraine.Optimizer{Float64x2})
+model = GenericModel{Float64x2}(Loraine.Optimizer{Float64x2})
 # model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer{Float64x2})
 
 # @variable(model, x >= 0)
@@ -30,6 +30,7 @@ using Test
 @test primal_status(model) == MOI.FEASIBLE_POINT
 @test dual_status(model) == MOI.FEASIBLE_POINT
 @test objective_value(model) ≈ 4 rtol = 1e-6
+@test dual_objective_value(model) ≈ 4 rtol = 1e-6
 
 @test value(x) ≈ 2 rtol = 1e-6
 

@@ -7,7 +7,7 @@ function my_kron(A::Matrix{T}, B, C) where {T}
     TMP = Matrix{T}(undef,size(B,1),size(C,1))
     mul!(TMP1,C,A')
     mul!(TMP,B,TMP1)
-    return vec(TMP) 
+    return TMP
 end
 ###########################################################################
 function mat(vecA)
@@ -23,14 +23,6 @@ function mat!(dst::AbstractMatrix, vecA)
 end
 
 ###########################################################################
-function btrace(nlmi, X, S)
-    trXS = zero(eltype(eltype(X)))
-    @inbounds for i = 1:nlmi
-        trXS += dot(X[i], S[i])
-    end
-    return trXS
-end
-
 
 
 # How to create a vector of sparse matrices:

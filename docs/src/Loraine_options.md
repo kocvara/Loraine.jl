@@ -11,9 +11,6 @@ preconditioner  # 0...no; 1...H_alpha; 2...H_beta; 4...hybrid [1]
 erank           # estimated rank [1]
 aamat           # 0..A^TA; 1..diag(A^TA); 2..identity [2]
 verb            # 2..full output; 1..short output; 0..no output [1]
-datarank        # 0..full rank matrices expected [0]
-                # -1..rank-1 matrices expected, converted to vectors, if possible
-                # (TBD) 1..vectors expected for low-rank data matrices
 initpoint       # 0..Loraine heuristics, 1..SDPT3-like heuristics [0]
 timing          # 1..yes, 0..no
 maxit           # maximal number of global iterations [200]
@@ -37,11 +34,6 @@ datasparsity    # data matrices treated as sparse when number of their
 - `erank` (only used when `kit = 1` and `preconditioner > 0`)
     - if you are not sure what the actual rank of the solution is, **always choose** `erank = 1`; with inreasing value of `erank`, the complexity of the preconditioner grows and the whole code could be slower, despite needing fewer CG iterations
     - only if you are sure about the rank of the solution, set `erank` to this value (but you should always compare it to `erank = 1`)
-
-- `datarank` (only used with the direct solver `kit = 0`)
-    - choose `datarank = -1` if you know (or suspect) that all the data matrices ``A_i`` have rank one; in this case, the matrices will be factorized as ``A_i = b_i b_i^T`` and vectors ``b_i`` will be used when constructing the Schur complement matrix
-    - if you are not sure about the rank of the data matrices, you can always try to set `datarank = -1`; if the factorization of any matrix fails, Lorain will switch to the default option `datarank = 0`
-    - for rank-one data matrices, option `datarank = -1` will result in a much faster code than the default `datarank = 0`
 
 - `timing` is not used when Loraine is called from JuMP
 
