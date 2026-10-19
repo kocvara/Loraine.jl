@@ -449,6 +449,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     solver.Rd = similar(solver.X)
     solver.Rp = zeros(T, solver.model.meta.ncon)
     solver.y_buffer = similar(solver.Rp)
+    solver.dely = similar(solver.Rp)
 
     solver.delX = Matrix{T}[]
     solver.delS = Matrix{T}[]

@@ -82,8 +82,8 @@ function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
                 end
                 solver.cholBBBB = cholesky(BBBB).L
             end
-            solver.dely = solver.cholBBBB \ h
-            solver.dely = solver.cholBBBB' \ solver.dely
+            ldiv!(solver.dely, solver.cholBBBB, h)
+            ldiv!(solver.cholBBBB', solver.dely)
         else
             @warn("System matrix not Hermitian, stopping Loraine")
             solver.maxit = 1e10
@@ -191,7 +191,8 @@ function corrector(solver::MySolver{T}, halpha) where {T}
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
-        solver.dely = solver.cholBBBB' \ (solver.cholBBBB \ h)
+        ldiv!(solver.dely, solver.cholBBBB, h)
+        ldiv!(solver.cholBBBB', solver.dely)
     else
         A = MyA(solver.W, solver.model, solver.to)
         if solver.preconditioner == 0
