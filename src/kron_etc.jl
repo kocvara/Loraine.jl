@@ -3,10 +3,10 @@
 ###########################################################################
 function my_kron(A::Matrix{T}, B, C) where {T}
     # TMP = B * C * A'
-    TMP1 = Matrix{T}(undef,size(C,1),size(A,1))
-    TMP = Matrix{T}(undef,size(B,1),size(C,1))
-    mul!(TMP1,C,A')
-    mul!(TMP,B,TMP1)
+    TMP1 = Matrix{T}(undef, size(C, 1), size(A, 1))
+    TMP = Matrix{T}(undef, size(B, 1), size(C, 1))
+    mul!(TMP1, C, A')
+    mul!(TMP, B, TMP1)
     return TMP
 end
 ###########################################################################
