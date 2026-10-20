@@ -76,3 +76,27 @@ end
         end
     end
 end
+
+@testset "Direct solver reuses its Newton direction" begin
+    model = Model(Loraine.Optimizer)
+    set_silent(model)
+    set_attribute(model, "kit", 0)
+    @variable(model, X[1:2, 1:2] in PSDCone())
+    @constraint(model, X[1, 1] == 1)
+    @constraint(model, X[2, 2] == 1)
+    @objective(model, Min, 2 * X[1, 2])
+    optimize!(model)
+    @test termination_status(model) == MOI.OPTIMAL
+    @test objective_value(model) ≈ -2 atol = 1e-6
+    backend = unsafe_backend(model)
+    solver, halpha = backend.solver.solver, backend.solver.halpha
+    Loraine.Solvers.setup_solver(solver, halpha)
+    Loraine.Solvers.initial_point(solver)
+    direction = solver.dely
+    for _ = 1:3
+        Loraine.Solvers.myIPstep(solver, halpha)
+        @test solver.dely === direction
+        @test all(isfinite, direction)
+        @test solver.cholBBBB isa LowerTriangular
+    end
+end
