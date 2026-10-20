@@ -93,10 +93,57 @@ end
     Loraine.Solvers.setup_solver(solver, halpha)
     Loraine.Solvers.initial_point(solver)
     direction = solver.dely
+    workspace = solver.chol_work
     for _ = 1:3
         Loraine.Solvers.myIPstep(solver, halpha)
         @test solver.dely === direction
         @test all(isfinite, direction)
-        @test solver.cholBBBB isa LowerTriangular
+        @test solver.dely !== solver.y_buffer
+        @test solver.chol_work === workspace
+        @test solver.cholBBBB.factors === workspace
+        @test solver.BBBB ≈ Matrix(solver.cholBBBB)
     end
+end
+
+# Zero Jacobian columns produce a singular Schur matrix, exercising recovery.
+function singular_schur_solver()
+    LS = Loraine.Solvers
+    LRO = LS.LRO
+    model = LRO.Model(
+        [sparse(Matrix{Float64}(I, 2, 2))],
+        [spzeros(2, 2) for _ = 1:1, _ = 1:2],
+        zeros(2),
+        SparseVector{Float64,Int64}(spzeros(0)),
+        SparseMatrixCSC{Float64,Int64}(spzeros(2, 0)),
+        Int64[2],
+    )
+    state = LS.Solver{Float64}(model; kit = 0, verb = 0)
+    solver, halpha = state.solver, state.halpha
+    solver.to = LS.TimerOutput()
+    LS.setup_solver(solver, halpha)
+    LS.initial_point(solver)
+    LS.find_mu(solver)
+    LS.prepare_W(solver)
+    return solver, halpha
+end
+
+@testset "Schur Cholesky recovery" begin
+    solver, halpha = singular_schur_solver()
+    workspace = solver.chol_work
+    Loraine.Solvers.predictor(solver, halpha)
+    @test solver.status == 0
+    @test solver.regcount == 1
+    @test solver.BBBB ≈ 1e-4 * Matrix{Float64}(I, 2, 2)
+    @test solver.cholBBBB.factors === workspace
+    @test Matrix(solver.cholBBBB) ≈ solver.BBBB
+
+    solver, halpha = singular_schur_solver()
+    solver.regcount = 5
+    workspace = solver.chol_work
+    Loraine.Solvers.predictor(solver, halpha)
+    @test solver.status == 3
+    @test solver.regcount == 6
+    @test iszero(solver.BBBB)
+    @test solver.cholBBBB.factors === workspace
+    @test Matrix(solver.cholBBBB) ≈ Matrix{Float64}(I, 2, 2)
 end

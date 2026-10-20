@@ -93,7 +93,8 @@ mutable struct MySolver{T,M}
     iter::Int64
     DIMACS_error::T
     BBBB::Matrix{T}
-    cholBBBB::Any
+    chol_work::Matrix{T} # reusable storage for the dense Schur factorization
+    cholBBBB::Cholesky{T,Matrix{T}}
 
     status::Int
 
@@ -522,6 +523,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
 
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
         solver.BBBB = zeros(T, ncon, ncon)
+        solver.chol_work = zeros(T, ncon, ncon)
     end
 
 end
