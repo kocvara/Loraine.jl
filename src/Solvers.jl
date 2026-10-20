@@ -104,12 +104,12 @@ mutable struct MySolver{T,M}
     X::LRO.VectorizedSolution{T}
     S::LRO.VectorizedSolution{T}
     y::Vector{T}
-    yold::Any
-    delX::Any
-    delS::Any
-    dely::Any
-    Xn::Any
-    Sn::Any
+    yold::Vector{T}
+    delX::Vector{Matrix{T}}
+    delS::Vector{Matrix{T}}
+    dely::Vector{T}
+    Xn::Vector{Matrix{T}}
+    Sn::Vector{Matrix{T}}
 
     Si_lin::Vector{T}
     S_lin_inv::Vector{T}
@@ -118,28 +118,28 @@ mutable struct MySolver{T,M}
     Xn_lin::Vector{T}
     Sn_lin::Vector{T}
 
-    D::Any
+    D::Vector{Vector{T}}
     W::LRO.ShapedSolution{T,FactoredMatrix{T}}
-    Si::Any
-    DDsi::Any
+    Si::Vector{Matrix{T}}
+    DDsi::Vector{Vector{T}}
 
     Rp::Vector{T}
     Rd::LRO.VectorizedSolution{T}
 
-    cg_iter_pre::Any
-    cg_iter_cor::Any
-    cg_iter_tot::Any
+    cg_iter_pre::Int64
+    cg_iter_cor::Int64
+    cg_iter_tot::Int64
 
-    alpha::Any
-    beta::Any
-    alpha_lin::Any
-    beta_lin::Any
+    alpha::Vector{T}
+    beta::Vector{T}
+    alpha_lin::T
+    beta_lin::T
 
     itertime::Any
-    tottime::Any
+    tottime::Float64
 
-    RNT::Any
-    RNT_lin::Any
+    RNT::Vector{Matrix{T}}
+    RNT_lin::Vector{T}
 
     y_buffer::Vector{T} # Bufer of the same size as `y`
 
