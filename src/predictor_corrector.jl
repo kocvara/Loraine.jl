@@ -1,6 +1,15 @@
 using ConjugateGradients
 using GenericLinearAlgebra
 
+# Fill `chol_work` with the identity and store its (trivial) Cholesky, so that
+# `cholBBBB` stays a valid `Cholesky` even on the give-up path (status = 3).
+function set_identity_chol!(solver::MySolver)
+    fill!(solver.chol_work, 0)
+    view(solver.chol_work, diagind(solver.chol_work)) .= 1
+    solver.cholBBBB = cholesky!(Hermitian(solver.chol_work))
+    return
+end
+
 function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
 
     solver.predict = true
@@ -38,58 +47,53 @@ function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
     if solver.kit == 0   # direct solver
         BBBB = LinearAlgebra.Hermitian(solver.BBBB)
         #     @timeit solver.to "backslash" begin
-        if ishermitian(BBBB)
-            if parent(BBBB) isa SparseMatrixCSC
-                # Convert to dense because
-                # 1. Cholesky is not implemented for `MultiFloat` for sparse
-                # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
-                BBBB = LinearAlgebra.Hermitian(
-                    Matrix(parent(BBBB)),
-                    LinearAlgebra.sym_uplo(BBBB.uplo),
-                )
+        if parent(BBBB) isa SparseMatrixCSC
+            # Convert to dense because
+            # 1. Cholesky is not implemented for `MultiFloat` for sparse
+            # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
+            BBBB = LinearAlgebra.Hermitian(
+                Matrix(parent(BBBB)),
+                LinearAlgebra.sym_uplo(BBBB.uplo),
+            )
+        end
+        # Reuse storage instead of allocating a dense factor matrix each iteration.
+        # `check = false` returns an unsuccessful factorization instead of
+        # throwing, so we avoid building/catching a `PosDefException`.
+        uplo = LinearAlgebra.sym_uplo(BBBB.uplo)
+        copyto!(solver.chol_work, parent(BBBB))
+        chol = cholesky!(Hermitian(solver.chol_work, uplo); check = false)
+        if !issuccess(chol)
+            if solver.verb > 0
+                println("Matrix H not positive definite, trying to regularize")
             end
-            try
-                solver.cholBBBB = cholesky(BBBB).L
-            catch err
-                if !(err isa LinearAlgebra.PosDefException)
-                    rethrow(err)
-                end
+            icount = 0
+            solver.regcount += 1
+            if solver.regcount > 5
                 if solver.verb > 0
-                    println("Matrix H not positive definite, trying to regularize")
+                    @warn("too many regularizations of H, giving up")
                 end
-                icount = 0
-                solver.regcount += 1
-                if solver.regcount > 5
+                set_identity_chol!(solver)
+                solver.status = 3
+                return
+            end
+            while true
+                solver.BBBB .= solver.BBBB .+ 1e-4 .* I(size(solver.BBBB, 1))
+                copyto!(solver.chol_work, solver.BBBB)
+                chol = cholesky!(Hermitian(solver.chol_work, uplo); check = false)
+                issuccess(chol) && break
+                icount += 1
+                if icount > 1000
                     if solver.verb > 0
-                        @warn("too many regularizations of H, giving up")
+                        @warn("H cannot be made positive definite, giving up")
                     end
-                    solver.cholBBBB = I(size(BBBB, 1))
+                    set_identity_chol!(solver)
                     solver.status = 3
                     return
                 end
-                while !isposdef(BBBB)
-                    solver.BBBB .= solver.BBBB .+ 1e-4 .* I(size(solver.BBBB, 1))
-                    BBBB = LinearAlgebra.Hermitian(BBBB)
-                    icount = icount + 1
-                    if icount > 1000
-                        if solver.verb > 0
-                            @warn("H cannot be made positive definite, giving up")
-                        end
-                        solver.cholBBBB = I(size(BBBB, 1))
-                        solver.status = 3
-                        return
-                    end
-                end
-                solver.cholBBBB = cholesky(BBBB).L
             end
-            ldiv!(solver.dely, solver.cholBBBB, h)
-            ldiv!(solver.cholBBBB', solver.dely)
-        else
-            @warn("System matrix not Hermitian, stopping Loraine")
-            solver.maxit = 1e10
-            solver.status = 2
-            solver.cholBBBB = 0
         end
+        solver.cholBBBB = chol
+        ldiv!(solver.dely, solver.cholBBBB, h)
     else
         A = MyA(solver.W, solver.model, solver.to)
         if solver.preconditioner == 0
@@ -192,7 +196,6 @@ function corrector(solver::MySolver{T}, halpha) where {T}
     # solving the linear system()
     if solver.kit == 0   # direct solver
         ldiv!(solver.dely, solver.cholBBBB, h)
-        ldiv!(solver.cholBBBB', solver.dely)
     else
         A = MyA(solver.W, solver.model, solver.to)
         if solver.preconditioner == 0
