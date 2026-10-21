@@ -2,9 +2,9 @@ using TimerOutputs
 using FameSVD
 using MultiFloats
 
-function try_cholesky(solver, X, name::String)
+function try_cholesky!(solver, workspace, X, name::String)
     try
-        return cholesky(X)
+        return cholesky!(copyto!(workspace, X))
     catch
         if solver.verb > 0
             println("Matrix $name not positive definite, trying to regularize")
@@ -21,58 +21,64 @@ function try_cholesky(solver, X, name::String)
                 return I(size(X, 1))
             end
         end
-        return cholesky(X)
+        return cholesky!(copyto!(workspace, X))
     end
 end
 
 function prepare_W(solver::MySolver{T}) where {T}
 
     @timeit solver.to "prepare_W" begin
-    solver.W[LRO.ScalarIndex] .= solver.X[LRO.ScalarIndex] .* solver.S_lin_inv
-    Threads.@threads for i in 1:LRO.num_matrices(solver.model)
-        mat_idx = LRO.MatrixIndex(i)
-        Ctmp = try_cholesky(solver, solver.X[mat_idx], "X")
-        CtmpS = try_cholesky(solver, solver.S[mat_idx], "S")
-        CCtmp = Matrix{T}(undef, size(CtmpS.L, 1), size(CtmpS.L, 1))
-        mul!(CCtmp, (CtmpS.L)', Ctmp.L)
-        if T == Float64
-            _, Dtmp, V = fsvd(CCtmp)
-        else
-            _, Dtmp, V = svd(CCtmp)
-        end
+        solver.W[LRO.ScalarIndex] .= solver.X[LRO.ScalarIndex] .* solver.S_lin_inv
+        Threads.@threads for i = 1:LRO.num_matrices(solver.model)
+            mat_idx = LRO.MatrixIndex(i)
+            W = solver.W[mat_idx]
+            # Previous scaling matrices are dead here; use them for the factors.
+            Ctmp = try_cholesky!(solver, W.matrix, solver.X[mat_idx], "X")
+            CtmpS = try_cholesky!(solver, W.factor_inv, solver.S[mat_idx], "S")
+            CCtmp = solver.kron_tmp[i]
+            mul!(CCtmp, (CtmpS.L)', Ctmp.L)
+            if T == Float64
+                _, Dtmp, V = fsvd(CCtmp)
+            else
+                _, Dtmp, V = svd(CCtmp)
+            end
 
-        solver.D[i] = copy(Dtmp)
-        Di2 = try
-            Diagonal(1.0 ./ sqrt.(Dtmp))
-        catch
-            @warn("Numerical difficulties, giving up")
-            solver.status = 4
-            Diagonal(ones(T, length(Dtmp)))
-        end
+            copyto!(solver.D[i], Dtmp)
+            try
+                @. solver.DDsi[i] = inv(sqrt(Dtmp))
+            catch
+                @warn("Numerical difficulties, giving up")
+                solver.status = 4
+                fill!(solver.DDsi[i], one(T))
+            end
 
-        W = solver.W[mat_idx]
-        W.factor .= Ctmp.L * V * Di2
-        W.factor_inv .= inv(W.factor)
-        LinearAlgebra.mul!(W.matrix, W.factor, W.factor')
+            mul!(W.factor, Ctmp.L, V)
+            rmul!(W.factor, Diagonal(solver.DDsi[i]))
 
-        solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ I(size(solver.Si[i], 1)))
-        DDtmp = W.factor' * solver.S[mat_idx] * W.factor
-        DDtmp = @. (DDtmp + DDtmp') / 2.0
-        try
-            solver.DDsi[i] = (1.0 ./ sqrt.(diag(DDtmp, 0)))
-        catch
-            @warn("Numerical difficulties, giving up")
-            solver.DDsi[i] = diag(I(size(DDtmp, 1)))
-            solver.status = 4
+            # Consume the S factor before overwriting W.factor_inv with its result.
+            copyto!(solver.Si[i], I)
+            ldiv!(CtmpS.L, solver.Si[i])
+            ldiv!(CtmpS.L', solver.Si[i])
+            copyto!(W.factor_inv, W.factor)
+            LinearAlgebra.inv!(lu!(W.factor_inv))
+            LinearAlgebra.mul!(W.matrix, W.factor, W.factor')
+
+            mul!(solver.kron_tmp[i], W.factor', solver.S[mat_idx])
+            DDtmp = solver.kron_tmp2[i]
+            mul!(DDtmp, solver.kron_tmp[i], W.factor)
+            # Only the diagonal is used, so symmetrizing DDtmp is unnecessary.
+            diagonal = view(DDtmp, diagind(DDtmp))
+            try
+                @. solver.DDsi[i] = inv(sqrt(diagonal))
+            catch
+                @warn("Numerical difficulties, giving up")
+                fill!(solver.DDsi[i], one(T))
+                solver.status = 4
+            end
         end
     end
-    end
 
-    if LRO.num_scalars(solver.model) > 0
-        solver.Si_lin = inv.(solver.S[LRO.ScalarIndex])
-    else
-        solver.Si_lin = []
-    end
+    solver.Si_lin .= inv.(solver.S[LRO.ScalarIndex])
 
     return solver.D, solver.W, solver.Si, solver.DDsi, solver.Si_lin
 
