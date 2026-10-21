@@ -147,3 +147,25 @@ end
     @test solver.cholBBBB.factors === workspace
     @test Matrix(solver.cholBBBB) ≈ Matrix{Float64}(I, 2, 2)
 end
+
+@testset "Newton scratch across multiple PSD blocks" begin
+    for kit in (0, 1)
+        model = Model(Loraine.Optimizer)
+        set_silent(model)
+        set_attribute(model, "kit", kit)
+        blocks = Vector{VariableRef}[]
+        for d in (3, 4, 1)
+            y = @variable(model, [1:d], base_name = "y_$d")
+            X = AffExpr[r == c ? y[r] : -1.0 for r = 1:d, c = 1:d]
+            @constraint(model, X in PSDCone())
+            push!(blocks, y)
+        end
+        @objective(model, Min, sum(sum(y) for y in blocks))
+        optimize!(model)
+        @test termination_status(model) == MOI.OPTIMAL
+        @test objective_value(model) ≈ 18 atol = 1e-5
+        for y in blocks
+            @test value.(y) ≈ fill(length(y) - 1, length(y)) atol = 1e-5
+        end
+    end
+end

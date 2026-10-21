@@ -30,14 +30,19 @@ function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
     end
 
     # RHS for the Hessian equation
-    tmp = similar(solver.X)
+    tmp = solver.sol_buffer
     if !isempty(tmp[LRO.ScalarIndex])
         tmp[LRO.ScalarIndex] .=
             spdiagm(solver.W[LRO.ScalarIndex]) * solver.Rd[LRO.ScalarIndex] +
             solver.X[LRO.ScalarIndex]
     end
-    for i in LRO.matrix_indices(solver.model)
-        tmp[i] .= solver.W[i] * (solver.Rd[i] + solver.S[i]) * solver.W[i]
+    for mat_idx in LRO.matrix_indices(solver.model)
+        i = mat_idx.value
+        # tmp[i] = W * (Rd[i] + S[i]) * W   (W is a FactoredMatrix, in place)
+        RS = solver.kron_tmp[i]
+        RS .= solver.Rd[mat_idx] .+ solver.S[mat_idx]
+        mul!(solver.kron_tmp2[i], solver.W[mat_idx], RS)
+        mul!(tmp[mat_idx], solver.kron_tmp2[i], solver.W[mat_idx])
     end
     h = solver.y_buffer
     NLPModels.jprod!(solver.model, solver.X, tmp, h)
@@ -167,7 +172,7 @@ end
 
 function corrector(solver::MySolver{T}, halpha) where {T}
     solver.predict = false
-    X = similar(solver.X)
+    X = solver.sol_buffer
     if LRO.num_scalars(solver.model) > 0
         tmp =
             (solver.delX_lin .* solver.delS_lin) .* (solver.Si_lin) -
@@ -181,13 +186,18 @@ function corrector(solver::MySolver{T}, halpha) where {T}
     for mat_idx in LRO.matrix_indices(solver.model)
         i = mat_idx.value
         W = solver.W[mat_idx]
-        X[mat_idx] .= my_kron(
-            W.factor,
-            W.factor,
-            W.factor' * solver.Rd[mat_idx] * W.factor +
-            Diagonal(@. solver.D[i] - (solver.sigma * solver.mu) / solver.D[i]) -
-            solver.RNT[i],
-        )
+        # C = W.factor' * Rd * W.factor + diag(D) - diag((σμ)/D) - RNT   (in place)
+        C = solver.kron_tmp2[i]
+        mul!(solver.kron_tmp[i], W.factor', solver.Rd[mat_idx])
+        mul!(C, solver.kron_tmp[i], W.factor)
+        C .-= solver.RNT[i]
+        d = solver.D[i]
+        sm = solver.sigma * solver.mu
+        @inbounds for k in eachindex(d)
+            C[k, k] += d[k] - sm / d[k]
+        end
+        # X[mat_idx] = W.factor * C * W.factor'
+        my_kron!(X[mat_idx], W.factor, W.factor, C, solver.kron_tmp[i])
     end
     h = solver.y_buffer
     NLPModels.jprod!(solver.model, solver.X, X, h)
@@ -231,36 +241,38 @@ function find_step(solver::MySolver{T}) where {T}
         @timeit solver.to "find_step" begin
             for mat_idx in LRO.matrix_indices(solver.model)
                 i = mat_idx.value
+                W = solver.W[mat_idx]
+                # The Jacobian product has consumed the RHS; reuse its storage.
+                rhs_scratch = solver.sol_buffer[mat_idx]
                 solver.delS[i] .=
                     solver.Rd[mat_idx] .-
                     LRO.unsafe_jtprod(solver.model, solver.dely, mat_idx)
-                Ξ = vec(
-                    my_kron(solver.W[mat_idx].matrix, solver.W[mat_idx], solver.delS[i]),
-                )
+                # Ξ = W * delS * W.matrix'   (into kron_tmp[i], scratch kron_tmp2[i])
+                Ξ = solver.kron_tmp[i]
+                my_kron!(Ξ, W.matrix, W, solver.delS[i], solver.kron_tmp2[i])
                 if solver.predict
-                    solver.delX[i] .= mat(-solver.X[mat_idx][:] .- Ξ)
+                    # delX = symmetrize(-X - Ξ)
+                    Ξ .= .-solver.X[mat_idx] .- Ξ
+                    solver.delX[i] .= (Ξ .+ Ξ') ./ 2
                 else
-                    solver.delX[i] .= mat(
-                        ((solver.sigma*solver.mu) .* solver.Si[i] .- solver.X[mat_idx])[:] .-
-                        Ξ .+ vec(
-                            my_kron(
-                                solver.W[mat_idx].factor,
-                                solver.W[mat_idx].factor,
-                                solver.RNT[i],
-                            ),
-                        ),
-                    )
+                    # delX = symmetrize((σμ) Si - X - Ξ + W.factor RNT W.factor')
+                    K2 = rhs_scratch
+                    my_kron!(K2, W.factor, W.factor, solver.RNT[i], solver.kron_tmp2[i])
+                    sm = solver.sigma * solver.mu
+                    Ξ .= sm .* solver.Si[i] .- solver.X[mat_idx] .- Ξ .+ K2
+                    solver.delX[i] .= (Ξ .+ Ξ') ./ 2
                 end
 
                 # determining steplength to stay feasible
-                delSb =
-                    solver.W[mat_idx].factor' * solver.delS[i] * solver.W[mat_idx].factor
-                delXb =
-                    solver.W[mat_idx].factor_inv *
-                    solver.delX[i] *
-                    solver.W[mat_idx].factor_inv'
+                delSb = solver.kron_tmp2[i]
+                mul!(solver.kron_tmp[i], W.factor', solver.delS[i])
+                mul!(delSb, solver.kron_tmp[i], W.factor)
+                delXb = rhs_scratch
+                mul!(solver.kron_tmp[i], W.factor_inv, solver.delX[i])
+                mul!(delXb, solver.kron_tmp[i], W.factor_inv')
 
-                XXX = @. solver.DDsi[i]' * delXb * solver.DDsi[i]
+                XXX = solver.kron_tmp[i]
+                @. XXX = solver.DDsi[i]' * delXb * solver.DDsi[i]
                 XXX .= (XXX .+ XXX') ./ 2
                 mimiX = minimum(eigvals(Symmetric(XXX)))
                 solver.alpha[i] = mimiX > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiX)
@@ -284,20 +296,25 @@ function find_step(solver::MySolver{T}) where {T}
         # solution update
         Threads.@threads for i = 1:LRO.num_matrices(solver.model)
             mat_idx = LRO.MatrixIndex(i)
-            @. solver.Xn[i] = solver.X[mat_idx] + solver.alpha[i] * solver.delX[i]
-            @. solver.Sn[i] = solver.S[mat_idx] + solver.beta[i] * solver.delS[i]
-            deed = solver.D[i] .+ solver.D[i]'
-            solver.RNT[i] .=
-                -(
-                    solver.W[mat_idx].factor_inv *
-                    solver.delX[i] *
-                    solver.delS[i] *
-                    solver.W[mat_idx].factor +
-                    solver.W[mat_idx].factor' *
-                    solver.delS[i] *
-                    solver.delX[i] *
-                    solver.W[mat_idx].factor_inv'
-                ) ./ deed
+            W = solver.W[mat_idx]
+            solver.Xn[i] .= solver.X[mat_idx] .+ solver.alpha[i] .* solver.delX[i]
+            solver.Sn[i] .= solver.S[mat_idx] .+ solver.beta[i] .* solver.delS[i]
+            # R = W.factor_inv delX delS W.factor + W.factor' delS delX W.factor_inv'
+            A = solver.kron_tmp[i]
+            B = solver.kron_tmp2[i]
+            R = solver.sol_buffer[mat_idx]
+            mul!(A, W.factor_inv, solver.delX[i])
+            mul!(B, A, solver.delS[i])
+            mul!(R, B, W.factor)
+            mul!(A, W.factor', solver.delS[i])
+            mul!(B, A, solver.delX[i])
+            mul!(R, B, W.factor_inv', 1, 1)
+            # RNT[i] = -R ./ deed  with  deed[k,l] = D[i][k] + D[i][l]
+            d = solver.D[i]
+            RNTi = solver.RNT[i]
+            @inbounds for l in axes(R, 2), k in axes(R, 1)
+                RNTi[k, l] = -R[k, l] / (d[k] + d[l])
+            end
         end
     else
         solver.yold = copy(solver.y)

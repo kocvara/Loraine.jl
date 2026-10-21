@@ -143,6 +143,12 @@ mutable struct MySolver{T,M}
     RNT_lin::Vector{T}
 
     y_buffer::Vector{T} # Bufer of the same size as `y`
+    # Per-block dim×dim scratch reused by `my_kron!` and the matrix products in
+    # `predictor`/`corrector`/`find_step`, avoiding temporary matrix products.
+    kron_tmp::Vector{Matrix{T}}
+    kron_tmp2::Vector{Matrix{T}}
+    # Newton RHS buffer; reused as block scratch after its Jacobian product.
+    sol_buffer::LRO.VectorizedSolution{T}
 
     function MySolver{T}(
         kit::Int64,
@@ -473,6 +479,10 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     solver.Sn = Matrix{T}[]
     solver.RNT = Matrix{T}[]
 
+    solver.kron_tmp = Matrix{T}[]
+    solver.kron_tmp2 = Matrix{T}[]
+    solver.sol_buffer = similar(solver.X)
+
     solver.regcount = 0
 
     solver.delS_lin = zeros(T, LRO.num_scalars(solver.model))
@@ -486,6 +496,8 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         push!(solver.Xn, zeros(T, dim, dim))
         push!(solver.Sn, zeros(T, dim, dim))
         push!(solver.RNT, zeros(T, dim, dim))
+        push!(solver.kron_tmp, zeros(T, dim, dim))
+        push!(solver.kron_tmp2, zeros(T, dim, dim))
     end
 
     halpha.Umat = Matrix{T}[]
