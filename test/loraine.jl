@@ -2,6 +2,7 @@ using Test
 using JuMP
 using LinearAlgebra
 using SparseArrays
+using MultiFloats: Float64x2
 import MathOptInterface as MOI
 import Loraine
 
@@ -168,4 +169,96 @@ end
             @test value.(y) ≈ fill(length(y) - 1, length(y)) atol = 1e-5
         end
     end
+end
+
+function iteration_storage(solver)
+    return (
+        solver.yold,
+        solver.D[1],
+        solver.Si[1],
+        solver.DDsi[1],
+        solver.Si_lin,
+        solver.delX_lin,
+        solver.Xn_lin,
+        solver.Sn_lin,
+        solver.RNT_lin,
+        solver.S_lin_inv,
+    )
+end
+
+@testset "Scaling invariants and persistent iteration buffers" begin
+    for (T, kit) in ((Float64, 0), (Float64, 1), (Float64x2, 0))
+        model = GenericModel{T}(Loraine.Optimizer{T})
+        set_silent(model)
+        set_attribute(model, "kit", kit)
+        @variable(model, y[1:3])
+        @variable(model, z >= 1)
+        @constraint(model, [y[1] -1 -1; -1 y[2] -1; -1 -1 y[3]] in PSDCone())
+        @objective(model, Min, sum(y) + z)
+        if T == Float64
+            optimize!(model)
+            @test termination_status(model) == MOI.OPTIMAL
+            @test objective_value(model) ≈ T(7) atol = 1e-6
+        else
+            # LowRankOpt's eigmin-based convergence check needs LAPACK types.
+            # Exercise higher-precision iterations without that check.
+            MOI.Utilities.attach_optimizer(backend(model))
+            MOI.Utilities.attach_optimizer(backend(model).optimizer.model)
+        end
+        state = unsafe_backend(model).solver
+        solver, halpha = state.solver, state.halpha
+        LS = Loraine.Solvers
+        solver.to = LS.TimerOutput()
+        LS.setup_solver(solver, halpha)
+        LS.initial_point(solver)
+        LS.myIPstep(solver, halpha)
+        buffers = iteration_storage(solver)
+        for _ = 1:2
+            LS.prepare_W(solver)
+            mat_idx = LS.LRO.MatrixIndex(1)
+            W = solver.W[mat_idx]
+            tolerance = T == Float64 ? 1e-8 : 1e-18
+            @test W.matrix * solver.S[mat_idx] * W.matrix ≈ solver.X[mat_idx] atol =
+                tolerance
+            @test W.factor_inv * W.factor ≈ Matrix{T}(I, 3, 3) atol = tolerance
+            @test solver.Si[1] * solver.S[mat_idx] ≈ Matrix{T}(I, 3, 3) atol = tolerance
+            LS.myIPstep(solver, halpha)
+            @test all(a === b for (a, b) in zip(buffers, iteration_storage(solver)))
+        end
+    end
+end
+
+@testset "Scaling Cholesky workspace and recovery" begin
+    solver, _ = singular_schur_solver()
+    for diagonal in (1.0, -1e-6)
+        X = Matrix(Diagonal([diagonal, 2.0]))
+        workspace = similar(X)
+        factor = Loraine.Solvers.try_cholesky!(solver, workspace, X, "X")
+        @test factor.factors === workspace
+        @test Matrix(factor) ≈ X
+        @test isposdef(X)
+        @test solver.status == 0
+    end
+end
+
+@testset "CG retries a failed preconditioner" begin
+    solver, _ = singular_schur_solver()
+    A = Diagonal([2.0, 3.0])
+    b = [2.0, 6.0]
+    operator = (out, x) -> mul!(out, A, x)
+    # A zero preconditioner makes CG divide 0 by 0 instead of finding a step.
+    failed_preconditioner = (out, x) -> fill!(out, 0.0)
+    direction, exit_code, _ =
+        Loraine.Solvers.solve_cg(solver, operator, b, failed_preconditioner)
+    @test exit_code > 0
+    @test all(isfinite, direction)
+    @test A * direction ≈ b
+    @test b == [2.0, 6.0]
+    indefinite_operator = (out, x) -> mul!(out, -A, x)
+    @test_throws ErrorException Loraine.Solvers.solve_cg(
+        solver,
+        indefinite_operator,
+        b,
+        Loraine.Solvers.MyM_no(solver.to),
+    )
 end

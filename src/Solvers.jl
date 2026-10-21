@@ -457,6 +457,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     solver.Rp = zeros(T, solver.model.meta.ncon)
     solver.y_buffer = similar(solver.Rp)
     solver.dely = similar(solver.Rp)
+    solver.yold = similar(solver.y)
 
     solver.delX = Matrix{T}[]
     solver.delS = Matrix{T}[]
@@ -486,6 +487,11 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     solver.regcount = 0
 
     solver.delS_lin = zeros(T, LRO.num_scalars(solver.model))
+    solver.Si_lin = similar(solver.delS_lin)
+    solver.delX_lin = similar(solver.delS_lin)
+    solver.Xn_lin = similar(solver.delS_lin)
+    solver.Sn_lin = similar(solver.delS_lin)
+    solver.RNT_lin = similar(solver.delS_lin)
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
         push!(solver.delX, zeros(T, dim, dim))
