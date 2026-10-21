@@ -42,8 +42,7 @@ function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
         RS = solver.kron_tmp[i]
         RS .= solver.Rd[mat_idx] .+ solver.S[mat_idx]
         mul!(solver.kron_tmp2[i], solver.W[mat_idx], RS)
-        mul!(solver.kron_tmp3[i], solver.kron_tmp2[i], solver.W[mat_idx])
-        tmp[mat_idx] .= solver.kron_tmp3[i]
+        mul!(tmp[mat_idx], solver.kron_tmp2[i], solver.W[mat_idx])
     end
     h = solver.y_buffer
     NLPModels.jprod!(solver.model, solver.X, tmp, h)
@@ -198,8 +197,7 @@ function corrector(solver::MySolver{T}, halpha) where {T}
             C[k, k] += d[k] - sm / d[k]
         end
         # X[mat_idx] = W.factor * C * W.factor'
-        my_kron!(solver.kron_tmp3[i], W.factor, W.factor, C, solver.kron_tmp[i])
-        X[mat_idx] .= solver.kron_tmp3[i]
+        my_kron!(X[mat_idx], W.factor, W.factor, C, solver.kron_tmp[i])
     end
     h = solver.y_buffer
     NLPModels.jprod!(solver.model, solver.X, X, h)
@@ -244,6 +242,8 @@ function find_step(solver::MySolver{T}) where {T}
             for mat_idx in LRO.matrix_indices(solver.model)
                 i = mat_idx.value
                 W = solver.W[mat_idx]
+                # The Jacobian product has consumed the RHS; reuse its storage.
+                rhs_scratch = solver.sol_buffer[mat_idx]
                 solver.delS[i] .=
                     solver.Rd[mat_idx] .-
                     LRO.unsafe_jtprod(solver.model, solver.dely, mat_idx)
@@ -256,7 +256,7 @@ function find_step(solver::MySolver{T}) where {T}
                     solver.delX[i] .= (Ξ .+ Ξ') ./ 2
                 else
                     # delX = symmetrize((σμ) Si - X - Ξ + W.factor RNT W.factor')
-                    K2 = solver.kron_tmp3[i]
+                    K2 = rhs_scratch
                     my_kron!(K2, W.factor, W.factor, solver.RNT[i], solver.kron_tmp2[i])
                     sm = solver.sigma * solver.mu
                     Ξ .= sm .* solver.Si[i] .- solver.X[mat_idx] .- Ξ .+ K2
@@ -267,7 +267,7 @@ function find_step(solver::MySolver{T}) where {T}
                 delSb = solver.kron_tmp2[i]
                 mul!(solver.kron_tmp[i], W.factor', solver.delS[i])
                 mul!(delSb, solver.kron_tmp[i], W.factor)
-                delXb = solver.kron_tmp3[i]
+                delXb = rhs_scratch
                 mul!(solver.kron_tmp[i], W.factor_inv, solver.delX[i])
                 mul!(delXb, solver.kron_tmp[i], W.factor_inv')
 
@@ -302,7 +302,7 @@ function find_step(solver::MySolver{T}) where {T}
             # R = W.factor_inv delX delS W.factor + W.factor' delS delX W.factor_inv'
             A = solver.kron_tmp[i]
             B = solver.kron_tmp2[i]
-            R = solver.kron_tmp3[i]
+            R = solver.sol_buffer[mat_idx]
             mul!(A, W.factor_inv, solver.delX[i])
             mul!(B, A, solver.delS[i])
             mul!(R, B, W.factor)

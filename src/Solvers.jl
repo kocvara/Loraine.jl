@@ -147,8 +147,8 @@ mutable struct MySolver{T,M}
     # `predictor`/`corrector`/`find_step`, avoiding temporary matrix products.
     kron_tmp::Vector{Matrix{T}}
     kron_tmp2::Vector{Matrix{T}}
-    kron_tmp3::Vector{Matrix{T}}
-    sol_buffer::LRO.VectorizedSolution{T} # reused RHS-of-Newton-system buffer
+    # Newton RHS buffer; reused as block scratch after its Jacobian product.
+    sol_buffer::LRO.VectorizedSolution{T}
 
     function MySolver{T}(
         kit::Int64,
@@ -481,7 +481,6 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
 
     solver.kron_tmp = Matrix{T}[]
     solver.kron_tmp2 = Matrix{T}[]
-    solver.kron_tmp3 = Matrix{T}[]
     solver.sol_buffer = similar(solver.X)
 
     solver.regcount = 0
@@ -499,7 +498,6 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         push!(solver.RNT, zeros(T, dim, dim))
         push!(solver.kron_tmp, zeros(T, dim, dim))
         push!(solver.kron_tmp2, zeros(T, dim, dim))
-        push!(solver.kron_tmp3, zeros(T, dim, dim))
     end
 
     halpha.Umat = Matrix{T}[]
