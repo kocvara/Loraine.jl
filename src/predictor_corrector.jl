@@ -10,6 +10,27 @@ function set_identity_chol!(solver::MySolver)
     return
 end
 
+function solve_cg(solver, A, h, M)
+    # ConjugateGradients requires these keyword types on both architectures.
+    tol = Float64(solver.tol_cg)
+    max_iter = Int64(10000)
+    direction, exit_code, num_iters = cg(A, h; tol, maxIter = max_iter, precon = M)
+    if exit_code < 0
+        # The SMW preconditioner can lose positivity through cancellation.
+        # Retry the original system instead of using a failed CG direction.
+        if solver.verb > 0
+            println("Preconditioned CG failed, retrying without preconditioning")
+        end
+        direction, exit_code, retry_iters =
+            cg(A, h; tol, maxIter = max_iter, precon = MyM_no(solver.to))
+        num_iters += retry_iters
+        if exit_code < 0
+            error("CG failed without preconditioning (exit code $exit_code)")
+        end
+    end
+    return direction, exit_code, num_iters
+end
+
 function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
 
     solver.predict = true
@@ -112,11 +133,7 @@ function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
         end
 
         # @timeit solver.to "CG predictor" begin
-        # ConjugateGradients.jl needs `tol` to be `Float64`,
-        # maybe we can fix this in that package but in the mean time, we just
-        # convert the tolerance to `Float64`
-        solver.dely, exit_code, num_iters =
-            cg(A, h[:]; tol = Float64(solver.tol_cg), maxIter = Int64(10000), precon = M)
+        solver.dely, exit_code, num_iters = solve_cg(solver, A, h[:], M)
         # end
 
         solver.cg_iter_pre += num_iters
@@ -213,14 +230,7 @@ function corrector(solver::MySolver{T}, halpha) where {T}
         end
 
         @timeit solver.to "CG corrector" begin
-            # `maxIter = 10000` fails on 32-bit, we need `maxIter = Int64(10000)`
-            solver.dely, exit_code, num_iters = cg(
-                A,
-                h[:];
-                tol = Float64(solver.tol_cg),
-                maxIter = Int64(10000),
-                precon = M,
-            )
+            solver.dely, exit_code, num_iters = solve_cg(solver, A, h[:], M)
         end
         solver.cg_iter_cor += num_iters
         solver.cg_iter_tot += num_iters

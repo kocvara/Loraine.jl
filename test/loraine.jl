@@ -240,3 +240,25 @@ end
         @test solver.status == 0
     end
 end
+
+@testset "CG retries a failed preconditioner" begin
+    solver, _ = singular_schur_solver()
+    A = Diagonal([2.0, 3.0])
+    b = [2.0, 6.0]
+    operator = (out, x) -> mul!(out, A, x)
+    # A zero preconditioner makes CG divide 0 by 0 instead of finding a step.
+    failed_preconditioner = (out, x) -> fill!(out, 0.0)
+    direction, exit_code, _ =
+        Loraine.Solvers.solve_cg(solver, operator, b, failed_preconditioner)
+    @test exit_code > 0
+    @test all(isfinite, direction)
+    @test A * direction ≈ b
+    @test b == [2.0, 6.0]
+    indefinite_operator = (out, x) -> mul!(out, -A, x)
+    @test_throws ErrorException Loraine.Solvers.solve_cg(
+        solver,
+        indefinite_operator,
+        b,
+        Loraine.Solvers.MyM_no(solver.to),
+    )
+end
