@@ -1,5 +1,7 @@
 module Solvers
 
+using ..LapackWorkspaces
+
 export MySolver, solve, load, MyA, Halpha
 
 using SparseArrays
@@ -148,6 +150,8 @@ mutable struct MySolver{T,M}
     # Per-block dim×dim scratch reused by `my_kron!` and the matrix products in
     # `predictor`/`corrector`/`find_step`, avoiding temporary matrix products.
     kron_tmp::Vector{Matrix{T}}
+    eigen_workspaces::Vector{LRO.EigenWorkspace{T}}
+    inverse_workspaces::Vector{Union{Nothing,InverseWorkspace{T}}}
     kron_tmp2::Vector{Matrix{T}}
     # Newton RHS buffer; reused as block scratch after its Jacobian product.
     sol_buffer::LRO.VectorizedSolution{T}
@@ -199,10 +203,12 @@ mutable struct Halpha
     AAAATtau::Any
     AAAATtau_fact::Any
     cg_preconditioner::Any
+    cg_assembly::Any
     function Halpha(kit::Int64)
         halpha = new()
         halpha.kit = kit
         halpha.cg_preconditioner = nothing
+        halpha.cg_assembly = nothing
         return halpha
     end
 end
@@ -487,6 +493,8 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
 
     solver.kron_tmp = Matrix{T}[]
     solver.kron_tmp2 = Matrix{T}[]
+    solver.eigen_workspaces = LRO.EigenWorkspace{T}[]
+    solver.inverse_workspaces = Union{Nothing,InverseWorkspace{T}}[]
     solver.sol_buffer = similar(solver.X)
 
     solver.regcount = 0
@@ -509,10 +517,13 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         push!(solver.RNT, zeros(T, dim, dim))
         push!(solver.kron_tmp, zeros(T, dim, dim))
         push!(solver.kron_tmp2, zeros(T, dim, dim))
+        push!(solver.eigen_workspaces, LRO.EigenWorkspace(solver.kron_tmp[end]))
+        push!(solver.inverse_workspaces, make_workspace(solver.kron_tmp2[end]))
     end
 
     halpha.Umat = Matrix{T}[]
     halpha.cg_preconditioner = nothing
+    halpha.cg_assembly = nothing
     halpha.Z = Matrix{T}[]
     halpha.AAAATtau = SparseMatrixCSC{T}[]
     ncon = solver.model.meta.ncon
@@ -553,6 +564,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         # Application buffers need only the dimensions; factors arrive later.
         halpha.cg_preconditioner =
             MyM(solver.model, nothing, halpha.Umat, halpha.Z, nothing)
+        cg_assembly!(halpha, T, ncon, sum(length, halpha.Umat))
     end
 
 end
@@ -612,8 +624,9 @@ function check_convergence(solver)
         primal_err = solver.Rp,
         dual_slack = solver.S,
         dual_err = solver.Rd,
-        pobj,
-        dobj,
+        pobj = pobj,
+        dobj = dobj,
+        workspace = solver.eigen_workspaces,
     )
 
     # `err[5]` may be negative so we need `abs`
@@ -786,6 +799,14 @@ function (t::MyM_beta)(Mx::Vector{T}, x::Vector{T}) where {T}
     @. Mx = x / t.AAAATtau
 end
 
+function cg_assembly!(halpha, ::Type{T}, nvar, sizeS) where {T}
+    if isnothing(halpha.cg_assembly) || size(halpha.cg_assembly[1]) != (nvar, sizeS)
+        halpha.cg_assembly =
+            (zeros(T, nvar, sizeS), zeros(T, sizeS, sizeS), zeros(T, nvar, sizeS))
+    end
+    return halpha.cg_assembly
+end
+
 function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 
     @timeit solver.to "prec" begin
@@ -876,21 +897,27 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
         k = kk[1]
         if k > 1 #slow formula
             # @timeit solver.to "prec3" begin
-            t = zeros(nvar, k*ntot)
+            t, S, solved_t = cg_assembly!(halpha, T, nvar, sizeS)
             if nlmi > 0
                 for mat_idx in LRO.matrix_indices(solver.model)
                     ilmi = mat_idx.value
                     n = size(solver.W[mat_idx], 1)
                     k = kk[ilmi]
                     TT = kron(halpha.Umat[ilmi], halpha.Z[ilmi])
-                    t[1:nvar, lbt:(lbt+k*n-1)] .= LRO.jac(solver.model, mat_idx)' * TT
+                    mul!(
+                        view(t, :, Int(lbt):Int(lbt+k*n-1)),
+                        _native_sparse_indices(solver.model.jprod_buffer[ilmi])',
+                        TT,
+                    )
                     lbt = lbt + k*n
                 end
             end
             # end
 
             @timeit solver.to "prec4" begin
-                S = t' * (halpha.AAAATtau_fact \ t)
+                copyto!(solved_t, t)
+                ldiv!(halpha.AAAATtau_fact, solved_t)
+                mul!(S, t', solved_t)
             end
         else #fast formula
             AAAATtau_d = spdiagm(sqrt.(1 ./ diag(halpha.AAAATtau)))
@@ -927,9 +954,10 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
         end
 
         # Schur complement for the SMW formula
-        S = @. (S + S') / 2
-        S += I(size(S, 1))
-        halpha.cholS = cholesky(S)
+        LinearAlgebra.hermitianpart!(S)
+        view(S, diagind(S)) .+= one(T)
+        # The previous preconditioner is dead; its factor may share this buffer.
+        halpha.cholS = cholesky!(Hermitian(S))
 
     end
 
@@ -1007,9 +1035,8 @@ function prec_alpha_S!(
     sizeS,
 ) where {T}
     @timeit solver.to "prec3" begin
-        S = Matrix{T}(undef, sizeS, sizeS)
         nvar = solver.model.meta.ncon
-        t = Matrix{T}(undef, nvar, kk[1]*didi)
+        t, S, _ = cg_assembly!(halpha, T, nvar, sizeS)
         if LRO.num_matrices(solver.model) > 0
             for mat_idx in LRO.matrix_indices(solver.model)
                 ilmi = mat_idx.value
@@ -1038,10 +1065,7 @@ function prec_alpha_S!(
                 end
                 if LRO.num_matrices(solver.model) > 1
                     # @timeit solver.to "prec32" begin
-                    didi1 = size(solver.W[mat_idx], 1)
-                    ttmp = Matrix{T}(undef, nvar, kk[ilmi]*didi1)
-                    mul!(ttmp, AU, halpha.Z[ilmi])
-                    t[1:nvar, lbt:(lbt+k*n-1)] = ttmp
+                    mul!(view(t, :, Int(lbt):Int(lbt+k*n-1)), AU, halpha.Z[ilmi])
                     # end
                 else
                     # @timeit solver.to "prec32" begin
