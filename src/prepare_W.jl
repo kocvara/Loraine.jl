@@ -32,7 +32,8 @@ function try_cholesky!(solver, workspace, X, name::String)
                     @warn("$name cannot be made positive definite, giving up")
                 end
                 solver.status = 4
-                return I(size(X, 1))
+                # Keep the identity fallback in the same factorization type.
+                return cholesky!(copyto!(workspace, I))
             end
         end
         return cholesky!(copyto!(workspace, X))
@@ -77,7 +78,9 @@ function prepare_W_block!(solver::MySolver{T}, i) where {T}
     DDtmp = solver.kron_tmp2[i]
     mul!(DDtmp, solver.kron_tmp[i], W.factor)
     # Only the diagonal is used, so symmetrizing DDtmp is unnecessary.
-    diagonal = view(DDtmp, diagind(DDtmp))
+    # Cartesian indices avoid reshaping the matrix for a linear view.
+    indices = view(CartesianIndices(DDtmp), diagind(DDtmp))
+    diagonal = view(DDtmp, indices)
     try
         @. solver.DDsi[i] = inv(sqrt(diagonal))
     catch
