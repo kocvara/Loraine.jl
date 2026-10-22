@@ -8,6 +8,7 @@ import Statistics: mean
 using Printf
 using TimerOutputs
 using MultiFloats
+using ConjugateGradients
 import NLPModels
 import SolverCore
 import LowRankOpt as LRO
@@ -130,6 +131,7 @@ mutable struct MySolver{T,M}
     cg_iter_pre::Int64
     cg_iter_cor::Int64
     cg_iter_tot::Int64
+    cg_data::CGData{T}
 
     alpha::Vector{T}
     beta::Vector{T}
@@ -196,9 +198,11 @@ mutable struct Halpha
     cholS::Any
     AAAATtau::Any
     AAAATtau_fact::Any
+    cg_preconditioner::Any
     function Halpha(kit::Int64)
         halpha = new()
         halpha.kit = kit
+        halpha.cg_preconditioner = nothing
         return halpha
     end
 end
@@ -458,6 +462,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     solver.y_buffer = similar(solver.Rp)
     solver.dely = similar(solver.Rp)
     solver.yold = similar(solver.y)
+    solver.cg_data = CGData(length(solver.y), T)
 
     solver.delX = Matrix{T}[]
     solver.delS = Matrix{T}[]
@@ -507,6 +512,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     end
 
     halpha.Umat = Matrix{T}[]
+    halpha.cg_preconditioner = nothing
     halpha.Z = Matrix{T}[]
     halpha.AAAATtau = SparseMatrixCSC{T}[]
     ncon = solver.model.meta.ncon
@@ -542,6 +548,11 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
         solver.BBBB = zeros(T, ncon, ncon)
         solver.chol_work = zeros(T, ncon, ncon)
+    end
+    if solver.kit == 1 && solver.preconditioner in (1, 4)
+        # Application buffers need only the dimensions; factors arrive later.
+        halpha.cg_preconditioner =
+            MyM(solver.model, nothing, halpha.Umat, halpha.Z, nothing)
     end
 
 end
@@ -947,7 +958,26 @@ function MyM(
     Umat::Vector{Matrix{T}},
     Z::Vector{Matrix{T}},
     cholS,
+    workspace = nothing,
 ) where {T}
+    if !isnothing(workspace)
+        # Refresh the factors each iteration, keeping the application buffers.
+        return MyM(
+            model,
+            AAAATtau_fact,
+            Umat,
+            Z,
+            cholS,
+            workspace.AAAAinvx,
+            workspace.yy2,
+            workspace.yyy2,
+            workspace.y33,
+            workspace.AyU,
+            workspace.chunk,
+            workspace.xx,
+            workspace.yy,
+        )
+    end
     nvar = model.meta.ncon
     sizeS = sum(length, Umat; init = 0)
     return MyM(

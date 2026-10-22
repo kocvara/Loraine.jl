@@ -174,6 +174,8 @@ end
 function iteration_storage(solver)
     return (
         solver.yold,
+        solver.dely,
+        solver.cg_data,
         solver.D[1],
         solver.Si[1],
         solver.DDsi[1],
@@ -211,8 +213,10 @@ end
         solver.to = LS.TimerOutput()
         LS.setup_solver(solver, halpha)
         LS.initial_point(solver)
-        LS.myIPstep(solver, halpha)
         buffers = iteration_storage(solver)
+        preconditioner = halpha.cg_preconditioner
+        LS.myIPstep(solver, halpha)
+        @test all(a === b for (a, b) in zip(buffers, iteration_storage(solver)))
         for _ = 1:2
             LS.prepare_W(solver)
             mat_idx = LS.LRO.MatrixIndex(1)
@@ -224,6 +228,10 @@ end
             @test solver.Si[1] * solver.S[mat_idx] ≈ Matrix{T}(I, 3, 3) atol = tolerance
             LS.myIPstep(solver, halpha)
             @test all(a === b for (a, b) in zip(buffers, iteration_storage(solver)))
+            if kit == 1
+                @test halpha.cg_preconditioner.AAAAinvx === preconditioner.AAAAinvx
+                @test halpha.cg_preconditioner.yy === preconditioner.yy
+            end
         end
     end
 end
@@ -254,6 +262,7 @@ end
     @test all(isfinite, direction)
     @test A * direction ≈ b
     @test b == [2.0, 6.0]
+    @test direction === solver.dely
     indefinite_operator = (out, x) -> mul!(out, -A, x)
     @test_throws ErrorException Loraine.Solvers.solve_cg(
         solver,
@@ -261,4 +270,19 @@ end
         b,
         Loraine.Solvers.MyM_no(solver.to),
     )
+end
+
+@testset "Scaling uses only right singular vectors" begin
+    LS = Loraine.Solvers
+    for n in (1, 3, 7)
+        A = [r == c ? 2.0 + r : sin(r + 2c) / 10 for r = 1:n, c = 1:n]
+        original = copy(A)
+        gram = similar(A)
+        values, V = LS.scaling_svd!(gram, A)
+        reference = LS.fsvd(A)
+        @test values ≈ reference.S
+        @test A' * A * V ≈ V * Diagonal(values .^ 2)
+        @test V' * V ≈ Matrix{Float64}(I, n, n)
+        @test A == original
+    end
 end

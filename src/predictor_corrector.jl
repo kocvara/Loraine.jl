@@ -14,15 +14,26 @@ function solve_cg(solver, A, h, M)
     # ConjugateGradients requires these keyword types on both architectures.
     tol = Float64(solver.tol_cg)
     max_iter = Int64(10000)
-    direction, exit_code, num_iters = cg(A, h; tol, maxIter = max_iter, precon = M)
+    direction = solver.dely
+    fill!(direction, 0)
+    exit_code, num_iters =
+        cg!(A, h, direction; tol, maxIter = max_iter, precon = M, data = solver.cg_data)
     if exit_code < 0
         # The SMW preconditioner can lose positivity through cancellation.
         # Retry the original system instead of using a failed CG direction.
         if solver.verb > 0
             println("Preconditioned CG failed, retrying without preconditioning")
         end
-        direction, exit_code, retry_iters =
-            cg(A, h; tol, maxIter = max_iter, precon = MyM_no(solver.to))
+        fill!(direction, 0)
+        exit_code, retry_iters = cg!(
+            A,
+            h,
+            direction;
+            tol,
+            maxIter = max_iter,
+            precon = MyM_no(solver.to),
+            data = solver.cg_data,
+        )
         num_iters += retry_iters
         if exit_code < 0
             error("CG failed without preconditioning (exit code $exit_code)")
@@ -126,14 +137,22 @@ function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
             Prec_for_CG_tilS_prep(solver, halpha)
-            M = MyM(solver.model, halpha.AAAATtau_fact, halpha.Umat, halpha.Z, halpha.cholS)
+            M = MyM(
+                solver.model,
+                halpha.AAAATtau_fact,
+                halpha.Umat,
+                halpha.Z,
+                halpha.cholS,
+                halpha.cg_preconditioner,
+            )
+            halpha.cg_preconditioner = M
         elseif solver.preconditioner == 2 || solver.preconditioner == 4
             Prec_for_CG_beta(solver, halpha)
             M = MyM_beta(solver.model, halpha.AAAATtau)
         end
 
         # @timeit solver.to "CG predictor" begin
-        solver.dely, exit_code, num_iters = solve_cg(solver, A, h[:], M)
+        solver.dely, exit_code, num_iters = solve_cg(solver, A, h, M)
         # end
 
         solver.cg_iter_pre += num_iters
@@ -224,13 +243,13 @@ function corrector(solver::MySolver{T}, halpha) where {T}
         if solver.preconditioner == 0
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
-            M = MyM(solver.model, halpha.AAAATtau_fact, halpha.Umat, halpha.Z, halpha.cholS)
+            M = halpha.cg_preconditioner
         else
             M = MyM_beta(solver.model, halpha.AAAATtau)
         end
 
         @timeit solver.to "CG corrector" begin
-            solver.dely, exit_code, num_iters = solve_cg(solver, A, h[:], M)
+            solver.dely, exit_code, num_iters = solve_cg(solver, A, h, M)
         end
         solver.cg_iter_cor += num_iters
         solver.cg_iter_tot += num_iters
