@@ -2,6 +2,17 @@ using TimerOutputs
 using FameSVD
 using MultiFloats
 
+# FameSVD forms both singular-vector matrices, but scaling only needs V.
+# Keep its Gram-matrix algorithm and LAPACK tolerance, and reuse Gram storage.
+function scaling_svd!(gram, A::Matrix{Float64})
+    BLAS.syrk!('U', 'T', 1.0, A, 0.0, gram)
+    values, vectors = LAPACK.syevr!('V', 'A', 'U', gram, 0.0, 0.0, 0, 0, 0.0)
+    reverse!(values)
+    @fastmath values .= sqrt.(values)
+    reverse!(vectors; dims = 2)
+    return values, vectors
+end
+
 function try_cholesky!(solver, workspace, X, name::String)
     try
         return cholesky!(copyto!(workspace, X))
@@ -38,7 +49,7 @@ function prepare_W(solver::MySolver{T}) where {T}
             CCtmp = solver.kron_tmp[i]
             mul!(CCtmp, (CtmpS.L)', Ctmp.L)
             if T == Float64
-                _, Dtmp, V = fsvd(CCtmp)
+                Dtmp, V = scaling_svd!(solver.kron_tmp2[i], CCtmp)
             else
                 _, Dtmp, V = svd(CCtmp)
             end

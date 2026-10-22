@@ -32,15 +32,23 @@ function check_workspace(::Type{T}, dims, rank) where {T}
     model = LRO.BufferedModelForSchur(model, 1)
     U = [randn(rng,T,d,rank) / 10 for d in dims]
     Z = [Matrix{T}(I,d,d) + ones(T,d,d) / d for d in dims]
-    D = Diagonal(T[2,3,4])
+    workspace = nothing
     for zero_block in (false, true)
         zero_block && fill!(U[2], zero(T))
+        D = Diagonal(T[2,3,4] .* (zero_block ? 2 : 1))
         V = hcat(
             [Matrix(model.jprod_buffer[i])' * kron(U[i], Z[i]) for i in eachindex(dims)]...,
         )
         P = D + V * V'
         S = cholesky(Symmetric(I + V' * (D \ V)))
-        op = Loraine.Solvers.MyM(model, factorize(D), U, Z, S)
+        op = Loraine.Solvers.MyM(model, factorize(D), U, Z, S, workspace)
+        if !isnothing(workspace)
+            @test op.AAAAinvx === workspace.AAAAinvx
+            @test op.AyU === workspace.AyU
+            @test op.yy === workspace.yy
+            @test op.y33 === workspace.y33
+        end
+        workspace = op
         check_application(op, P, randn(rng,T,n))
     end
 end
