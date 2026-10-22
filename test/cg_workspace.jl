@@ -82,21 +82,59 @@ function check_rank_one_preparation(dims)
             for i in eachindex(dims)
         ]...,
     )
-    S, offset = Loraine.Solvers.prec_alpha_S!(
-        solver,
-        halpha,
-        D,
-        ones(Int64, length(dims)),
-        sum(dims),
-        1,
-        sum(dims),
-    )
+    S = Loraine.Solvers.prec_alpha_S!(solver, halpha, diag(D))
     @test S ≈ V' * Matrix(D)^2 * V
-    @test offset == sum(dims) + 1
 end
 @testset "Rank-one preconditioner preparation" begin
     for dims in ([3], [3, 4, 1])
         check_rank_one_preparation(dims)
+    end
+end
+
+rank_one_allocations(t, block, U, Z, weights) =
+    @allocated Loraine.Solvers.rank_one_product!(t, block, U, Z, weights)
+
+@testset "Rank-one sparse contraction reuses its pattern" begin
+    rng = MersenneTwister(31)
+    for T in (Float32, Float64), n in (1, 3, 20), empty in (false, true)
+        nvar = 4
+        A = [
+            sparse(mod1.([1, 1, 3, 3], n), mod1.([1, 3, 1, 3], n), T[j, -j, 2j, j], n, n) for _ = 1:1, j = 1:nvar
+        ]
+        fill!(nonzeros(A[1, end]), zero(T))
+        empty && foreach(a -> fill!(nonzeros(a), zero(T)), A)
+        empty && foreach(dropzeros!, A)
+        original = deepcopy(A)
+        model = LRO.Model(
+            [spzeros(T, n, n)],
+            A,
+            zeros(T, nvar),
+            SparseVector{T,Int64}(spzeros(T, 0)),
+            SparseMatrixCSC{T,Int64}(spzeros(T, nvar, 0)),
+            Int64[n],
+        )
+        buffered = LRO.BufferedModelForSchur(model, 1)
+        block = Loraine.Solvers.RankOneBlock(buffered, LRO.MatrixIndex(1))
+        @test eltype(rowvals(block.AU)) == Int
+        @test eltype(rowvals(block.contraction)) == Int
+        rows, columns = copy(rowvals(block.AU)), copy(block.AU.colptr)
+        storage = nonzeros(block.AU)
+        contraction = copy(block.contraction)
+        for pass = 1:3
+            U = pass == 1 ? ones(T, n, 1) : randn(rng, T, n, 1)
+            Z = randn(rng, T, n, n)
+            weights = pass == 2 ? zeros(T, nvar) : T[1, 2, 3, 4]
+            expected = -Diagonal(weights) * Matrix(buffered.jprod_buffer[1])' * kron(U, Z)
+            t = zeros(T, nvar, n)
+            @test Loraine.Solvers.rank_one_product!(t, block, U, Z, weights) === t
+            @test t ≈ expected
+            @test rank_one_allocations(t, block, U, Z, weights) == 0
+            @test nonzeros(block.AU) === storage
+            @test rowvals(block.AU) == rows
+            @test block.AU.colptr == columns
+            @test block.contraction == contraction
+            @test model.A == original
+        end
     end
 end
 
@@ -162,10 +200,9 @@ end
             [spdiagm(ones(d)) for d in dims],
             A,
             zeros(nvar),
-            SparseVector{Float64,Int64}(scalars ? sparsevec([1.0, 2.0]) : spzeros(0)),
+            SparseVector{Float64,Int64}(sparsevec(scalars ? [1.0, 2.0] : Float64[])),
             scalars ?
-            sparse(Int64[1, 2, 2, 3], Int64[1, 1, 2, 2], [1.0, 2.0, 1.0, 3.0], nvar, 2) :
-            SparseMatrixCSC{Float64,Int64}(spzeros(nvar, 0)),
+            sparse(Int64[1, 2, 2, 3], Int64[1, 1, 2, 2], [1.0, 2.0, 1.0, 3.0], nvar, 2) : SparseMatrixCSC{Float64,Int64}(spzeros(nvar, 0)),
             Int64.(dims),
         )
         state = LS.Solver{Float64}(model; kit = 1, erank = rank, verb = 0)
@@ -181,7 +218,10 @@ end
             solver.S[idx] .= Diagonal(collect(2.0:(d+1)))
         end
         LS.prepare_W(solver)
+        solver.y_buffer .= 1:nvar
+        rhs = copy(solver.y_buffer)
         buffers = halpha.cg_assembly
+        rank_one_blocks = halpha.cg_rank_one
         U, Z = copy(halpha.Umat), copy(halpha.Z)
         base = nothing
         for pass = 1:2
@@ -212,8 +252,10 @@ end
                 halpha.AAAATtau_fact
             end
             expected = I + V' * (factor \ V)
+            @test solver.y_buffer == rhs
             @test all(a === b for (a, b) in zip(U, halpha.Umat))
             @test all(a === b for (a, b) in zip(Z, halpha.Z))
+            @test halpha.cg_rank_one === rank_one_blocks
             @test Matrix(halpha.cholS) ≈ expected
             @test all(a === b for (a, b) in zip(buffers, halpha.cg_assembly))
             @test halpha.cholS.factors === buffers[2]
