@@ -133,6 +133,52 @@ function singular_schur_solver()
     return solver, halpha
 end
 
+trial_point_allocations(solver, i) =
+    @allocated Loraine.Solvers.predictor_trial_point!(solver, i)
+iterate_update_allocations(solver, i, alpha, beta) =
+    @allocated Loraine.Solvers.update_iterate!(solver, i, alpha, beta)
+
+@testset "Block updates preserve the Newton formulas and storage" begin
+    LS = Loraine.Solvers
+    solver, _ = singular_schur_solver()
+    i = LS.LRO.MatrixIndex(1)
+    solver.X[i] .= [3.0 0.2; 0.2 2.0]
+    solver.S[i] .= [2.0 -0.1; -0.1 4.0]
+    LS.prepare_W(solver)
+    solver.delX[1] .= [-0.2 0.03; 0.03 0.1]
+    solver.delS[1] .= [0.1 -0.02; -0.02 -0.1]
+    solver.alpha[1], solver.beta[1] = 0.3, 0.4
+    X, S = copy(solver.X[i]), copy(solver.S[i])
+    delX, delS = copy(solver.delX[1]), copy(solver.delS[1])
+    W = solver.W[i]
+    R = W.factor_inv * delX * delS * W.factor + W.factor' * delS * delX * W.factor_inv'
+    expected = -R ./ (solver.D[1] .+ solver.D[1]')
+    Xn, Sn, RNT = solver.Xn[1], solver.Sn[1], solver.RNT[1]
+    for _ = 1:2
+        LS.predictor_trial_point!(solver, 1)
+        @test solver.Xn[1] ≈ X + 0.3delX
+        @test solver.Sn[1] ≈ S + 0.4delS
+        @test solver.RNT[1] ≈ expected
+        @test solver.Xn[1] === Xn
+        @test solver.Sn[1] === Sn
+        @test solver.RNT[1] === RNT
+        @test solver.X[i] == X
+        @test solver.S[i] == S
+        @test trial_point_allocations(solver, 1) == 0
+    end
+    Xbuffer, Sbuffer = parent(solver.X[i]), parent(solver.S[i])
+    for _ = 1:2
+        LS.update_iterate!(solver, 1, 0.2, 0.4)
+        X += 0.2delX
+        S += 0.4delS
+        @test solver.X[i] ≈ X
+        @test solver.S[i] ≈ S
+        @test parent(solver.X[i]) === Xbuffer
+        @test parent(solver.S[i]) === Sbuffer
+    end
+    @test iterate_update_allocations(solver, 1, 0.2, 0.4) == 0
+end
+
 @testset "Schur Cholesky recovery" begin
     solver, halpha = singular_schur_solver()
     workspace = solver.chol_work
