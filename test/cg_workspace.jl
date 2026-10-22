@@ -20,7 +20,7 @@ end
 function check_workspace(::Type{T}, dims, rank) where {T}
     rng = MersenneTwister(17)
     n = 3
-    A = [sparse([mod1(j,d)], [mod1(j,d)], T[j], d, d) for d in dims, j in 1:n]
+    A = [sparse([mod1(j, d)], [mod1(j, d)], T[j], d, d) for d in dims, j = 1:n]
     model = LRO.Model(
         [spzeros(T, d, d) for d in dims],
         A,
@@ -30,12 +30,12 @@ function check_workspace(::Type{T}, dims, rank) where {T}
         Int64.(dims),
     )
     model = LRO.BufferedModelForSchur(model, 1)
-    U = [randn(rng,T,d,rank) / 10 for d in dims]
-    Z = [Matrix{T}(I,d,d) + ones(T,d,d) / d for d in dims]
+    U = [randn(rng, T, d, rank) / 10 for d in dims]
+    Z = [Matrix{T}(I, d, d) + ones(T, d, d) / d for d in dims]
     workspace = nothing
     for zero_block in (false, true)
         zero_block && fill!(U[2], zero(T))
-        D = Diagonal(T[2,3,4] .* (zero_block ? 2 : 1))
+        D = Diagonal(T[2, 3, 4] .* (zero_block ? 2 : 1))
         V = hcat(
             [Matrix(model.jprod_buffer[i])' * kron(U[i], Z[i]) for i in eachindex(dims)]...,
         )
@@ -49,7 +49,7 @@ function check_workspace(::Type{T}, dims, rank) where {T}
             @test op.y33 === workspace.y33
         end
         workspace = op
-        check_application(op, P, randn(rng,T,n))
+        check_application(op, P, randn(rng, T, n))
     end
 end
 function check_rank_one_preparation(dims)
@@ -101,12 +101,55 @@ end
 end
 
 @testset "CG preconditioner workspace" begin
-    for T in (Float32, Float64), dims in ([3,4,1], [20,40,1]), rank in (1,2)
+    for T in (Float32, Float64), dims in ([3, 4, 1], [20, 40, 1]), rank in (1, 2)
         @testset "$T dims=$dims rank=$rank" begin
             check_workspace(T, dims, rank)
         end
     end
 end
+scaling_allocations(U, Z, ws, W, aamat) =
+    @allocated Loraine.Solvers.cg_scaling!(U, Z, ws, W, aamat)
+
+@testset "CG scaling reuses buffers and matches spectral reconstruction" begin
+    rng = MersenneTwister(29)
+    for T in (Float32, Float64), n in (1, 3, 7), k in unique((1, min(2, n), n))
+        Q = Matrix(qr(randn(rng, n, n)).Q)
+        U, Z = zeros(T, n, k), zeros(T, n, n)
+        ws = LRO.EigenWorkspace(zeros(T, n, n))
+        for aamat in (0, 1), shift in (0.0, 0.5)
+            # Also cover ill-conditioned scalings seen near convergence.
+            spectrum = if n > 1 && shift == 0.5
+                exp10.(range(0.0, T == Float32 ? 4.0 : 12.0; length = n))
+            else
+                (1:n) .+ shift
+            end
+            W = T.(Q * Diagonal(spectrum) * Q')
+            original = copy(W)
+            # Reference the previous implementation, which reconstructed W0.
+            F = eigen(Float64.(W))
+            small = F.values[1:(n-k)]
+            tau = if isempty(small)
+                minimum(F.values)
+            elseif aamat == 0
+                minimum(small)
+            else
+                (minimum(small) + sum(small) / length(small)) / 2 - 1e-14
+            end
+            Uref = F.vectors[:, (n-k+1):n] * Diagonal(sqrt.(F.values[(n-k+1):n] .- tau))
+            W0 = F.vectors * Diagonal(vcat(small, fill(tau, k))) * F.vectors'
+            expected = 2W0 + Uref * Uref'
+            actual_tau = Loraine.Solvers.cg_scaling!(U, Z, ws, W, aamat)
+            @test actual_tau ≈ tau atol = 20eps(T) * norm(W)
+            @test U * U' ≈ T.(Uref * Uref') atol = 20eps(T) * norm(W)
+            @test Z * Z' ≈ T.(expected)
+            @test istril(Z)
+            @test all(>(0), diag(Z))
+            @test W == original
+            @test scaling_allocations(U, Z, ws, W, aamat) == 0
+        end
+    end
+end
+
 @testset "Preconditioner assembly reuses setup storage" begin
     LS = Loraine.Solvers
     for rank in (1, 2), scalars in (false, true)
@@ -139,6 +182,7 @@ end
         end
         LS.prepare_W(solver)
         buffers = halpha.cg_assembly
+        U, Z = copy(halpha.Umat), copy(halpha.Z)
         base = nothing
         for pass = 1:2
             LS.Prec_for_CG_tilS_prep(solver, halpha)
@@ -168,6 +212,8 @@ end
                 halpha.AAAATtau_fact
             end
             expected = I + V' * (factor \ V)
+            @test all(a === b for (a, b) in zip(U, halpha.Umat))
+            @test all(a === b for (a, b) in zip(Z, halpha.Z))
             @test Matrix(halpha.cholS) ≈ expected
             @test all(a === b for (a, b) in zip(buffers, halpha.cg_assembly))
             @test halpha.cholS.factors === buffers[2]
