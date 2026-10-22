@@ -4,6 +4,7 @@ version = "0.2.8"
 authors = ["Michal Kocvara <kocvara@penopt.com>"]
 
 [deps]
+FastLapackInterface = "29a986be-02c6-4525-aec4-84b980013641"
 ConjugateGradients = "f59de78d-195d-4e7b-a078-2e47da4c3ad6"
 DocumenterTools = "35a29f4d-8980-5a13-9543-d66fff28ecb8"
 GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
@@ -23,6 +24,7 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [compat]
+FastLapackInterface = "2"
 ConjugateGradients = "0.1"
 DocumenterTools = "0.1.21"
 GenericLinearAlgebra = "0.3"
@@ -35,4 +37,4 @@ NLPModels = "0.21.5"
 Revise = "3"
 SolverCore = "0.3.8"
 TimerOutputs = "0.5"
-julia = "1"
+julia = "1.10.7"

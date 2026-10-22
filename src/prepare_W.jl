@@ -3,9 +3,13 @@ using MultiFloats
 
 # FameSVD forms both singular-vector matrices, but scaling only needs V.
 # Keep its Gram-matrix algorithm and LAPACK tolerance, and reuse Gram storage.
-function scaling_svd!(gram, A::Matrix{Float64})
+function scaling_svd!(gram, A::Matrix{Float64}, workspace = nothing)
     BLAS.syrk!('U', 'T', 1.0, A, 0.0, gram)
-    values, vectors = LAPACK.syevr!('V', 'A', 'U', gram, 0.0, 0.0, 0, 0, 0.0)
+    values, vectors = if isnothing(workspace)
+        LAPACK.syevr!('V', 'A', 'U', gram, 0.0, 0.0, 0, 0, 0.0)
+    else
+        LRO.eigen!(workspace, gram; vectors = true, abstol = 0.0)
+    end
     reverse!(values)
     @fastmath values .= sqrt.(values)
     reverse!(vectors; dims = 2)
@@ -48,7 +52,8 @@ function prepare_W(solver::MySolver{T}) where {T}
             CCtmp = solver.kron_tmp[i]
             mul!(CCtmp, (CtmpS.L)', Ctmp.L)
             if T == Float64
-                Dtmp, V = scaling_svd!(solver.kron_tmp2[i], CCtmp)
+                Dtmp, V =
+                    scaling_svd!(solver.kron_tmp2[i], CCtmp, solver.eigen_workspaces[i])
             else
                 _, Dtmp, V = svd(CCtmp)
             end
@@ -70,7 +75,7 @@ function prepare_W(solver::MySolver{T}) where {T}
             ldiv!(CtmpS.L, solver.Si[i])
             ldiv!(CtmpS.L', solver.Si[i])
             copyto!(W.factor_inv, W.factor)
-            LinearAlgebra.inv!(lu!(W.factor_inv))
+            block_inverse!(solver.inverse_workspaces[i], W.factor_inv)
             LinearAlgebra.mul!(W.matrix, W.factor, W.factor')
 
             mul!(solver.kron_tmp[i], W.factor', solver.S[mat_idx])
