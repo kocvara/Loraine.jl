@@ -12,7 +12,6 @@ using SparseArrays
 using LinearAlgebra
 using Printf
 using TimerOutputs
-using FameSVD
 # using MKLSparse
 # using MKL
 

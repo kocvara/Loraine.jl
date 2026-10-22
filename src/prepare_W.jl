@@ -1,5 +1,4 @@
 using TimerOutputs
-using FameSVD
 using MultiFloats
 
 # FameSVD forms both singular-vector matrices, but scaling only needs V.
