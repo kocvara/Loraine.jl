@@ -279,8 +279,7 @@ end
         original = copy(A)
         gram = similar(A)
         values, V = LS.scaling_svd!(gram, A)
-        reference = LS.fsvd(A)
-        @test values ≈ reference.S
+        @test values ≈ svdvals(A)
         @test A' * A * V ≈ V * Diagonal(values .^ 2)
         @test V' * V ≈ Matrix{Float64}(I, n, n)
         @test A == original
