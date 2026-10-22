@@ -133,10 +133,7 @@ rank_one_allocations(t, block, U, Z, weights) =
             @test rowvals(block.AU) == rows
             @test block.AU.colptr == columns
             @test block.contraction == contraction
-            @test all(
-                j -> LRO.jac(model, j, LRO.MatrixIndex(1)) == original[1, j],
-                1:nvar,
-            )
+            @test all(j -> LRO.jac(model, j, LRO.MatrixIndex(1)) == original[1, j], 1:nvar)
         end
     end
 end
@@ -203,9 +200,7 @@ end
         else
             sparse(Int64[1, 2, 2, 3], Int64[1, 1, 2, 2], T[1, 2, 1, 3], nvar, 2)
         end
-        A = [
-            sparse([mod1(j, d)], [mod1(j, d)], [T(j)], d, d) for d in dims, j = 1:nvar
-        ]
+        A = [sparse([mod1(j, d)], [mod1(j, d)], [T(j)], d, d) for d in dims, j = 1:nvar]
         model = LRO.Model(
             [spdiagm(ones(T, d)) for d in dims],
             A,
@@ -230,6 +225,8 @@ end
         solver.y_buffer .= 1:nvar
         rhs = copy(solver.y_buffer)
         buffers = halpha.cg_assembly
+        @test (@inferred LS.cg_assembly!(halpha, T, nvar, sum(length, halpha.Umat))) ===
+              buffers
         rank_one_blocks = halpha.cg_rank_one
         U, Z = copy(halpha.Umat), copy(halpha.Z)
         base = nothing
@@ -286,6 +283,22 @@ end
             @test Matrix(halpha.cholS) ≈ expected
             @test all(a === b for (a, b) in zip(buffers, halpha.cg_assembly))
             @test halpha.cholS.factors === buffers[2]
+            application = @inferred LS.make_preconditioner(halpha, solver.model)
+            @test application.AAAATtau_fact === halpha.AAAATtau_fact
+            @test application.cholS === halpha.cholS
+            @test application.AAAAinvx === halpha.cg_preconditioner.AAAAinvx
+        end
+        # Typed state must still support changing preconditioner modes and
+        # rebuilding their setup buffers on the same solver instance.
+        for mode in (0, 2, 1)
+            solver.preconditioner = mode
+            solver.verb = 0
+            LS.setup_solver(solver, halpha)
+            LS.initial_point(solver)
+            LS.myIPstep(solver, halpha)
+            LS.check_convergence(solver)
+            @test all(isfinite, solver.err)
+            @test all(isfinite, solver.dely)
         end
     end
 end

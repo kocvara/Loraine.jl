@@ -195,29 +195,65 @@ mutable struct MySolver{T,M}
     end
 end
 
-mutable struct Halpha
-    kit::Any
-    Umat::Any
-    Z::Any
-    cholS::Any
-    AAAATtau::Any
-    AAAATtau_fact::Any
-    cg_preconditioner::Any
-    cg_assembly::Any
-    cg_rank_one::Any
-    function Halpha(kit::Int64)
-        halpha = new()
-        halpha.kit = kit
-        halpha.cg_preconditioner = nothing
-        halpha.cg_assembly = nothing
-        halpha.cg_rank_one = nothing
-        return halpha
+struct RankOneBlock{T}
+    AU::SparseMatrixCSC{T,Int}
+    contraction::SparseMatrixCSC{T,Int}
+end
+
+struct MyM{T,M,F,C}
+    model::M
+    AAAATtau_fact::F
+    Umat::Vector{Matrix{T}}
+    Z::Vector{Matrix{T}}
+    cholS::C
+    AAAAinvx::Vector{T}
+    yy2::Vector{T}
+    yyy2::Vector{T}
+    y33::Vector{T}
+    AyU::Vector{Matrix{T}}
+    chunk::Vector{Matrix{T}}
+    xx::Vector{Vector{T}}
+    yy::Vector{Matrix{T}}
+end
+
+mutable struct Halpha{T,M,F}
+    kit::Int64
+    Umat::Vector{Matrix{T}}
+    Z::Vector{Matrix{T}}
+    cholS::Cholesky{T,Matrix{T}}
+    AAAATtau::Union{Nothing,Matrix{T},SparseMatrixCSC{T,Int},Vector{T}}
+    AAAATtau_fact::F
+    cg_preconditioner::Union{Nothing,MyM{T,M,F,Cholesky{T,Matrix{T}}}}
+    cg_assembly::Union{Nothing,NTuple{3,Matrix{T}}}
+    cg_rank_one::Union{Nothing,Vector{RankOneBlock{T}}}
+
+    function Halpha{T,M,F}(kit::Int64) where {T,M,F}
+        return new{T,M,F}(
+            kit,
+            Matrix{T}[],
+            Matrix{T}[],
+            Cholesky(zeros(T, 0, 0), 'U', 0),
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+        )
     end
 end
 
-struct Solver{T,M} <: SolverCore.AbstractOptimizationSolver
+function Halpha(solver::MySolver{T,M}) where {T,M}
+    F = Union{Nothing,Diagonal{T,Vector{T}}}
+    if LRO.num_scalars(solver.model) > 0
+        factor = T == Float64 ? SparseArrays.CHOLMOD.Factor{T,Int} : Cholesky{T,Matrix{T}}
+        F = Union{F,factor}
+    end
+    return Halpha{T,M,F}(solver.kit)
+end
+
+struct Solver{T,M,H} <: SolverCore.AbstractOptimizationSolver
     solver::MySolver{T,M}
-    halpha::Halpha
+    halpha::H
     stats::SolverCore.GenericExecutionStats{T,Vector{T},Vector{T},Any}
 end
 
@@ -321,7 +357,7 @@ function load(model, options::Dict; T = Float64)
         model,
     )
 
-    halpha = Halpha(kit)
+    halpha = Halpha(solver)
     solver.cg_iter_tot = 0
 
     # Input parameters check
@@ -528,8 +564,9 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     halpha.cg_assembly = nothing
     halpha.cg_rank_one = nothing
     halpha.Z = Matrix{T}[]
-    halpha.AAAATtau = SparseMatrixCSC{T}[]
     ncon = solver.model.meta.ncon
+    halpha.AAAATtau = nothing
+    halpha.AAAATtau_fact = nothing
 
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
@@ -537,7 +574,6 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         push!(halpha.Z, zeros(T, dim, dim))
         # tmp = Matrix(I(dim))
         # push!(halpha.cholS,cholesky(tmp))
-        push!(halpha.AAAATtau, spzeros(ncon, ncon))
     end
 
     if solver.kit == 1
@@ -564,13 +600,15 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         solver.chol_work = zeros(T, ncon, ncon)
     end
     if solver.kit == 1 && solver.preconditioner in (1, 4)
-        # Application buffers need only the dimensions; factors arrive later.
-        halpha.cg_preconditioner =
-            MyM(solver.model, nothing, halpha.Umat, halpha.Z, nothing)
-        cg_assembly!(halpha, T, ncon, sum(length, halpha.Umat))
+        buffers = cg_assembly!(halpha, T, ncon, sum(length, halpha.Umat))
         if solver.preconditioner == 1
             init_AAAATtau!(halpha, solver.model, T)
+        else
+            halpha.AAAATtau_fact = Diagonal(zeros(T, ncon))
         end
+        # Placeholder factors are replaced before the first CG application.
+        halpha.cholS = Cholesky(buffers[2], 'U', 0)
+        halpha.cg_preconditioner = make_preconditioner(halpha, solver.model)
         if solver.erank == 1 && solver.preconditioner == 1
             cg_rank_one!(halpha, solver.model)
         end
@@ -799,9 +837,9 @@ function Prec_for_CG_beta(solver, halpha)
     end
 end
 
-struct MyM_beta{M}
+struct MyM_beta{M,V}
     model::M
-    AAAATtau::Any
+    AAAATtau::V
 end
 
 function (t::MyM_beta)(Mx::Vector{T}, x::Vector{T}) where {T}
@@ -809,19 +847,17 @@ function (t::MyM_beta)(Mx::Vector{T}, x::Vector{T}) where {T}
 end
 
 function cg_assembly!(halpha, ::Type{T}, nvar, sizeS) where {T}
-    if isnothing(halpha.cg_assembly) || size(halpha.cg_assembly[1]) != (nvar, sizeS)
-        halpha.cg_assembly =
-            (zeros(T, nvar, sizeS), zeros(T, sizeS, sizeS), zeros(T, nvar, sizeS))
+    buffers = halpha.cg_assembly
+    if isnothing(buffers) || size(buffers[1]) != (nvar, sizeS)
+        buffers = (zeros(T, nvar, sizeS), zeros(T, sizeS, sizeS), zeros(T, nvar, sizeS))
+        halpha.cg_assembly = buffers
     end
-    return halpha.cg_assembly
+    return buffers
 end
 
 # The pattern of A_j*u is independent of u. Cache its sparse rows and the
 # contraction that fills their nonzeros, avoiding sparse assembly each iteration.
-struct RankOneBlock{T}
-    AU::SparseMatrixCSC{T,Int}
-    contraction::SparseMatrixCSC{T,Int}
-end
+
 
 function RankOneBlock(model, i)
     J = model.jprod_buffer[i.value]
@@ -840,10 +876,12 @@ function RankOneBlock(model, i)
 end
 
 function cg_rank_one!(halpha, model)
-    if isnothing(halpha.cg_rank_one)
-        halpha.cg_rank_one = [RankOneBlock(model, i) for i in LRO.matrix_indices(model)]
+    blocks = halpha.cg_rank_one
+    if isnothing(blocks)
+        blocks = [RankOneBlock(model, i) for i in LRO.matrix_indices(model)]
+        halpha.cg_rank_one = blocks
     end
-    return halpha.cg_rank_one
+    return blocks
 end
 
 function rank_one_product!(t, block::RankOneBlock, U, Z, weights)
@@ -1002,8 +1040,8 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
         else #fast formula
             # Reuse the application's scratch; y_buffer holds the live RHS.
             weights = halpha.cg_preconditioner.AAAAinvx
-            diagonal = isnothing(halpha.AAAATtau) ?
-                halpha.AAAATtau_fact.diag :
+            diagonal =
+                isnothing(halpha.AAAATtau) ? halpha.AAAATtau_fact.diag :
                 view(halpha.AAAATtau, diagind(halpha.AAAATtau))
             weights .= sqrt.(1 ./ diagonal)
 
@@ -1021,33 +1059,41 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 end
 
 # One workspace per predictor/corrector CG solve, reused by every application.
-struct MyM{T,M,F,C}
-    model::M
-    AAAATtau_fact::F
-    Umat::Vector{Matrix{T}}
-    Z::Vector{Matrix{T}}
-    cholS::C
-    AAAAinvx::Vector{T}
-    yy2::Vector{T}
-    yyy2::Vector{T}
-    y33::Vector{T}
-    AyU::Vector{Matrix{T}}
-    chunk::Vector{Matrix{T}}
-    xx::Vector{Vector{T}}
-    yy::Vector{Matrix{T}}
+
+
+function MyM(model, factor, U::Vector{Matrix{T}}, Z, chol, workspace = nothing) where {T}
+    return MyM{T,typeof(model),typeof(factor),typeof(chol)}(
+        model,
+        factor,
+        U,
+        Z,
+        chol,
+        workspace,
+    )
 end
 
-function MyM(
+function make_preconditioner(halpha::Halpha{T,M,F}, model::M) where {T,M,F}
+    return MyM{T,M,F,Cholesky{T,Matrix{T}}}(
+        model,
+        halpha.AAAATtau_fact,
+        halpha.Umat,
+        halpha.Z,
+        halpha.cholS,
+        halpha.cg_preconditioner,
+    )
+end
+
+function MyM{T,M,F,C}(
     model,
     AAAATtau_fact,
     Umat::Vector{Matrix{T}},
     Z::Vector{Matrix{T}},
     cholS,
     workspace = nothing,
-) where {T}
+) where {T,M,F,C}
     if !isnothing(workspace)
         # Refresh the factors each iteration, keeping the application buffers.
-        return MyM(
+        return MyM{T,M,F,C}(
             model,
             AAAATtau_fact,
             Umat,
@@ -1065,7 +1111,7 @@ function MyM(
     end
     nvar = model.meta.ncon
     sizeS = sum(length, Umat; init = 0)
-    return MyM(
+    return MyM{T,M,F,C}(
         model,
         AAAATtau_fact,
         Umat,
