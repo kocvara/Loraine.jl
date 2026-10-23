@@ -5,7 +5,17 @@
       "Read(//Applications/**)",
       "Bash(find / -maxdepth 4 -iname \"julia\" -type f)",
       "Read(//Users/michal/**)",
-      "Bash(/Users/michal/.juliaup/bin/julialauncher --version)"
+      "Bash(/Users/michal/.juliaup/bin/julialauncher --version)",
+      "Bash(julia --project=. -e 'using Pkg; Pkg.status\\(\\)')",
+      "Bash(xargs -I{} echo {})",
+      "Bash(julia --project=examples -e 'using Pkg; Pkg.status\\(\\)')",
+      "Bash(timeout 90 julia --project=examples examples/dpop3sos.jl)",
+      "Bash(julia --project=examples examples/dpop3sos.jl)",
+      "Bash(cat ~/.julia/environments/v1.12/Project.toml 2>&1)",
+      "Read(//Users/michal/.julia/environments/v1.12/**)",
+      "Bash(julia -e 'using Pkg; Pkg.status\\(\\)')",
+      "Bash(julia -e 'using Pkg; Pkg.status\\(; mode=PKGMODE_MANIFEST\\)')",
+      "Bash(mkdir -p /private/tmp/claude-501/-Users-michal-Dropbox-michal-POEMA-julia-Loraine/859303c8-8f08-45e3-941b-0a202c6276ef/scratchpad)"
     ]
   }
 }

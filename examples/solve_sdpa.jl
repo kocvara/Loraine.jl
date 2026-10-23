@@ -10,6 +10,7 @@ import Loraine
 # import Hypatia
 # using Dualization
 using MultiFloats
+using Brisk
 
 function read_sdpa(
     filename::String,
@@ -25,9 +26,9 @@ end
 # model = JuMP.GenericModel{Float64x2}(Loraine.Optimizer)
 
 # Select your semidefinite optimization problem in SDPA input format
-# model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto2.dat-s")
-model=read_from_file("/Users/michal/Dropbox/michal/sdplib/theta1.dat-s")
-# model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib5.dat-s")
+model=read_from_file("/Users/michal/Dropbox/michal/sdplib/Hans/trto3.dat-s")
+# model=read_from_file("/Users/michal/Dropbox/michal/sdplib/theta1.dat-s")
+# model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/database/problems/SDPA/vib7.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/j/k.dat-s")
 # model=read_from_file("/Users/michal/Dropbox/michal/POEMA/IP/ip-for-low-rank-sdp/k.dat-s")
 
@@ -51,9 +52,11 @@ set_attribute(model, "erank", 1)
 set_attribute(model, "aamat", 2)
 set_attribute(model, "verb", 2)
 set_attribute(model, "datarank", 0)
-set_attribute(model, "initpoint", 1)
+set_attribute(model, "initpoint", 0)
 set_attribute(model, "maxit", 200)
 set_attribute(model, "datasparsity", 8)
+
+# set_attribute(model, "mfipm", 1)
 
 # set_optimizer(model, CSDP.Optimizer)
 optimize!(model)

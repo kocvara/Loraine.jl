@@ -52,6 +52,18 @@ function prepare_W(solver::MySolver{T}) where {T}
         solver.Gi[i] = inv(solver.G[i])
         solver.W[i] = solver.G[i] * solver.G[i]'
         solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ I(size(solver.Si[i], 1)))
+        solver.Si[i] = (CtmpS.L)' \ ((CtmpS.L) \ I(size(solver.Si[i], 1)))
+
+        # check accuracy of S * S^{-1} - I
+        n_i = size(solver.S[i], 1)
+        resS = Matrix{T}(undef, n_i, n_i)
+        mul!(resS, solver.S[i], solver.Si[i])
+        resS .-= I(n_i)
+        normSi = norm(resS)
+        if normSi > sqrt(eps(T)) * n_i
+            println("WARNING: ||S*Si - I|| = $normSi is large for block $i")
+        end
+
         DDtmp = solver.G[i]' * solver.S[i] * solver.G[i]
         DDtmp = @. (DDtmp + DDtmp') / 2.0
         try

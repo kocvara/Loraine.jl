@@ -257,6 +257,8 @@ function find_step(solver::MySolver{T}) where {T}
                 solver.X[i] .= (solver.X[i] .+ solver.X[i]') ./ 2
                 @. solver.S[i] += beta_step * solver.delS[i]
                 solver.S[i] .= (solver.S[i] .+ solver.S[i]') ./ 2
+                # evν = eigvals(solver.S[i])
+                # println("\n Moment matrix eigenvalues: ", evν)
             end
         end
     end
