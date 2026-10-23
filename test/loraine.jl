@@ -389,6 +389,18 @@ end
     @test A * direction ≈ b
     @test b == [2.0, 6.0]
     @test direction === solver.dely
+    for rhs in (zeros(2), b)
+        direction, exit_code, iterations = @inferred Loraine.Solvers.solve_cg(
+            solver,
+            operator,
+            rhs,
+            Loraine.Solvers.MyM_no(solver.to),
+        )
+        @test direction === solver.dely
+        @test exit_code > 0
+        @test iterations isa Int64
+        @test A * direction ≈ rhs
+    end
     indefinite_operator = (out, x) -> mul!(out, -A, x)
     @test_throws ErrorException Loraine.Solvers.solve_cg(
         solver,

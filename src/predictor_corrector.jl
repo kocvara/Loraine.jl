@@ -39,7 +39,9 @@ function solve_cg(solver, A, h, M)
             error("CG failed without preconditioning (exit code $exit_code)")
         end
     end
-    return direction, exit_code, num_iters
+    # CG's zero counts use native Int, but its loop counts use Int64.
+    # Keep one return type on 32-bit Julia so this tuple stays unboxed.
+    return direction, exit_code, Int64(num_iters)
 end
 
 function predictor(solver::MySolver{T}, halpha::Halpha) where {T}

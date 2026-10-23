@@ -1,6 +1,7 @@
 module TestCGWorkspace
 using Test, LinearAlgebra, SparseArrays, Random
 import Loraine
+import JuMP
 const LRO = Loraine.Solvers.LRO
 function check_application(op, P, x)
     out = similar(x)
@@ -43,6 +44,7 @@ function check_workspace(::Type{T}, dims, rank) where {T}
         S = cholesky(Symmetric(I + V' * (D \ V)))
         op = Loraine.Solvers.MyM(model, factorize(D), U, Z, S, workspace)
         if !isnothing(workspace)
+            @test op === workspace
             @test op.AAAAinvx === workspace.AAAAinvx
             @test op.AyU === workspace.AyU
             @test op.yy === workspace.yy
@@ -284,6 +286,7 @@ end
             @test all(a === b for (a, b) in zip(buffers, halpha.cg_assembly))
             @test halpha.cholS.factors === buffers[2]
             application = @inferred LS.make_preconditioner(halpha, solver.model)
+            @test application === halpha.cg_preconditioner
             @test application.AAAATtau_fact === halpha.AAAATtau_fact
             @test application.cholS === halpha.cholS
             @test application.AAAAinvx === halpha.cg_preconditioner.AAAAinvx
@@ -304,6 +307,78 @@ end
             @test all(isfinite, solver.err)
             @test all(isfinite, solver.dely)
         end
+    end
+end
+
+factor_allocations(halpha, S) = @allocated Loraine.Solvers.factor_preconditioner!(halpha, S)
+
+@testset "Preconditioner factor wrapper follows its buffer" begin
+    LS = Loraine.Solvers
+    for T in (Float32, Float64)
+        model = LRO.Model(
+            [spdiagm(T[1, 1])],
+            reshape([spzeros(T, 2, 2)], 1, 1),
+            zeros(T, 1),
+            SparseVector{T,Int64}(spzeros(T, 0)),
+            SparseMatrixCSC{T,Int64}(spzeros(T, 1, 0)),
+            Int64[2],
+        )
+        halpha = LS.Solver{T}(model).halpha
+        original = T[4 1; 1 3]
+        S = copy(original)
+        LS.factor_preconditioner!(halpha, S)
+        factor = halpha.cholS
+        @test factor.factors === S
+        @test Matrix(factor) ≈ original
+        copyto!(S, original)
+        factor_allocations(halpha, S)
+        copyto!(S, original)
+        @test factor_allocations(halpha, S) == 0
+        @test halpha.cholS === factor
+        @test Matrix(factor) ≈ original
+
+        S = Matrix(Diagonal(T[2, 3, 4]))
+        LS.factor_preconditioner!(halpha, S)
+        @test halpha.cholS.factors === S
+        @test Matrix(halpha.cholS) ≈ Matrix(Diagonal(T[2, 3, 4]))
+        factor = halpha.cholS
+        @test_throws PosDefException LS.factor_preconditioner!(halpha, -Matrix{T}(I, 2, 2))
+        @test halpha.cholS === factor
+    end
+end
+
+function cg_iteration_allocations(solver, halpha)
+    return @allocated begin
+        Loraine.Solvers.myIPstep(solver, halpha)
+        solver.tol_cg = max(solver.tol_cg * solver.tol_cg_up, solver.tol_cg_min)
+        Loraine.Solvers.check_convergence(solver)
+        nothing
+    end
+end
+
+@testset "CG iteration reuses its preconditioner without allocations" begin
+    LS = Loraine.Solvers
+    path = joinpath(dirname(@__DIR__), "examples", "data", "theta1.dat-s")
+    model = Loraine.loraine(
+        path,
+        Dict("verb" => 0, "kit" => 1, "initpoint" => 1, "eDIMACS" => 1e-6),
+    )
+    @test JuMP.MOI.get(model, JuMP.MOI.TerminationStatus()) == JuMP.MOI.OPTIMAL
+    state = JuMP.unsafe_backend(model).solver
+    solver, halpha = state.solver, state.halpha
+    solver.to = LS.TimerOutput()
+    LS.setup_solver(solver, halpha)
+    LS.initial_point(solver)
+    solver.tol_cg = 1e-2
+    for _ = 1:2
+        cg_iteration_allocations(solver, halpha)
+    end
+    application, factor = halpha.cg_preconditioner, halpha.cholS
+    for _ = 1:2
+        @test cg_iteration_allocations(solver, halpha) == 0
+        @test halpha.cg_preconditioner === application
+        @test halpha.cholS === factor
+        @test all(isfinite, solver.err)
     end
 end
 
