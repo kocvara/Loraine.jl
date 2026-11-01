@@ -530,8 +530,8 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
 
     for mat_idx in LRO.matrix_indices(solver.model)
         dim = LRO.side_dimension(solver.model, mat_idx)
-        push!(halpha.Umat, zeros(dim, solver.erank))
-        push!(halpha.Z, zeros(dim, dim))
+        push!(halpha.Umat, zeros(T, dim, solver.erank))
+        push!(halpha.Z, zeros(T, dim, dim))
         # tmp = Matrix(I(dim))
         # push!(halpha.cholS,cholesky(tmp))
         push!(halpha.AAAATtau, spzeros(ncon, ncon))
@@ -807,14 +807,35 @@ function cg_assembly!(halpha, ::Type{T}, nvar, sizeS) where {T}
     return halpha.cg_assembly
 end
 
+# W = W0 + U*U', so the Cholesky factor for the preconditioner is
+# chol(2W0 + U*U') = chol(2W - U*U'). Reuse the spectral and factor buffers.
+function cg_scaling!(U, Z, workspace, W, aamat)
+    values, vectors = LRO.eigen!(workspace, copyto!(workspace.scratch, W); vectors = true)
+    n, k = size(U)
+    small = view(values, 1:(n-k))
+    tau = if isempty(small)
+        minimum(values)
+    elseif aamat == 0
+        minimum(small)
+    else
+        (minimum(small) + mean(small)) / 2 - 1.0e-14
+    end
+    large = (n-k+1):n
+    U .= view(vectors, :, large) .* sqrt.(transpose(view(values, large)) .- tau)
+    mul!(Z, U, U', -one(eltype(Z)), zero(eltype(Z)))
+    @. Z += 2 * W
+    LinearAlgebra.hermitianpart!(Z)
+    cholesky!(Hermitian(Z, :L))
+    tril!(Z)
+    return tau
+end
+
 function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 
     @timeit solver.to "prec" begin
         nlmi = LRO.num_matrices(solver.model)
         kk = solver.erank .* ones(Int64, nlmi)
         # kk[2] = 3
-        # halpha.Z = SparseMatrixCSC{T}[]
-        halpha.Z = Matrix{T}[]
 
         nvar = solver.model.meta.ncon
 
@@ -849,42 +870,13 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
         if nlmi > 0
             for i in LRO.matrix_indices(solver.model)
                 ilmi = i.value
-                n = size(solver.W[i], 1)
-                k = kk[ilmi]
-
-                F = eigen(Float64.(solver.W[i]))
-                vectf = F.vectors
-                lambdaf = F.values
-
-                vect_l = vectf[:, (n-k+1):n]
-                lambda_l = lambdaf[(n-k+1):n]
-                vect_s = vectf[:, 1:(n-k)]
-                lambda_s = lambdaf[1:(n-k)]
-
-                if isempty(lambda_s)
-                    # The selected rank covers this block (e.g. a 1x1 PSD block).
-                    # Keep a positive baseline; for 1x1 this gives W0 = W and U = 0.
-                    ttau = minimum(lambdaf)
-                elseif solver.aamat == 0
-                    ttau = 1.0 * minimum(lambda_s)
-                else
-                    ttau = (minimum(lambda_s) + mean(lambda_s))/2 - 1.0e-14
-                end
-
-                halpha.Umat[ilmi] = vect_l .* sqrt.(lambda_l .- ttau)'
-
-                # @timeit solver.to "prec1" begin
-                W0 =
-                    [vect_s vect_l] *
-                    [spdiagm(lambda_s[:]) spzeros(n-k, k); spzeros(k, n-k) ttau * I(k)] *
-                    [vect_s vect_l]'
-                # end
-
-                # @timeit solver.to "prec2" begin
-                W0 = @. (W0 + W0') / 2
-                Ztmp = cholesky(2 .* W0 + halpha.Umat[ilmi] * halpha.Umat[ilmi]')
-                push!(halpha.Z, Ztmp.L)
-                # end
+                ttau = cg_scaling!(
+                    halpha.Umat[ilmi],
+                    halpha.Z[ilmi],
+                    solver.eigen_workspaces[ilmi],
+                    solver.W[i].matrix,
+                    solver.aamat,
+                )
 
                 if solver.aamat < 3
                     baseline += ttau^2
