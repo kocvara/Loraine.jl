@@ -87,6 +87,9 @@ function check_rank_one_preparation(dims)
     S = Loraine.Solvers.prec_alpha_S!(solver, halpha, diag(D))
     @test S ≈ V' * Matrix(D)^2 * V
 end
+preparation_allocations(solver, halpha) =
+    @allocated Loraine.Solvers.Prec_for_CG_tilS_prep(solver, halpha)
+
 @testset "Rank-one preconditioner preparation" begin
     for dims in ([3], [3, 4, 1])
         check_rank_one_preparation(dims)
@@ -256,9 +259,7 @@ end
                     base = (halpha.AAAATtau, halpha.AAAATtau_fact)
                 else
                     @test halpha.AAAATtau === base[1]
-                    if T == Float64
-                        @test halpha.AAAATtau_fact === base[2]
-                    end
+                    @test halpha.AAAATtau_fact === base[2]
                 end
             else
                 @test isnothing(halpha.AAAATtau)
@@ -279,6 +280,16 @@ end
             end
             expected = I + V' * (factor \ V)
             @test solver.y_buffer == rhs
+            if T == Float64 && rank == 1
+                if scalars == :general
+                    # SparseArrays refactorization still allocates, including
+                    # CSC-to-CHOLMOD conversion and shift storage. Keep the
+                    # target visible while investigating an upstream fix.
+                    @test_broken preparation_allocations(solver, halpha) == 0
+                else
+                    @test preparation_allocations(solver, halpha) == 0
+                end
+            end
             @test all(a === b for (a, b) in zip(U, halpha.Umat))
             @test all(a === b for (a, b) in zip(Z, halpha.Z))
             @test halpha.cg_rank_one === rank_one_blocks
@@ -302,10 +313,24 @@ end
             LS.myIPstep(solver, halpha)
             LS.check_convergence(solver)
             if mode in (2, 4)
-                @test halpha.AAAATtau isa Vector{T}
+                @test halpha.AAAATtau_diag isa Vector{T}
             end
             @test all(isfinite, solver.err)
             @test all(isfinite, solver.dely)
+            if mode == 4
+                # The solve loop can switch to mode 1 without another setup.
+                solver.preconditioner = 1
+                LS.prepare_W(solver)
+                LS.Prec_for_CG_tilS_prep(solver, halpha)
+                @test isnothing(halpha.AAAATtau) == (scalars != :general)
+                if scalars == :general
+                    base_factor = halpha.AAAATtau_fact
+                    if base_factor isa SparseArrays.CHOLMOD.Factor
+                        base_factor = sparse(base_factor)
+                    end
+                    @test Matrix(base_factor) ≈ Matrix(halpha.AAAATtau)
+                end
+            end
         end
     end
 end
@@ -354,6 +379,37 @@ function cg_iteration_allocations(solver, halpha)
         Loraine.Solvers.check_convergence(solver)
         nothing
     end
+end
+
+@testset "Mixed PSD/scalar CG iterations reuse diagonal storage" begin
+    LS = Loraine.Solvers
+    model = JuMP.Model(Loraine.Optimizer)
+    JuMP.set_silent(model)
+    JuMP.set_attribute(model, "kit", 1)
+    JuMP.@variable(model, y[1:3])
+    JuMP.@variable(model, z >= 1)
+    JuMP.@constraint(model, [y[1] -1 -1; -1 y[2] -1; -1 -1 y[3]] in JuMP.PSDCone())
+    JuMP.@objective(model, Min, sum(y) + z)
+    JuMP.optimize!(model)
+    @test JuMP.termination_status(model) == JuMP.MOI.OPTIMAL
+    @test JuMP.objective_value(model) ≈ 7 atol = 1e-6
+    state = JuMP.unsafe_backend(model).solver
+    solver, halpha = state.solver, state.halpha
+    solver.to = LS.TimerOutput()
+    LS.setup_solver(solver, halpha)
+    LS.initial_point(solver)
+    @test solver.kit == 1
+    base, factor = halpha.AAAATtau, halpha.AAAATtau_fact
+    @test isnothing(base)
+    @test factor isa Diagonal
+    storage = factor.diag
+    for _ = 1:2
+        cg_iteration_allocations(solver, halpha)
+    end
+    @test cg_iteration_allocations(solver, halpha) == 0
+    @test halpha.AAAATtau === base
+    @test halpha.AAAATtau_fact === factor
+    @test factor.diag === storage
 end
 
 @testset "CG iteration reuses its preconditioner without allocations" begin
