@@ -818,7 +818,18 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 
         nvar = solver.model.meta.ncon
 
-        halpha.AAAATtau = spzeros(nvar, nvar)
+        if LRO.num_scalars(solver.model) > 0
+            # TODO: Check whether sparse storage is worthwhile here.
+            if !(halpha.AAAATtau isa Matrix{T}) ||
+               size(halpha.AAAATtau) != (nvar, nvar)
+                halpha.AAAATtau = zeros(T, nvar, nvar)
+            else
+                fill!(halpha.AAAATtau, zero(T))
+            end
+        else
+            halpha.AAAATtau = nothing
+        end
+        baseline = zero(T)
 
         ntot=0
         if nlmi > 0
@@ -876,12 +887,15 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
                 # end
 
                 if solver.aamat < 3
-                    halpha.AAAATtau += ttau^2 * I(nvar)
+                    baseline += ttau^2
                 end
             end
         end
 
         if LRO.num_scalars(solver.model) > 0
+            H = halpha.AAAATtau
+            indices = view(CartesianIndices(H), diagind(H))
+            view(H, indices) .= baseline
             LRO.add_schur_complement!(
                 solver.model,
                 solver.X[LRO.ScalarIndex] .* solver.S_lin_inv,
@@ -892,7 +906,8 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 
         # Factorize once here; `AAAATtau` is constant for the whole predictor/corrector
         # CG solve, so this avoids re-factorizing it on every single CG iteration.
-        halpha.AAAATtau_fact = factorize(halpha.AAAATtau)
+        halpha.AAAATtau_fact = isnothing(halpha.AAAATtau) ?
+            Diagonal(fill(baseline, nvar)) : cholesky(Hermitian(halpha.AAAATtau))
 
         k = kk[1]
         if k > 1 #slow formula
@@ -920,7 +935,9 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
                 mul!(S, t', solved_t)
             end
         else #fast formula
-            AAAATtau_d = spdiagm(sqrt.(1 ./ diag(halpha.AAAATtau)))
+            diagonal = isnothing(halpha.AAAATtau) ?
+                halpha.AAAATtau_fact.diag : diag(halpha.AAAATtau)
+            AAAATtau_d = spdiagm(sqrt.(1 ./ diagonal))
 
             # @timeit solver.to "prec3" begin
             # t = zeros(nvar, k*ntot)

@@ -109,7 +109,7 @@ end
 end
 @testset "Preconditioner assembly reuses setup storage" begin
     LS = Loraine.Solvers
-    for rank in (1, 2)
+    for rank in (1, 2), scalars in (false, true)
         dims = [3, 4]
         nvar = 3
         A = [
@@ -119,7 +119,9 @@ end
             [spdiagm(ones(d)) for d in dims],
             A,
             zeros(nvar),
-            SparseVector{Float64,Int64}(spzeros(0)),
+            SparseVector{Float64,Int64}(scalars ? sparsevec([1.0, 2.0]) : spzeros(0)),
+            scalars ?
+            sparse(Int64[1, 2, 2, 3], Int64[1, 1, 2, 2], [1.0, 2.0, 1.0, 3.0], nvar, 2) :
             SparseMatrixCSC{Float64,Int64}(spzeros(nvar, 0)),
             Int64.(dims),
         )
@@ -137,15 +139,35 @@ end
         end
         LS.prepare_W(solver)
         buffers = halpha.cg_assembly
-        for _ = 1:2
+        base = nothing
+        for pass = 1:2
             LS.Prec_for_CG_tilS_prep(solver, halpha)
+            if scalars
+                @test halpha.AAAATtau isa Matrix{Float64}
+                @test halpha.AAAATtau_fact isa Cholesky
+                @test !isdiag(halpha.AAAATtau)
+                @test Matrix(halpha.AAAATtau_fact) ≈ halpha.AAAATtau
+                if pass == 1
+                    base = halpha.AAAATtau
+                else
+                    @test halpha.AAAATtau === base
+                end
+            else
+                @test isnothing(halpha.AAAATtau)
+                @test halpha.AAAATtau_fact isa Diagonal
+            end
             V = hcat(
                 [
                     Matrix(solver.model.jprod_buffer[i])' *
                     kron(halpha.Umat[i], halpha.Z[i]) for i in eachindex(dims)
                 ]...,
             )
-            expected = I + V' * (halpha.AAAATtau_fact \ V)
+            factor = if scalars && rank == 1
+                Diagonal(diag(halpha.AAAATtau))
+            else
+                halpha.AAAATtau_fact
+            end
+            expected = I + V' * (factor \ V)
             @test Matrix(halpha.cholS) ≈ expected
             @test all(a === b for (a, b) in zip(buffers, halpha.cg_assembly))
             @test halpha.cholS.factors === buffers[2]
