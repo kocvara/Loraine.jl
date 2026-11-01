@@ -60,7 +60,12 @@ end
     for preconditioner in (1, 2), aamat in (0, 1), scalar_first in (false, true)
         @testset "preconditioner=$preconditioner aamat=$aamat scalar_first=$scalar_first" begin
             model = Model(Loraine.Optimizer)
-            for (key, value) in ("kit" => 1, "verb" => 0, "preconditioner" => preconditioner, "aamat" => aamat)
+            for (key, value) in (
+                "kit" => 1,
+                "verb" => 0,
+                "preconditioner" => preconditioner,
+                "aamat" => aamat,
+            )
                 set_attribute(model, key, value)
             end
             @variable(model, y[1:3])
@@ -284,4 +289,75 @@ end
         @test V' * V ≈ Matrix{Float64}(I, n, n)
         @test A == original
     end
+end
+
+eigen_allocations(ws, A) = @allocated Loraine.LRO.eigen!(ws, A)
+inverse_allocations(ws, A) = @allocated Loraine.LapackWorkspaces.block_inverse!(ws, A)
+cone_allocations(ws, A) = @allocated Loraine.LRO.eigmin!(ws, A)
+
+@testset "Reusable LAPACK workspaces" begin
+    LW = Loraine.LapackWorkspaces
+    for T in (Float32, Float64), n in (1, 3, 7)
+        A = T[r == c ? 2+r : sin(r+2c)/10 for r = 1:n, c = 1:n]
+        symmetric = Matrix(Symmetric(A))
+        scratch = copy(symmetric)
+        ws = Loraine.LRO.EigenWorkspace(scratch)
+        inverse_ws = LW.make_workspace(scratch)
+        expected = eigvals(Symmetric(symmetric))
+        for _ = 1:2
+            values, vectors =
+                Loraine.LRO.eigen!(ws, copyto!(scratch, symmetric); vectors = true)
+            @test values ≈ expected
+            @test symmetric * vectors ≈ vectors * Diagonal(values)
+            values, _ = Loraine.LRO.eigen!(ws, copyto!(scratch, symmetric))
+            @test values ≈ expected
+            LW.block_inverse!(inverse_ws, copyto!(scratch, A))
+            @test scratch ≈ inv(A)
+        end
+        copyto!(scratch, symmetric)
+        @test eigen_allocations(ws, scratch) == 0
+        copyto!(scratch, A)
+        @test inverse_allocations(inverse_ws, scratch) == 0
+        fill!(scratch, zero(T))
+        @test_throws SingularException LW.block_inverse!(inverse_ws, scratch)
+        scratch[1, 1] = T(NaN)
+        @test_throws ArgumentError Loraine.LRO.eigen!(ws, scratch)
+    end
+end
+
+@testset "Eigen workspace with generic arithmetic" begin
+    A = Float64x2[2 1; 1 2]
+    ws = Loraine.LRO.EigenWorkspace(similar(A))
+    @test isnothing(ws.lapack)
+    values, vectors = Loraine.LRO.eigen!(ws, copy(A); vectors = true)
+    @test values ≈ Float64x2[1, 3]
+    @test A * vectors ≈ vectors * Diagonal(values)
+    @test Loraine.LRO.eigmin!(ws, A) ≈ Float64x2(1)
+    @test A == Float64x2[2 1; 1 2]
+end
+
+@testset "Buffered convergence preserves the iterate and errors" begin
+    LS = Loraine.Solvers
+    solver, _ = singular_schur_solver()
+    solver.verb = 0
+    i = LS.LRO.MatrixIndex(1)
+    solver.X[i] .= Diagonal([-2.0, 3.0])
+    solver.S[i] .= Diagonal([-5.0, 1.0])
+    fill!(solver.Rd, 0.0)
+    X, S = copy(solver.X[i]), copy(solver.S[i])
+    expected = LS.LRO.errors(
+        solver.model,
+        solver.X;
+        y = solver.y,
+        primal_err = solver.Rp,
+        dual_slack = solver.S,
+        dual_err = solver.Rd,
+    )
+    LS.check_convergence(solver)
+    @test all(isapprox.(solver.err, expected))
+    @test solver.eigen_workspaces[i.value].scratch === solver.kron_tmp[i.value]
+    @test solver.X[i] == X
+    @test solver.S[i] == S
+    @test LS.LRO.eigmin!(solver.eigen_workspaces[i.value], solver.X[i]) ≈ -2
+    @test cone_allocations(solver.eigen_workspaces[i.value], solver.X[i]) == 0
 end

@@ -299,12 +299,12 @@ function find_step(solver::MySolver{T}) where {T}
                 XXX = solver.kron_tmp[i]
                 @. XXX = solver.DDsi[i]' * delXb * solver.DDsi[i]
                 LinearAlgebra.hermitianpart!(XXX)
-                mimiX = minimum(eigvals!(Symmetric(XXX)))
+                mimiX = minimum(first(LRO.eigen!(solver.eigen_workspaces[i], XXX)))
                 solver.alpha[i] = mimiX > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiX)
 
                 @. XXX = solver.DDsi[i]' * delSb * solver.DDsi[i]
                 LinearAlgebra.hermitianpart!(XXX)
-                mimiS = minimum(eigvals!(Symmetric(XXX)))
+                mimiS = minimum(first(LRO.eigen!(solver.eigen_workspaces[i], XXX)))
                 solver.beta[i] = mimiS > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiS)
             end
         end

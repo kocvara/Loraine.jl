@@ -107,4 +107,72 @@ end
         end
     end
 end
+@testset "Preconditioner assembly reuses setup storage" begin
+    LS = Loraine.Solvers
+    for rank in (1, 2), scalars in (false, true)
+        dims = [3, 4]
+        nvar = 3
+        A = [
+            sparse([mod1(j, d)], [mod1(j, d)], [Float64(j)], d, d) for d in dims, j = 1:nvar
+        ]
+        model = LRO.Model(
+            [spdiagm(ones(d)) for d in dims],
+            A,
+            zeros(nvar),
+            SparseVector{Float64,Int64}(scalars ? sparsevec([1.0, 2.0]) : spzeros(0)),
+            scalars ?
+            sparse(Int64[1, 2, 2, 3], Int64[1, 1, 2, 2], [1.0, 2.0, 1.0, 3.0], nvar, 2) :
+            SparseMatrixCSC{Float64,Int64}(spzeros(nvar, 0)),
+            Int64.(dims),
+        )
+        state = LS.Solver{Float64}(model; kit = 1, erank = rank, verb = 0)
+        solver, halpha = state.solver, state.halpha
+        solver.kit = 1
+        solver.erank = rank
+        solver.to = LS.TimerOutput()
+        LS.setup_solver(solver, halpha)
+        LS.initial_point(solver)
+        for idx in LRO.matrix_indices(solver.model)
+            d = dims[idx.value]
+            solver.X[idx] .= Diagonal(collect(1.0:d))
+            solver.S[idx] .= Diagonal(collect(2.0:(d+1)))
+        end
+        LS.prepare_W(solver)
+        buffers = halpha.cg_assembly
+        base = nothing
+        for pass = 1:2
+            LS.Prec_for_CG_tilS_prep(solver, halpha)
+            if scalars
+                @test halpha.AAAATtau isa Matrix{Float64}
+                @test halpha.AAAATtau_fact isa Cholesky
+                @test !isdiag(halpha.AAAATtau)
+                @test Matrix(halpha.AAAATtau_fact) ≈ halpha.AAAATtau
+                if pass == 1
+                    base = halpha.AAAATtau
+                else
+                    @test halpha.AAAATtau === base
+                end
+            else
+                @test isnothing(halpha.AAAATtau)
+                @test halpha.AAAATtau_fact isa Diagonal
+            end
+            V = hcat(
+                [
+                    Matrix(solver.model.jprod_buffer[i])' *
+                    kron(halpha.Umat[i], halpha.Z[i]) for i in eachindex(dims)
+                ]...,
+            )
+            factor = if scalars && rank == 1
+                Diagonal(diag(halpha.AAAATtau))
+            else
+                halpha.AAAATtau_fact
+            end
+            expected = I + V' * (factor \ V)
+            @test Matrix(halpha.cholS) ≈ expected
+            @test all(a === b for (a, b) in zip(buffers, halpha.cg_assembly))
+            @test halpha.cholS.factors === buffers[2]
+        end
+    end
+end
+
 end
