@@ -81,7 +81,7 @@ mutable struct MySolver{T,M}
     maxit::Int64
     datasparsity::Int64
 
-    to::Any
+    to::TimerOutput
 
     # model and preprocessed model data
     model::M

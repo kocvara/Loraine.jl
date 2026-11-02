@@ -33,6 +33,47 @@ const THETA1 = joinpath(dirname(@__DIR__), "examples", "data", "theta1.dat-s")
     end
 end
 
+function ip_step_allocations(solver, halpha)
+    return @allocated begin
+        Loraine.Solvers.myIPstep(solver, halpha)
+        Loraine.Solvers.check_convergence(solver)
+        nothing
+    end
+end
+
+@testset "LP iterations preserve timing without allocations" begin
+    LS = Loraine.Solvers
+    solutions, errors = Vector{Float64}[], NTuple{6,Float64}[]
+    for timed in (true, false)
+        model = Model(Loraine.Optimizer)
+        set_silent(model)
+        @variable(model, x <= 2)
+        @objective(model, Max, 3x)
+        optimize!(model)
+        state = unsafe_backend(model).solver
+        solver, halpha = state.solver, state.halpha
+        solver.to = LS.TimerOutput()
+        LS.setup_solver(solver, halpha)
+        LS.initial_point(solver)
+        # Warm the numerical paths and timer entries before measuring.
+        for _ = 1:3
+            ip_step_allocations(solver, halpha)
+        end
+        timed || LS.TimerOutputs.disable_timer!(solver.to)
+        sections = ("prepare_W", "predictor", "corrector")
+        calls = [LS.TimerOutputs.ncalls(solver.to[name]) for name in sections]
+        @test ip_step_allocations(solver, halpha) == 0
+        for (name, count) in zip(sections, calls)
+            @test LS.TimerOutputs.ncalls(solver.to[name]) == count + Int(timed)
+        end
+        @test all(isfinite, solver.err)
+        push!(solutions, copy(solver.X.x))
+        push!(errors, solver.err)
+    end
+    @test solutions[1] == solutions[2]
+    @test errors[1] == errors[2]
+end
+
 @testset "loraine" begin
     @testset "direct solver" begin
         model = Loraine.loraine(THETA1, Dict("verb" => 0))
