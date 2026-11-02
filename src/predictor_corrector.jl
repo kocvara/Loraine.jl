@@ -261,6 +261,36 @@ function corrector(solver::MySolver{T}, halpha) where {T}
     end
 end
 
+function predictor_trial_point!(solver, i)
+    mat_idx = LRO.MatrixIndex(i)
+    W = solver.W[mat_idx]
+    solver.Xn[i] .= solver.X[mat_idx] .+ solver.alpha[i] .* solver.delX[i]
+    solver.Sn[i] .= solver.S[mat_idx] .+ solver.beta[i] .* solver.delS[i]
+    # R = W.factor_inv delX delS W.factor + W.factor' delS delX W.factor_inv'
+    A = solver.kron_tmp[i]
+    B = solver.kron_tmp2[i]
+    R = solver.sol_buffer[mat_idx]
+    mul!(A, W.factor_inv, solver.delX[i])
+    mul!(B, A, solver.delS[i])
+    mul!(R, B, W.factor)
+    mul!(A, W.factor', solver.delS[i])
+    mul!(B, A, solver.delX[i])
+    mul!(R, B, W.factor_inv', 1, 1)
+    # RNT[i] = -R ./ deed  with  deed[k,l] = D[i][k] + D[i][l]
+    d = solver.D[i]
+    solver.RNT[i] .= .-R ./ (d .+ d')
+    return
+end
+
+function update_iterate!(solver, i, alpha_step, beta_step)
+    mat_idx = LRO.MatrixIndex(i)
+    @. solver.X[mat_idx] += alpha_step * solver.delX[i]
+    LinearAlgebra.hermitianpart!(solver.X[mat_idx])
+    @. solver.S[mat_idx] += beta_step * solver.delS[i]
+    LinearAlgebra.hermitianpart!(solver.S[mat_idx])
+    return
+end
+
 function find_step(solver::MySolver{T}) where {T}
     if LRO.num_matrices(solver.model) > 0
         @timeit solver.to "find_step" begin
@@ -319,36 +349,30 @@ function find_step(solver::MySolver{T}) where {T}
 
     if solver.predict
         # solution update
-        Threads.@threads for i = 1:LRO.num_matrices(solver.model)
-            mat_idx = LRO.MatrixIndex(i)
-            W = solver.W[mat_idx]
-            solver.Xn[i] .= solver.X[mat_idx] .+ solver.alpha[i] .* solver.delX[i]
-            solver.Sn[i] .= solver.S[mat_idx] .+ solver.beta[i] .* solver.delS[i]
-            # R = W.factor_inv delX delS W.factor + W.factor' delS delX W.factor_inv'
-            A = solver.kron_tmp[i]
-            B = solver.kron_tmp2[i]
-            R = solver.sol_buffer[mat_idx]
-            mul!(A, W.factor_inv, solver.delX[i])
-            mul!(B, A, solver.delS[i])
-            mul!(R, B, W.factor)
-            mul!(A, W.factor', solver.delS[i])
-            mul!(B, A, solver.delX[i])
-            mul!(R, B, W.factor_inv', 1, 1)
-            # RNT[i] = -R ./ deed  with  deed[k,l] = D[i][k] + D[i][l]
-            d = solver.D[i]
-            solver.RNT[i] .= .-R ./ (d .+ d')
+        nblocks = LRO.num_matrices(solver.model)
+        if Threads.nthreads() == 1 || nblocks <= 1
+            for i = 1:nblocks
+                predictor_trial_point!(solver, i)
+            end
+        else
+            Threads.@threads for i = 1:nblocks
+                predictor_trial_point!(solver, i)
+            end
         end
     else
         copyto!(solver.yold, solver.y)
         alpha_step = min(minimum(solver.alpha; init = one(T)), solver.alpha_lin)
         beta_step = min(minimum(solver.beta; init = one(T)), solver.beta_lin)
         LinearAlgebra.axpy!(beta_step, solver.dely, solver.y)
-        Threads.@threads for i = 1:LRO.num_matrices(solver.model)
-            mat_idx = LRO.MatrixIndex(i)
-            @. solver.X[mat_idx] += alpha_step * solver.delX[i]
-            LinearAlgebra.hermitianpart!(solver.X[mat_idx])
-            @. solver.S[mat_idx] += beta_step * solver.delS[i]
-            LinearAlgebra.hermitianpart!(solver.S[mat_idx])
+        nblocks = LRO.num_matrices(solver.model)
+        if Threads.nthreads() == 1 || nblocks <= 1
+            for i = 1:nblocks
+                update_iterate!(solver, i, alpha_step, beta_step)
+            end
+        else
+            Threads.@threads for i = 1:nblocks
+                update_iterate!(solver, i, alpha_step, beta_step)
+            end
         end
     end
 
