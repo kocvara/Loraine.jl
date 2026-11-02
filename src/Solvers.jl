@@ -204,11 +204,13 @@ mutable struct Halpha
     AAAATtau_fact::Any
     cg_preconditioner::Any
     cg_assembly::Any
+    cg_rank_one::Any
     function Halpha(kit::Int64)
         halpha = new()
         halpha.kit = kit
         halpha.cg_preconditioner = nothing
         halpha.cg_assembly = nothing
+        halpha.cg_rank_one = nothing
         return halpha
     end
 end
@@ -524,6 +526,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     halpha.Umat = Matrix{T}[]
     halpha.cg_preconditioner = nothing
     halpha.cg_assembly = nothing
+    halpha.cg_rank_one = nothing
     halpha.Z = Matrix{T}[]
     halpha.AAAATtau = SparseMatrixCSC{T}[]
     ncon = solver.model.meta.ncon
@@ -565,6 +568,13 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         halpha.cg_preconditioner =
             MyM(solver.model, nothing, halpha.Umat, halpha.Z, nothing)
         cg_assembly!(halpha, T, ncon, sum(length, halpha.Umat))
+        if solver.preconditioner == 1 && LRO.num_scalars(solver.model) == 0
+            halpha.AAAATtau = nothing
+            halpha.AAAATtau_fact = Diagonal(zeros(T, ncon))
+        end
+        if solver.erank == 1 && solver.preconditioner == 1
+            cg_rank_one!(halpha, solver.model)
+        end
     end
 
 end
@@ -807,6 +817,45 @@ function cg_assembly!(halpha, ::Type{T}, nvar, sizeS) where {T}
     return halpha.cg_assembly
 end
 
+# The pattern of A_j*u is independent of u. Cache its sparse rows and the
+# contraction that fills their nonzeros, avoiding sparse assembly each iteration.
+struct RankOneBlock{T}
+    AU::SparseMatrixCSC{T,Int}
+    contraction::SparseMatrixCSC{T,Int}
+end
+
+function RankOneBlock(model, i)
+    J = model.jprod_buffer[i.value]
+    n = Int(LRO.side_dimension(model, i))
+    nvar = Int(model.meta.ncon)
+    entries, constraints, coefficients = findnz(J)
+    rows = mod.(entries .- 1, n) .+ 1
+    cols = div.(entries .- 1, n) .+ 1
+    AU = sparse(Int.(constraints), Int.(rows), ones(eltype(J), length(entries)), nvar, n)
+    # Map each A_j[p,q] to the stored slot for (j,p) in AU.
+    slots = SparseMatrixCSC{Int,Int}(AU)
+    nonzeros(slots) .= eachindex(nonzeros(slots))
+    targets = getindex.(Ref(slots), constraints, rows)
+    contraction = sparse(targets, Int.(cols), coefficients, nnz(AU), n)
+    return RankOneBlock(AU, contraction)
+end
+
+function cg_rank_one!(halpha, model)
+    if isnothing(halpha.cg_rank_one)
+        halpha.cg_rank_one = [RankOneBlock(model, i) for i in LRO.matrix_indices(model)]
+    end
+    return halpha.cg_rank_one
+end
+
+function rank_one_product!(t, block::RankOneBlock, U, Z, weights)
+    values = nonzeros(block.AU)
+    mul!(values, block.contraction, view(U, :, 1))
+    row_weights = view(weights, rowvals(block.AU))
+    @. values *= -row_weights
+    mul!(t, block.AU, Z)
+    return t
+end
+
 # W = W0 + U*U', so the Cholesky factor for the preconditioner is
 # chol(2W0 + U*U') = chol(2W - U*U'). Reuse the spectral and factor buffers.
 function cg_scaling!(U, Z, workspace, W, aamat)
@@ -833,10 +882,6 @@ end
 function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 
     @timeit solver.to "prec" begin
-        nlmi = LRO.num_matrices(solver.model)
-        kk = solver.erank .* ones(Int64, nlmi)
-        # kk[2] = 3
-
         nvar = solver.model.meta.ncon
 
         if LRO.num_scalars(solver.model) > 0
@@ -851,23 +896,10 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
             halpha.AAAATtau = nothing
         end
         baseline = zero(T)
-
-        ntot=0
-        if nlmi > 0
-            for i in LRO.matrix_indices(solver.model)
-                ntot = ntot + size(solver.W[i], 1)
-            end
-        end
-        sizeS=0
-        if nlmi > 0
-            for i in LRO.matrix_indices(solver.model)
-                sizeS += kk[i.value] * size(solver.W[i], 1)
-            end
-        end
+        sizeS = sum(length, halpha.Umat; init = 0)
 
         lbt = 1
-        lbs=1
-        if nlmi > 0
+        if LRO.num_matrices(solver.model) > 0
             for i in LRO.matrix_indices(solver.model)
                 ilmi = i.value
                 ttau = cg_scaling!(
@@ -898,18 +930,20 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 
         # Factorize once here; `AAAATtau` is constant for the whole predictor/corrector
         # CG solve, so this avoids re-factorizing it on every single CG iteration.
-        halpha.AAAATtau_fact = isnothing(halpha.AAAATtau) ?
-            Diagonal(fill(baseline, nvar)) : cholesky(Hermitian(halpha.AAAATtau))
+        if isnothing(halpha.AAAATtau)
+            fill!(halpha.AAAATtau_fact.diag, baseline)
+        else
+            halpha.AAAATtau_fact = cholesky(Hermitian(halpha.AAAATtau))
+        end
 
-        k = kk[1]
-        if k > 1 #slow formula
+        if solver.erank > 1 #slow formula
             # @timeit solver.to "prec3" begin
             t, S, solved_t = cg_assembly!(halpha, T, nvar, sizeS)
-            if nlmi > 0
+            if LRO.num_matrices(solver.model) > 0
                 for mat_idx in LRO.matrix_indices(solver.model)
                     ilmi = mat_idx.value
                     n = size(solver.W[mat_idx], 1)
-                    k = kk[ilmi]
+                    k = size(halpha.Umat[ilmi], 2)
                     TT = kron(halpha.Umat[ilmi], halpha.Z[ilmi])
                     mul!(
                         view(t, :, Int(lbt):Int(lbt+k*n-1)),
@@ -922,44 +956,18 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
             # end
 
             @timeit solver.to "prec4" begin
-                copyto!(solved_t, t)
-                ldiv!(halpha.AAAATtau_fact, solved_t)
+                ldiv!(solved_t, halpha.AAAATtau_fact, t)
                 mul!(S, t', solved_t)
             end
         else #fast formula
+            # Reuse the application's scratch; y_buffer holds the live RHS.
+            weights = halpha.cg_preconditioner.AAAAinvx
             diagonal = isnothing(halpha.AAAATtau) ?
-                halpha.AAAATtau_fact.diag : diag(halpha.AAAATtau)
-            AAAATtau_d = spdiagm(sqrt.(1 ./ diagonal))
+                halpha.AAAATtau_fact.diag :
+                view(halpha.AAAATtau, diagind(halpha.AAAATtau))
+            weights .= sqrt.(1 ./ diagonal)
 
-            # @timeit solver.to "prec3" begin
-            # t = zeros(nvar, k*ntot)
-            # if nlmi > 0
-            #     for ilmi = 1:nlmi
-            #         if kk[ilmi] == 0
-            #             continue
-            #         end
-            #         n = size(solver.W[ilmi],1)
-            #         k = kk[ilmi]
-            #         AAs = AAAATtau_d * solver.model.AA[ilmi]
-            #         ii_, jj_, aa_ = findnz(AAs)
-            #         qq_ = floor.(Int64,(jj_ .- 1) ./ n) .+ 1
-            #         pp_ = mod.(jj_ .- 1, n) .+ 1
-            #         UU = halpha.Umat[ilmi][qq_]
-            #         aau = aa_ .* UU
-            #         AU = sparse(ii_,pp_,aau,nvar,n)
-            #         if nlmi>1
-            #             t[1:nvar,lbt:lbt+k*n-1] .= AU * halpha.Z[ilmi]
-            #         else
-            #             t .= AU * halpha.Z[1]
-            #         end
-            #         lbt = lbt + k*n
-            #     end
-            # end
-            # S .= (t' * t)
-            # # mul!(S,t',t)
-            # end
-
-            S, lbt = prec_alpha_S!(solver, halpha, AAAATtau_d, kk, ntot, lbt, sizeS)
+            S = prec_alpha_S!(solver, halpha, weights)
         end
 
         # Schur complement for the SMW formula
@@ -1034,62 +1042,28 @@ function MyM(
     )
 end
 
-function prec_alpha_S!(
-    solver::MySolver{T},
-    halpha,
-    AAAATtau_d,
-    kk,
-    didi,
-    lbt,
-    sizeS,
-) where {T}
+function prec_alpha_S!(solver::MySolver{T}, halpha, weights) where {T}
     @timeit solver.to "prec3" begin
-        nvar = solver.model.meta.ncon
-        t, S, _ = cg_assembly!(halpha, T, nvar, sizeS)
-        if LRO.num_matrices(solver.model) > 0
-            for mat_idx in LRO.matrix_indices(solver.model)
-                ilmi = mat_idx.value
-                if kk[ilmi] == 0
-                    continue
-                end
-                n = size(solver.W[mat_idx], 1)
-                k = kk[ilmi]
-
-                @timeit solver.to "prec30" begin
-                    # `A(y) * U` is linear in `y`, so instead of forming the
-                    # `n × n` matrix `A(y)` for each of the `nvar` rows of
-                    # `AAAATtau_d` -- which costs `nvar` dense `n × n` buffers per
-                    # preconditioner build -- multiply by `𝐀ᵢ` once to get every
-                    # `vec(A(y))` at once, and contract with `Umat` on the
-                    # nonzeros only. `𝐀ᵢ`'s column `j` is `vec(Aᵢⱼ)`, so its
-                    # transpose is the `AA` matrix this used to be written with.
-                    AAs = (-AAAATtau_d) * transpose(solver.model.jprod_buffer[ilmi])
-                    ii_, jj_, aa_ = findnz(AAs)
-                    # `jj_` indexes into `vec` of an `n × n` matrix
-                    qq_ = div.(jj_ .- 1, n) .+ 1
-                    pp_ = mod.(jj_ .- 1, n) .+ 1
-                    aau = aa_ .* halpha.Umat[ilmi][qq_]
-                    # Sparse/dense multiplication needs native indices on 32-bit.
-                    AU = sparse(Int.(ii_), Int.(pp_), aau, nvar, n)
-                end
-                if LRO.num_matrices(solver.model) > 1
-                    # @timeit solver.to "prec32" begin
-                    mul!(view(t, :, Int(lbt):Int(lbt+k*n-1)), AU, halpha.Z[ilmi])
-                    # end
-                else
-                    # @timeit solver.to "prec32" begin
-                    mul!(t, AU, halpha.Z[1])
-                    # end
-                end
-                lbt = lbt + k*n
-            end
+        sizeS = sum(length, halpha.Umat; init = 0)
+        t, S, _ = cg_assembly!(halpha, T, solver.model.meta.ncon, sizeS)
+        blocks = cg_rank_one!(halpha, solver.model)
+        offset = 0
+        for i in LRO.matrix_indices(solver.model)
+            n = size(halpha.Z[i.value], 1)
+            # Native ranges keep SparseArrays multiplication valid on 32-bit.
+            columns = Int(offset+1):Int(offset+n)
+            rank_one_product!(
+                view(t, :, columns),
+                blocks[i.value],
+                halpha.Umat[i.value],
+                halpha.Z[i.value],
+                weights,
+            )
+            offset += n
         end
-        @timeit solver.to "prec33" begin
-            mul!(S, t', t)
-        end
+        mul!(S, t', t)
     end
-
-    return S, lbt
+    return S
 end
 
 function (t::MyM)(Mx::Vector{T}, x::Vector{T}) where {T}
