@@ -133,7 +133,10 @@ rank_one_allocations(t, block, U, Z, weights) =
             @test rowvals(block.AU) == rows
             @test block.AU.colptr == columns
             @test block.contraction == contraction
-            @test model.A == original
+            @test all(
+                j -> LRO.jac(model, j, LRO.MatrixIndex(1)) == original[1, j],
+                1:nvar,
+            )
         end
     end
 end
