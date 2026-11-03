@@ -784,7 +784,7 @@ function (t::MyM_no)(Mx::Vector{T}, x::Vector{T}) where {T}
     copy!(Mx, x)
 end
 
-function Prec_for_CG_beta(solver, halpha)
+function Prec_for_CG_beta(solver::MySolver{T}, halpha) where {T}
 
     nlmi = LRO.num_matrices(solver.model)
     kk = solver.erank .* ones(Int64, nlmi, 1)
@@ -797,7 +797,7 @@ function Prec_for_CG_beta(solver, halpha)
         end
     end
 
-    halpha.AAAATtau = zeros(nvar)
+    halpha.AAAATtau = zeros(T, nvar)
     if nlmi > 0
         for i in LRO.matrix_indices(solver.model)
             ilmi = i.value
@@ -812,17 +812,13 @@ function Prec_for_CG_beta(solver, halpha)
                 # Keep a positive baseline; for 1x1 this gives W0 = W and U = 0.
                 ttau = minimum(lambdaf)
             elseif solver.aamat == 0
-                ttau = 1.0 * minimum(lambda_s)
+                ttau = minimum(lambda_s)
             else
-                ttau = (minimum(lambda_s) + mean(lambda_s))/2.0 - 1.0e-14
+                ttau = (minimum(lambda_s) + mean(lambda_s)) / 2 - T(1e-14)
             end
             if solver.aamat < 3
-                ZZZ = ones(nvar)
-            else
-                ZZZ = spzeros(nvar, 1)
+                halpha.AAAATtau .+= ttau^2
             end
-
-            halpha.AAAATtau += ttau^2 .* ZZZ
         end
         if LRO.num_scalars(solver.model) > 0
             tmp = zeros(eltype(halpha.AAAATtau), nvar, nvar)

@@ -290,13 +290,17 @@ end
         end
         # Typed state must still support changing preconditioner modes and
         # rebuilding their setup buffers on the same solver instance.
-        for mode in (0, 2, 1)
+        for mode in (0, 2, 4, 1)
             solver.preconditioner = mode
+            solver.aamat = mode == 2 ? 0 : 1
             solver.verb = 0
             LS.setup_solver(solver, halpha)
             LS.initial_point(solver)
             LS.myIPstep(solver, halpha)
             LS.check_convergence(solver)
+            if mode in (2, 4)
+                @test halpha.AAAATtau isa Vector{T}
+            end
             @test all(isfinite, solver.err)
             @test all(isfinite, solver.dely)
         end
