@@ -227,7 +227,9 @@ function corrector(solver::MySolver{T}, halpha) where {T}
         C .-= solver.RNT[i]
         d = solver.D[i]
         sm = solver.sigma * solver.mu
-        view(C, diagind(C)) .+= d .- sm ./ d
+        # Cartesian indices avoid a vector wrapper for linear matrix indexing.
+        indices = view(CartesianIndices(C), diagind(C))
+        view(C, indices) .+= d .- sm ./ d
         # X[mat_idx] = W.factor * C * W.factor'
         my_kron!(X[mat_idx], W.factor, W.factor, C, solver.kron_tmp[i])
     end
