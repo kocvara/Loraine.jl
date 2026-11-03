@@ -200,20 +200,20 @@ struct RankOneBlock{T}
     contraction::SparseMatrixCSC{T,Int}
 end
 
-struct MyM{T,M,F,C}
-    model::M
+mutable struct MyM{T,M,F,C}
+    const model::M
     AAAATtau_fact::F
-    Umat::Vector{Matrix{T}}
-    Z::Vector{Matrix{T}}
+    const Umat::Vector{Matrix{T}}
+    const Z::Vector{Matrix{T}}
     cholS::C
-    AAAAinvx::Vector{T}
-    yy2::Vector{T}
-    yyy2::Vector{T}
-    y33::Vector{T}
-    AyU::Vector{Matrix{T}}
-    chunk::Vector{Matrix{T}}
-    xx::Vector{Vector{T}}
-    yy::Vector{Matrix{T}}
+    const AAAAinvx::Vector{T}
+    const yy2::Vector{T}
+    const yyy2::Vector{T}
+    const y33::Vector{T}
+    const AyU::Vector{Matrix{T}}
+    const chunk::Vector{Matrix{T}}
+    const xx::Vector{Vector{T}}
+    const yy::Vector{Matrix{T}}
 end
 
 mutable struct Halpha{T,M,F}
@@ -985,6 +985,28 @@ function fill_AAAATtau!(halpha, solver, baseline)
     return
 end
 
+function preconditioner_weights!(weights, base::Diagonal)
+    weights .= sqrt.(1 ./ base.diag)
+    return
+end
+
+function preconditioner_weights!(weights, base)
+    indices = view(CartesianIndices(base), diagind(base))
+    weights .= sqrt.(1 ./ view(base, indices))
+    return
+end
+
+function factor_preconditioner!(halpha, S)
+    # Checked factorization either succeeds with upper storage and info = 0,
+    # or throws. Keep the wrapper already referencing this buffer on success.
+    cholesky!(Hermitian(S))
+    factor = halpha.cholS
+    if factor.factors !== S || factor.uplo != 'U' || factor.info != 0
+        halpha.cholS = Cholesky(S, 'U', 0)
+    end
+    return
+end
+
 function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 
     @timeit solver.to "prec" begin
@@ -1042,19 +1064,20 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
         else #fast formula
             # Reuse the application's scratch; y_buffer holds the live RHS.
             weights = halpha.cg_preconditioner.AAAAinvx
-            diagonal =
-                isnothing(halpha.AAAATtau) ? halpha.AAAATtau_fact.diag :
-                view(halpha.AAAATtau, diagind(halpha.AAAATtau))
-            weights .= sqrt.(1 ./ diagonal)
+            preconditioner_weights!(
+                weights,
+                isnothing(halpha.AAAATtau) ? halpha.AAAATtau_fact : halpha.AAAATtau,
+            )
 
             S = prec_alpha_S!(solver, halpha, weights)
         end
 
         # Schur complement for the SMW formula
         LinearAlgebra.hermitianpart!(S)
-        view(S, diagind(S)) .+= one(T)
+        indices = view(CartesianIndices(S), diagind(S))
+        view(S, indices) .+= one(T)
         # The previous preconditioner is dead; its factor may share this buffer.
-        halpha.cholS = cholesky!(Hermitian(S))
+        factor_preconditioner!(halpha, S)
 
     end
 
@@ -1093,6 +1116,14 @@ function MyM{T,M,F,C}(
     cholS,
     workspace = nothing,
 ) where {T,M,F,C}
+    if workspace isa MyM{T,M,F,C} &&
+       workspace.model === model &&
+       workspace.Umat === Umat &&
+       workspace.Z === Z
+        workspace.AAAATtau_fact = AAAATtau_fact
+        workspace.cholS = cholS
+        return workspace
+    end
     if !isnothing(workspace)
         # Refresh the factors each iteration, keeping the application buffers.
         return MyM{T,M,F,C}(
