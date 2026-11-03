@@ -193,22 +193,28 @@ end
 
 @testset "Preconditioner assembly reuses setup storage" begin
     LS = Loraine.Solvers
-    for rank in (1, 2), scalars in (false, true)
+    for T in (Float64, Float32), rank in (1, 2), scalars in (:none, :bounds, :general)
         dims = [3, 4]
         nvar = 3
+        C_lin = if scalars == :none
+            SparseMatrixCSC{T,Int64}(spzeros(T, nvar, 0))
+        elseif scalars == :bounds
+            sparse(Int64[1, 3], Int64[1, 2], T[1, 2], nvar, 2)
+        else
+            sparse(Int64[1, 2, 2, 3], Int64[1, 1, 2, 2], T[1, 2, 1, 3], nvar, 2)
+        end
         A = [
-            sparse([mod1(j, d)], [mod1(j, d)], [Float64(j)], d, d) for d in dims, j = 1:nvar
+            sparse([mod1(j, d)], [mod1(j, d)], [T(j)], d, d) for d in dims, j = 1:nvar
         ]
         model = LRO.Model(
-            [spdiagm(ones(d)) for d in dims],
+            [spdiagm(ones(T, d)) for d in dims],
             A,
-            zeros(nvar),
-            SparseVector{Float64,Int64}(sparsevec(scalars ? [1.0, 2.0] : Float64[])),
-            scalars ?
-            sparse(Int64[1, 2, 2, 3], Int64[1, 1, 2, 2], [1.0, 2.0, 1.0, 3.0], nvar, 2) : SparseMatrixCSC{Float64,Int64}(spzeros(nvar, 0)),
+            zeros(T, nvar),
+            SparseVector{T,Int64}(sparsevec(ones(T, size(C_lin, 2)))),
+            C_lin,
             Int64.(dims),
         )
-        state = LS.Solver{Float64}(model; kit = 1, erank = rank, verb = 0)
+        state = LS.Solver{T}(model; kit = 1, erank = rank, verb = 0)
         solver, halpha = state.solver, state.halpha
         solver.kit = 1
         solver.erank = rank
@@ -229,19 +235,37 @@ end
         base = nothing
         for pass = 1:2
             LS.Prec_for_CG_tilS_prep(solver, halpha)
-            if scalars
-                @test halpha.AAAATtau isa Matrix{Float64}
-                @test halpha.AAAATtau_fact isa Cholesky
-                @test !isdiag(halpha.AAAATtau)
-                @test Matrix(halpha.AAAATtau_fact) ≈ halpha.AAAATtau
-                if pass == 1
-                    base = halpha.AAAATtau
+            # `AAAATtau` is `C_lin * Diagonal(X_lin ./ S_lin) * C_lin'` up to
+            # a multiple of the identity
+            X_lin = solver.X[LRO.ScalarIndex]
+            expected_base = C_lin * Diagonal(X_lin .* solver.S_lin_inv) * C_lin'
+            if scalars == :general
+                if T == Float64
+                    @test halpha.AAAATtau isa SparseMatrixCSC{T,Int}
+                    @test halpha.AAAATtau_fact isa SparseArrays.CHOLMOD.Factor
+                    @test Matrix(sparse(halpha.AAAATtau_fact)) ≈ halpha.AAAATtau
                 else
-                    @test halpha.AAAATtau === base
+                    # CHOLMOD only supports `Float64`
+                    @test halpha.AAAATtau isa Matrix{T}
+                    @test halpha.AAAATtau_fact isa Cholesky
+                    @test Matrix(halpha.AAAATtau_fact) ≈ halpha.AAAATtau
+                end
+                @test !isdiag(halpha.AAAATtau)
+                @test halpha.AAAATtau - expected_base ≈
+                      (halpha.AAAATtau[1, 1] - expected_base[1, 1]) * I
+                if pass == 1
+                    base = (halpha.AAAATtau, halpha.AAAATtau_fact)
+                else
+                    @test halpha.AAAATtau === base[1]
+                    if T == Float64
+                        @test halpha.AAAATtau_fact === base[2]
+                    end
                 end
             else
                 @test isnothing(halpha.AAAATtau)
                 @test halpha.AAAATtau_fact isa Diagonal
+                D = halpha.AAAATtau_fact
+                @test Matrix(D) - expected_base ≈ (D[1, 1] - expected_base[1, 1]) * I
             end
             V = hcat(
                 [
@@ -249,7 +273,7 @@ end
                     kron(halpha.Umat[i], halpha.Z[i]) for i in eachindex(dims)
                 ]...,
             )
-            factor = if scalars && rank == 1
+            factor = if scalars == :general && rank == 1
                 Diagonal(diag(halpha.AAAATtau))
             else
                 halpha.AAAATtau_fact

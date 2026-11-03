@@ -568,9 +568,8 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         halpha.cg_preconditioner =
             MyM(solver.model, nothing, halpha.Umat, halpha.Z, nothing)
         cg_assembly!(halpha, T, ncon, sum(length, halpha.Umat))
-        if solver.preconditioner == 1 && LRO.num_scalars(solver.model) == 0
-            halpha.AAAATtau = nothing
-            halpha.AAAATtau_fact = Diagonal(zeros(T, ncon))
+        if solver.preconditioner == 1
+            init_AAAATtau!(halpha, solver.model, T)
         end
         if solver.erank == 1 && solver.preconditioner == 1
             cg_rank_one!(halpha, solver.model)
@@ -879,22 +878,79 @@ function cg_scaling!(U, Z, workspace, W, aamat)
     return tau
 end
 
+# `AAAATtau = baseline * I + C_lin * Diagonal(X_lin ./ S_lin) * C_lin'` where
+# `C_lin` is the Jacobian of the scalar constraints. When each scalar
+# constraint involves at most one entry of `y`, e.g., bounds as in the `vib`
+# and `tru` problems, it is diagonal and `AAAATtau` is `nothing` while
+# `AAAATtau_fact` is the `Diagonal`. Otherwise, `AAAATtau` is sparse with the
+# sparsity pattern of `C_lin * C_lin'` and `AAAATtau_fact` is its sparse
+# Cholesky factorization, whose symbolic analysis is reused.
+# When this pattern is dense, a dense `Matrix` would make the factorization
+# faster but not the triangular solves of each CG iteration so it does not seem
+# worth it for now. CHOLMOD only supports `Float64` so we use a dense `Matrix`
+# for other types.
+function init_AAAATtau!(halpha, model, ::Type{T}) where {T}
+    if halpha.AAAATtau isa AbstractMatrix{T} ||
+       (isnothing(halpha.AAAATtau) && halpha.AAAATtau_fact isa Diagonal{T})
+        return
+    end
+    C = LRO.jac(model.model, LRO.ScalarIndex)
+    if all(k -> length(nzrange(C, k)) <= 1, axes(C, 2))
+        halpha.AAAATtau = nothing
+        halpha.AAAATtau_fact = Diagonal(zeros(T, model.meta.ncon))
+        return
+    end
+    # The values are positive so no entry of the pattern cancels out
+    pattern = SparseMatrixCSC(size(C)..., C.colptr, C.rowval, ones(T, nnz(C)))
+    H = _native_sparse_indices(pattern * pattern' + I)
+    halpha.AAAATtau = T == Float64 ? H : Matrix(H)
+    halpha.AAAATtau_fact = nothing
+    return
+end
+
+_zero_entries!(H::SparseMatrixCSC) = fill!(nonzeros(H), zero(eltype(H)))
+_zero_entries!(H::Matrix) = fill!(H, zero(eltype(H)))
+
+_cholesky!(::Nothing, H) = cholesky(Hermitian(H))
+_cholesky!(F::SparseArrays.CHOLMOD.Factor, H) = cholesky!(F, Hermitian(H))
+_cholesky!(::Cholesky, H::Matrix) = cholesky(Hermitian(H))
+
+function fill_AAAATtau!(halpha, solver, baseline)
+    C = LRO.jac(solver.model.model, LRO.ScalarIndex)
+    rows, values = rowvals(C), nonzeros(C)
+    X = solver.X[LRO.ScalarIndex]
+    H = halpha.AAAATtau
+    if isnothing(H)
+        d = halpha.AAAATtau_fact.diag
+        fill!(d, baseline)
+        for k in axes(C, 2)
+            w = X[k] * solver.S_lin_inv[k]
+            for p in nzrange(C, k)
+                d[rows[p]] += w * abs2(values[p])
+            end
+        end
+        return
+    end
+    _zero_entries!(H)
+    for i in axes(H, 1)
+        H[i, i] = baseline
+    end
+    for k in axes(C, 2)
+        w = X[k] * solver.S_lin_inv[k]
+        for p in nzrange(C, k), q in nzrange(C, k)
+            H[rows[q], rows[p]] += w * values[q] * conj(values[p])
+        end
+    end
+    halpha.AAAATtau_fact = _cholesky!(halpha.AAAATtau_fact, H)
+    return
+end
+
 function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
 
     @timeit solver.to "prec" begin
         nvar = solver.model.meta.ncon
 
-        if LRO.num_scalars(solver.model) > 0
-            # TODO: Check whether sparse storage is worthwhile here.
-            if !(halpha.AAAATtau isa Matrix{T}) ||
-               size(halpha.AAAATtau) != (nvar, nvar)
-                halpha.AAAATtau = zeros(T, nvar, nvar)
-            else
-                fill!(halpha.AAAATtau, zero(T))
-            end
-        else
-            halpha.AAAATtau = nothing
-        end
+        init_AAAATtau!(halpha, solver.model, T)
         baseline = zero(T)
         sizeS = sum(length, halpha.Umat; init = 0)
 
@@ -916,25 +972,9 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
             end
         end
 
-        if LRO.num_scalars(solver.model) > 0
-            H = halpha.AAAATtau
-            indices = view(CartesianIndices(H), diagind(H))
-            view(H, indices) .= baseline
-            LRO.add_schur_complement!(
-                solver.model,
-                solver.X[LRO.ScalarIndex] .* solver.S_lin_inv,
-                LRO.ScalarIndex,
-                halpha.AAAATtau,
-            )
-        end
-
         # Factorize once here; `AAAATtau` is constant for the whole predictor/corrector
         # CG solve, so this avoids re-factorizing it on every single CG iteration.
-        if isnothing(halpha.AAAATtau)
-            fill!(halpha.AAAATtau_fact.diag, baseline)
-        else
-            halpha.AAAATtau_fact = cholesky(Hermitian(halpha.AAAATtau))
-        end
+        fill_AAAATtau!(halpha, solver, baseline)
 
         if solver.erank > 1 #slow formula
             # @timeit solver.to "prec3" begin
