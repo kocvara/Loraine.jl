@@ -137,14 +137,7 @@ function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
             M = MyM_no(solver.to)
         elseif solver.preconditioner == 1
             Prec_for_CG_tilS_prep(solver, halpha)
-            M = MyM(
-                solver.model,
-                halpha.AAAATtau_fact,
-                halpha.Umat,
-                halpha.Z,
-                halpha.cholS,
-                halpha.cg_preconditioner,
-            )
+            M = make_preconditioner(halpha, solver.model)
             halpha.cg_preconditioner = M
         elseif solver.preconditioner == 2 || solver.preconditioner == 4
             Prec_for_CG_beta(solver, halpha)
