@@ -253,6 +253,14 @@ function SolverCore.solve!(
         if field == :verbose
             field = :verb # TODO rename to :verbose to follow NLPModels convention
         end
+        if field == :datasparsity && kw[2] != solver.solver.datasparsity
+            # The Schur buffer depends on `datasparsity`. It was built in the
+            # constructor which does not receive the options given to the
+            # `LowRankOpt.Optimizer`.
+            model = solver.solver.model
+            model.schur_buffer =
+                LRO.buffer_for_schur_complement(model.model, kw[2])
+        end
         setproperty!(solver.solver, field, kw[2])
     end
     solver.solver.to = TimerOutput()

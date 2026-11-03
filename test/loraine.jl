@@ -94,6 +94,24 @@ end
         model = Loraine.loraine(THETA1)
         @test MOI.get(model, MOI.ObjectiveValue()) ≈ 23 rtol = 1e-6
     end
+
+    # `datasparsity` is only given to `solve!`, after the Schur buffer was
+    # built by the constructor
+    @testset "datasparsity" begin
+        for datasparsity in (0, 8, 10^6)
+            model = Loraine.loraine(
+                THETA1,
+                Dict("verb" => 0, "datasparsity" => datasparsity),
+            )
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ 23 rtol = 1e-6
+            # `model` is a `LazyBridgeOptimizer` of a `CachingOptimizer`
+            solver = model.model.optimizer.solver.solver
+            @test solver.datasparsity == datasparsity
+            component = only(solver.model.schur_buffer[3])
+            nnzs = [nnz(A) for A in component.component.values]
+            @test component.last_dense == [count(>(datasparsity), nnzs)]
+        end
+    end
 end
 
 # A 1x1 block has no residual eigenvalues at the default preconditioner rank.
