@@ -309,6 +309,10 @@ end
         preconditioner = halpha.cg_preconditioner
         LS.myIPstep(solver, halpha)
         @test all(a === b for (a, b) in zip(buffers, iteration_storage(solver)))
+        if T == Float64 && kit == 0
+            ip_step_allocations(solver, halpha)
+            @test ip_step_allocations(solver, halpha) == 0
+        end
         for _ = 1:2
             LS.prepare_W(solver)
             mat_idx = LS.LRO.MatrixIndex(1)
@@ -328,16 +332,46 @@ end
     end
 end
 
+function scaling_cholesky_allocations(solver, workspace, X)
+    return @allocated begin
+        Loraine.Solvers.try_cholesky!(solver, workspace, X, "X")
+        nothing
+    end
+end
+
 @testset "Scaling Cholesky workspace and recovery" begin
+    LS = Loraine.Solvers
     solver, _ = singular_schur_solver()
-    for diagonal in (1.0, -1e-6)
-        X = Matrix(Diagonal([diagonal, 2.0]))
+    solver.verb = 0
+    for T in (Float32, Float64), diagonal in (1.0, -1e-6)
+        X = Matrix(Diagonal(T[diagonal, 2]))
         workspace = similar(X)
-        factor = Loraine.Solvers.try_cholesky!(solver, workspace, X, "X")
+        factor = @inferred LS.try_cholesky!(solver, workspace, X, "X")
+        @test factor isa Cholesky{T,Matrix{T}}
         @test factor.factors === workspace
         @test Matrix(factor) ≈ X
         @test isposdef(X)
         @test solver.status == 0
+        scaling_cholesky_allocations(solver, workspace, X)
+        @test scaling_cholesky_allocations(solver, workspace, X) == 0
+    end
+    for T in (Float32, Float64)
+        # Even 1001 diagonal shifts cannot repair this matrix. The helper
+        # must give up with an identity factor and preserve failure status.
+        X = Matrix(Diagonal(T[-1, 2]))
+        workspace = similar(X)
+        solver.status = 0
+        factor = @inferred LS.try_cholesky!(solver, workspace, X, "X")
+        @test factor isa Cholesky{T,Matrix{T}}
+        @test factor.factors === workspace
+        @test Matrix(factor) == Matrix{T}(I, 2, 2)
+        @test !isposdef(X)
+        @test diag(X) ≈ T[-1, 2] .+ T(1001e-5) rtol = 1e-4
+        @test solver.status == 4
+        # The identity fallback's triangle must remain usable by scaling.
+        result = Matrix{T}(I, 2, 2)
+        ldiv!(factor.L, result)
+        @test result == Matrix{T}(I, 2, 2)
     end
 end
 
