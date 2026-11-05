@@ -221,7 +221,8 @@ mutable struct Halpha{T,M,F}
     Umat::Vector{Matrix{T}}
     Z::Vector{Matrix{T}}
     cholS::Cholesky{T,Matrix{T}}
-    AAAATtau::Union{Nothing,Matrix{T},SparseMatrixCSC{T,Int},Vector{T}}
+    AAAATtau::Union{Nothing,Matrix{T},SparseMatrixCSC{T,Int}}
+    AAAATtau_diag::Vector{T}
     AAAATtau_fact::F
     cg_preconditioner::Union{Nothing,MyM{T,M,F,Cholesky{T,Matrix{T}}}}
     cg_assembly::Union{Nothing,NTuple{3,Matrix{T}}}
@@ -234,6 +235,7 @@ mutable struct Halpha{T,M,F}
             Matrix{T}[],
             Cholesky(zeros(T, 0, 0), 'U', 0),
             nothing,
+            T[],
             nothing,
             nothing,
             nothing,
@@ -572,6 +574,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     halpha.Z = Matrix{T}[]
     ncon = solver.model.meta.ncon
     halpha.AAAATtau = nothing
+    halpha.AAAATtau_diag = zeros(T, ncon)
     halpha.AAAATtau_fact = nothing
 
     for mat_idx in LRO.matrix_indices(solver.model)
@@ -607,11 +610,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     end
     if solver.kit == 1 && solver.preconditioner in (1, 4)
         buffers = cg_assembly!(halpha, T, ncon, sum(length, halpha.Umat))
-        if solver.preconditioner == 1
-            init_AAAATtau!(halpha, solver.model, T)
-        else
-            halpha.AAAATtau_fact = Diagonal(zeros(T, ncon))
-        end
+        init_AAAATtau!(halpha, solver.model, T)
         # Placeholder factors are replaced before the first CG application.
         halpha.cholS = Cholesky(buffers[2], 'U', 0)
         halpha.cg_preconditioner = make_preconditioner(halpha, solver.model)
@@ -803,7 +802,7 @@ function Prec_for_CG_beta(solver::MySolver{T}, halpha) where {T}
         end
     end
 
-    halpha.AAAATtau = zeros(T, nvar)
+    fill!(halpha.AAAATtau_diag, zero(T))
     if nlmi > 0
         for i in LRO.matrix_indices(solver.model)
             ilmi = i.value
@@ -823,18 +822,18 @@ function Prec_for_CG_beta(solver::MySolver{T}, halpha) where {T}
                 ttau = (minimum(lambda_s) + mean(lambda_s)) / 2 - T(1e-14)
             end
             if solver.aamat < 3
-                halpha.AAAATtau .+= ttau^2
+                halpha.AAAATtau_diag .+= ttau^2
             end
         end
         if LRO.num_scalars(solver.model) > 0
-            tmp = zeros(eltype(halpha.AAAATtau), nvar, nvar)
+            tmp = zeros(eltype(halpha.AAAATtau_diag), nvar, nvar)
             LRO.add_schur_complement!(
                 solver.model,
                 solver.X[LRO.ScalarIndex] .* solver.S_lin_inv,
                 LRO.ScalarIndex,
                 tmp,
             )
-            halpha.AAAATtau .+= diag(tmp)
+            halpha.AAAATtau_diag .+= diag(tmp)
         end
     end
 end
@@ -953,7 +952,11 @@ _zero_entries!(H::Matrix) = fill!(H, zero(eltype(H)))
 
 _cholesky!(::Nothing, H) = cholesky(Hermitian(H))
 _cholesky!(F::SparseArrays.CHOLMOD.Factor, H) = cholesky!(F, Hermitian(H))
-_cholesky!(::Cholesky, H::Matrix) = cholesky(Hermitian(H))
+function _cholesky!(F::Cholesky, H::Matrix)
+    copyto!(F.factors, H)
+    cholesky!(Hermitian(F.factors))
+    return F
+end
 
 function fill_AAAATtau!(halpha, solver, baseline)
     C = LRO.jac(solver.model.model, LRO.ScalarIndex)
@@ -985,8 +988,8 @@ function fill_AAAATtau!(halpha, solver, baseline)
     return
 end
 
-function preconditioner_weights!(weights, base::Diagonal)
-    weights .= sqrt.(1 ./ base.diag)
+function preconditioner_weights!(weights, base::AbstractVector)
+    weights .= sqrt.(1 ./ base)
     return
 end
 
@@ -1066,7 +1069,7 @@ function Prec_for_CG_tilS_prep(solver::MySolver{T}, halpha) where {T}
             weights = halpha.cg_preconditioner.AAAAinvx
             preconditioner_weights!(
                 weights,
-                isnothing(halpha.AAAATtau) ? halpha.AAAATtau_fact : halpha.AAAATtau,
+                isnothing(halpha.AAAATtau) ? halpha.AAAATtau_fact.diag : halpha.AAAATtau,
             )
 
             S = prec_alpha_S!(solver, halpha, weights)
