@@ -361,6 +361,17 @@ end
     LS = Loraine.Solvers
     solver, _ = singular_schur_solver()
     solver.verb = 0
+    for T in (Float32, Float64)
+        # Entries far below the rounding of the factor are set to zero so
+        # that they cannot become subnormal in the products of the scaling.
+        L = T[1 0 0; floatmin(T) 1 0; eps(T) 1 1]
+        X = L * L'
+        workspace = similar(X)
+        factor = LS.try_cholesky!(solver, workspace, X, "X")
+        @test factor.U[1, 2] == 0
+        @test factor.U[1, 3] == eps(T)
+        @test Matrix(factor) ≈ X
+    end
     for T in (Float32, Float64), diagonal in (1.0, -1e-6)
         X = Matrix(Diagonal(T[diagonal, 2]))
         workspace = similar(X)

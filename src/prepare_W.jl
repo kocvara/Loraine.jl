@@ -16,7 +16,27 @@ function scaling_svd!(gram, A::Matrix{Float64}, workspace = nothing)
     return values, vectors
 end
 
+# The Cholesky factor of a sparse matrix has entries that decay exponentially
+# away from its sparsity pattern. When some of them are subnormal, the matrix
+# products of the NT scaling are up to 100 times slower (e.g., maxG11). The
+# entries below `eps^2` times the largest diagonal entry do not change these
+# products in floating-point arithmetic so they are set to zero.
+function _flush_tiny!(C::Cholesky)
+    F = C.factors
+    tol = eps(real(eltype(F)))^2 * maximum(i -> abs(F[i, i]), axes(F, 1); init = zero(real(eltype(F))))
+    for j in axes(F, 2), i in (C.uplo == 'U' ? (1:j) : (j:size(F, 1)))
+        if abs(F[i, j]) < tol
+            F[i, j] = zero(eltype(F))
+        end
+    end
+    return C
+end
+
 function try_cholesky!(solver, workspace, X, name::String)
+    return _flush_tiny!(_try_cholesky!(solver, workspace, X, name))
+end
+
+function _try_cholesky!(solver, workspace, X, name::String)
     try
         return cholesky!(copyto!(workspace, X))
     catch
