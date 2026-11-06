@@ -17,6 +17,7 @@ import LowRankOpt as LRO
 # using MKL
 
 include("kron_etc.jl")
+include("single_schur.jl")
 
 struct FactoredMatrix{T} <: AbstractMatrix{T}
     factor::Matrix{T}
@@ -79,6 +80,9 @@ mutable struct MySolver{T,M}
     timing::Int64
     maxit::Int64
     datasparsity::Int64
+    # `1`: factor the Schur complement in single precision while it is
+    # accurate enough for `Float64` with `m ≥ 1000`, `0`: never
+    schur_single::Int64
 
     to::TimerOutput
 
@@ -97,6 +101,7 @@ mutable struct MySolver{T,M}
     BBBB::Matrix{T}
     chol_work::Matrix{T} # reusable storage for the dense Schur factorization
     cholBBBB::Cholesky{T,Matrix{T}}
+    single_schur::Union{Nothing,SingleSchur}
 
     status::Int
 
@@ -190,6 +195,7 @@ mutable struct MySolver{T,M}
         solver.timing = timing
         solver.maxit = maxit
         solver.datasparsity = datasparsity
+        solver.schur_single = 1
         solver.model = buffered_model
         return solver
     end
@@ -328,6 +334,7 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
     "timing" => 1,
     "maxit" => 100,
     "datasparsity" => 8,
+    "schur_single" => 1,
 )
 
 function load(model, options::Dict; T = Float64)
@@ -364,6 +371,7 @@ function load(model, options::Dict; T = Float64)
         datasparsity,
         model,
     )
+    solver.schur_single = Int64(get(options, "schur_single", 1))
 
     halpha = Halpha(solver)
     solver.cg_iter_tot = 0
@@ -607,6 +615,10 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     if solver.kit == 0   # if direct solver; compute the Hessian matrix
         solver.BBBB = zeros(T, ncon, ncon)
         solver.chol_work = zeros(T, ncon, ncon)
+    end
+    solver.single_schur = nothing
+    if T == Float64 && solver.kit == 0 && solver.schur_single == 1 && ncon >= 1000
+        solver.single_schur = SingleSchur(ncon)
     end
     if solver.kit == 1 && solver.preconditioner in (1, 4)
         buffers = cg_assembly!(halpha, T, ncon, sum(length, halpha.Umat))
