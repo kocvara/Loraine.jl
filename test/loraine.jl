@@ -443,17 +443,14 @@ end
 end
 
 eigen_allocations(ws, A) = @allocated Loraine.LRO.eigen!(ws, A)
-inverse_allocations(ws, A) = @allocated Loraine.LapackWorkspaces.block_inverse!(ws, A)
 cone_allocations(ws, A) = @allocated Loraine.LRO.eigmin!(ws, A)
 
 @testset "Reusable LAPACK workspaces" begin
-    LW = Loraine.LapackWorkspaces
     for T in (Float32, Float64), n in (1, 3, 7)
         A = T[r == c ? 2+r : sin(r+2c)/10 for r = 1:n, c = 1:n]
         symmetric = Matrix(Symmetric(A))
         scratch = copy(symmetric)
         ws = Loraine.LRO.EigenWorkspace(scratch)
-        inverse_ws = LW.make_workspace(scratch)
         expected = eigvals(Symmetric(symmetric))
         for _ = 1:2
             values, vectors =
@@ -462,15 +459,9 @@ cone_allocations(ws, A) = @allocated Loraine.LRO.eigmin!(ws, A)
             @test symmetric * vectors ≈ vectors * Diagonal(values)
             values, _ = Loraine.LRO.eigen!(ws, copyto!(scratch, symmetric))
             @test values ≈ expected
-            LW.block_inverse!(inverse_ws, copyto!(scratch, A))
-            @test scratch ≈ inv(A)
         end
         copyto!(scratch, symmetric)
         @test eigen_allocations(ws, scratch) == 0
-        copyto!(scratch, A)
-        @test inverse_allocations(inverse_ws, scratch) == 0
-        fill!(scratch, zero(T))
-        @test_throws SingularException LW.block_inverse!(inverse_ws, scratch)
         scratch[1, 1] = T(NaN)
         @test_throws ArgumentError Loraine.LRO.eigen!(ws, scratch)
     end

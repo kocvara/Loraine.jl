@@ -70,24 +70,15 @@ function prepare_W_block!(solver::MySolver{T}, i) where {T}
     copyto!(solver.Si[i], I)
     ldiv!(CtmpS.L, solver.Si[i])
     ldiv!(CtmpS.L', solver.Si[i])
-    copyto!(W.factor_inv, W.factor)
-    block_inverse!(solver.inverse_workspaces[i], W.factor_inv)
+    # As `W.factor = L * V * Diagonal(DDsi)` where `L` is the Cholesky factor
+    # of `X` and `V` is orthogonal, its inverse is `Diagonal(DDsi)⁻¹ * V' / L`.
+    adjoint!(W.factor_inv, V)
+    rdiv!(W.factor_inv, Ctmp.L)
+    W.factor_inv ./= solver.DDsi[i]
+    # `L` is stored in `W.matrix` so it is overwritten last.
     LinearAlgebra.mul!(W.matrix, W.factor, W.factor')
-
-    mul!(solver.kron_tmp[i], W.factor', solver.S[mat_idx])
-    DDtmp = solver.kron_tmp2[i]
-    mul!(DDtmp, solver.kron_tmp[i], W.factor)
-    # Only the diagonal is used, so symmetrizing DDtmp is unnecessary.
-    # Cartesian indices avoid reshaping the matrix for a linear view.
-    indices = view(CartesianIndices(DDtmp), diagind(DDtmp))
-    diagonal = view(DDtmp, indices)
-    try
-        @. solver.DDsi[i] = inv(sqrt(diagonal))
-    catch
-        @warn("Numerical difficulties, giving up")
-        fill!(solver.DDsi[i], one(T))
-        solver.status = 4
-    end
+    # `W.factor' * S * W.factor` is `Diagonal(D)` as `CCtmp = U * Diagonal(D) * V'`
+    # so there is no need to recompute `DDsi` from its diagonal.
     return
 end
 
