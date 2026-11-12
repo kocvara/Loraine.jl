@@ -104,8 +104,8 @@ mutable struct MySolver{T,M}
 
     err::NTuple{6,T}
 
-    X::LRO.VectorizedSolution{T}
-    S::LRO.VectorizedSolution{T}
+    X::LRO.VectorizedConeVector{T}
+    S::LRO.VectorizedConeVector{T}
     y::Vector{T}
     yold::Vector{T}
     delX::Vector{Matrix{T}}
@@ -122,12 +122,12 @@ mutable struct MySolver{T,M}
     Sn_lin::Vector{T}
 
     D::Vector{Vector{T}}
-    W::LRO.ShapedSolution{T,FactoredMatrix{T}}
+    W::LRO.ShapedConeVector{T,FactoredMatrix{T}}
     Si::Vector{Matrix{T}}
     DDsi::Vector{Vector{T}}
 
     Rp::Vector{T}
-    Rd::LRO.VectorizedSolution{T}
+    Rd::LRO.VectorizedConeVector{T}
 
     cg_iter_pre::Int64
     cg_iter_cor::Int64
@@ -154,7 +154,7 @@ mutable struct MySolver{T,M}
     # Per-block dim×2 scratch for the products of `ScaledDirection`
     step_tmp::Vector{Matrix{T}}
     # Newton RHS buffer; reused as block scratch after its Jacobian product.
-    sol_buffer::LRO.VectorizedSolution{T}
+    sol_buffer::LRO.VectorizedConeVector{T}
 
     function MySolver{T}(
         kit::Int64,
@@ -171,10 +171,10 @@ mutable struct MySolver{T,M}
         timing::Int64,
         maxit::Int64,
         datasparsity::Int64,
-        model::LRO.Model{T,A},
+        model::LRO.DualModel{T,A},
     ) where {T,A}
 
-        buffered_model = LRO.BufferedModelForSchur(model, datasparsity)
+        buffered_model = LRO.BufferedDualModel(model, datasparsity)
         solver = new{T,typeof(buffered_model)}()
         solver.kit = kit
         solver.tol_cg = tol_cg
@@ -254,29 +254,32 @@ function Halpha(solver::MySolver{T,M}) where {T,M}
 end
 
 struct Solver{T,M,H} <: SolverCore.AbstractOptimizationSolver
+    model::LRO.Model{T}
     solver::MySolver{T,M}
     halpha::H
     stats::SolverCore.GenericExecutionStats{T,Vector{T},Vector{T},Any}
 end
 
-function Solver{T}(model::LRO.Model; kws...) where {T}
+function Solver{T}(src::Union{LRO.Model,LRO.DualModel}; kws...) where {T}
+    model = LRO.primal_model(src)
+    dual = LRO.dual_model(model)
     options = Dict(kw[1] => kw[2] for kw in kws)
     stats = SolverCore.GenericExecutionStats(model)
-    solver, halpha = load(model, options; T)
-    solver.X = LRO.VectorizedSolution{T}(stats.solution, model.dim)
-    solver.y = stats.multipliers
-    Solver(solver, halpha, stats)
+    solver, halpha = load(dual, options; T)
+    solver.X = LRO.VectorizedConeVector(zeros(T, dual.meta.nvar), dual.dim)
+    solver.y = stats.solution
+    return Solver(model, solver, halpha, stats)
 end
 
-function LRO.MOI.get(solver::Solver, ::LRO.Solution)
-    return LRO.VectorizedSolution(solver.stats.solution, solver.solver.model.model.dim)
+function LRO.MOI.get(solver::Solver, ::LRO.DualSolution)
+    return LRO.VectorizedConeVector(-solver.stats.multipliers, solver.model.dim)
 end
 
 const STATUS_MAP = [
     :unknown,
     :first_order,
-    :unbounded, # the primal `max ⟨C,X⟩` has an unbounded ray so the primal is unbounded
-    :infeasible, # the dual `max ⟨b,y⟩` has an unbounded ray so the primal `min ⟨C,X⟩` is infeasible
+    :infeasible, # An unbounded cone-variable dual certifies primal infeasibility.
+    :unbounded, # An infeasible cone-variable dual may certify primal unboundedness.
     :max_iter,
     :exception,
 ]
@@ -294,15 +297,21 @@ function SolverCore.solve!(
         if field == :datasparsity && kw[2] != solver.solver.datasparsity
             # The Schur buffer depends on `datasparsity`.
             model = solver.solver.model
-            model.schur_buffer =
-                LRO.buffer_for_schur_complement(model.model, kw[2])
+            model.schur_buffer = LRO.buffer_for_schur_complement(model.model, kw[2])
         end
         setproperty!(solver.solver, field, kw[2])
     end
     solver.solver.to = TimerOutput()
     solve(solver.solver, solver.halpha)
     solver.stats.status = STATUS_MAP[solver.solver.status+1]
-    solver.stats.objective = NLPModels.obj(solver.solver.model, solver.solver.X)
+    SolverCore.set_objective!(solver.stats, NLPModels.obj(solver.model, solver.solver.y))
+    SolverCore.set_solver_specific!(
+        solver.stats,
+        :dual_objective,
+        -NLPModels.obj(solver.solver.model, solver.solver.X),
+    )
+    SolverCore.set_solution!(solver.stats, solver.solver.y)
+    SolverCore.set_constraint_multipliers!(solver.stats, -solver.solver.X.x)
     solver.stats.elapsed_time = solver.solver.tottime
     solver.stats.iter = solver.solver.iter
     return
@@ -417,7 +426,10 @@ end
 function solve(solver::MySolver, halpha::Halpha)
     t1 = time()
     if solver.verb > 0
-        @printf("\n *** Loraine.jl v0.2.8 ***\n")
+        @printf(
+            "\n *** Loraine.jl v%s ***\n",
+            string(pkgversion(parentmodule(@__MODULE__)))
+        )
 
         @printf(" Number of variables: %5d\n", solver.model.meta.ncon)
         @printf(" LMI constraints    : %5d\n", LRO.num_matrices(solver.model))
@@ -520,7 +532,7 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
     solver.delS = Matrix{T}[]
 
     solver.D = Vector{T}[]
-    solver.W = LRO.ShapedSolution{T,FactoredMatrix{T}}(
+    solver.W = LRO.ShapedConeVector{T,FactoredMatrix{T}}(
         zeros(T, LRO.num_scalars(solver.model)),
         map(LRO.matrix_indices(solver.model)) do i
             dim = LRO.side_dimension(solver.model, i)
@@ -770,7 +782,7 @@ end
 ```Functions for the iterative solver follow```
 
 struct MyA{T,M}
-    W::LRO.ShapedSolution{T,FactoredMatrix{T}}
+    W::LRO.ShapedConeVector{T,FactoredMatrix{T}}
     model::M
     to::TimerOutputs.TimerOutput
 end

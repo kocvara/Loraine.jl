@@ -22,7 +22,7 @@ function check_workspace(::Type{T}, dims, rank) where {T}
     rng = MersenneTwister(17)
     n = 3
     A = [sparse([mod1(j, d)], [mod1(j, d)], T[j], d, d) for d in dims, j = 1:n]
-    model = LRO.Model(
+    model = LRO.DualModel(
         [spzeros(T, d, d) for d in dims],
         A,
         zeros(T, n),
@@ -30,7 +30,7 @@ function check_workspace(::Type{T}, dims, rank) where {T}
         SparseMatrixCSC{T,Int64}(spzeros(T, n, 0)),
         Int64.(dims),
     )
-    model = LRO.BufferedModelForSchur(model, 1)
+    model = LRO.BufferedDualModel(model, 1)
     U = [randn(rng, T, d, rank) / 10 for d in dims]
     Z = [Matrix{T}(I, d, d) + ones(T, d, d) / d for d in dims]
     workspace = nothing
@@ -58,7 +58,7 @@ function check_rank_one_preparation(dims)
     rng = MersenneTwister(23)
     nvar = 3
     A = [sparse([mod1(j, d)], [mod1(j, d)], [Float64(j)], d, d) for d in dims, j = 1:nvar]
-    model = LRO.Model(
+    model = LRO.DualModel(
         [spzeros(d, d) for d in dims],
         A,
         zeros(nvar),
@@ -71,7 +71,7 @@ function check_rank_one_preparation(dims)
     # Match the Int64 Jacobian indices seen in the 32-bit CI failure.
     @test all(J -> eltype(rowvals(J)) == Int64, solver.model.jprod_buffer)
     matrices = [Matrix{Float64}(I, d, d) for d in dims]
-    solver.W = LRO.ShapedSolution(
+    solver.W = LRO.ShapedConeVector(
         Float64[],
         [Loraine.Solvers.FactoredMatrix(M, M, M) for M in matrices],
     )
@@ -110,7 +110,7 @@ rank_one_allocations(t, block, U, Z, weights) =
         empty && foreach(a -> fill!(nonzeros(a), zero(T)), A)
         empty && foreach(dropzeros!, A)
         original = deepcopy(A)
-        model = LRO.Model(
+        model = LRO.DualModel(
             [spzeros(T, n, n)],
             A,
             zeros(T, nvar),
@@ -118,7 +118,7 @@ rank_one_allocations(t, block, U, Z, weights) =
             SparseMatrixCSC{T,Int64}(spzeros(T, nvar, 0)),
             Int64[n],
         )
-        buffered = LRO.BufferedModelForSchur(model, 1)
+        buffered = LRO.BufferedDualModel(model, 1)
         block = Loraine.Solvers.RankOneBlock(buffered, LRO.MatrixIndex(1))
         @test eltype(rowvals(block.AU)) == Int
         @test eltype(rowvals(block.contraction)) == Int
@@ -206,7 +206,7 @@ end
             sparse(Int64[1, 2, 2, 3], Int64[1, 1, 2, 2], T[1, 2, 1, 3], nvar, 2)
         end
         A = [sparse([mod1(j, d)], [mod1(j, d)], [T(j)], d, d) for d in dims, j = 1:nvar]
-        model = LRO.Model(
+        model = LRO.DualModel(
             [spdiagm(ones(T, d)) for d in dims],
             A,
             zeros(T, nvar),
@@ -340,7 +340,7 @@ factor_allocations(halpha, S) = @allocated Loraine.Solvers.factor_preconditioner
 @testset "Preconditioner factor wrapper follows its buffer" begin
     LS = Loraine.Solvers
     for T in (Float32, Float64)
-        model = LRO.Model(
+        model = LRO.DualModel(
             [spdiagm(T[1, 1])],
             reshape([spzeros(T, 2, 2)], 1, 1),
             zeros(T, 1),

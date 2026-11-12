@@ -99,19 +99,20 @@ end
     # built by the constructor
     @testset "datasparsity" begin
         for datasparsity in (0, 8, 10^6)
-            model = Loraine.loraine(
-                THETA1,
-                Dict("verb" => 0, "datasparsity" => datasparsity),
-            )
+            model =
+                Loraine.loraine(THETA1, Dict("verb" => 0, "datasparsity" => datasparsity))
             @test MOI.get(model, MOI.ObjectiveValue()) ≈ 23 rtol = 1e-6
             # `model` is a `LazyBridgeOptimizer` of a `CachingOptimizer`
             solver = model.model.optimizer.solver.solver
             @test solver.datasparsity == datasparsity
             component = only(solver.model.schur_buffer[3])
-            LRO = Loraine.Solvers.LRO
-            buffered = LRO.BufferedModelForSchur(solver.model.model, datasparsity)
-            @test component.last_dense ==
-                  only(buffered.schur_buffer[3]).last_dense
+            # LRO chooses its dense boundary with a cost model. Check that
+            # the requested option rebuilt the same workspace as fresh setup.
+            fresh =
+                Loraine.LRO.buffer_for_schur_complement(solver.model.model, datasparsity)
+            expected = only(fresh[3])
+            @test component.last_dense == expected.last_dense
+            @test component.permutation == expected.permutation
         end
     end
 end
@@ -176,7 +177,7 @@ end
 function singular_schur_solver()
     LS = Loraine.Solvers
     LRO = LS.LRO
-    model = LRO.Model(
+    model = LRO.DualModel(
         [sparse(Matrix{Float64}(I, 2, 2))],
         [spzeros(2, 2) for _ = 1:1, _ = 1:2],
         zeros(2),
