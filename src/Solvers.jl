@@ -311,7 +311,10 @@ function SolverCore.solve!(
         -NLPModels.obj(solver.solver.model, solver.solver.X),
     )
     SolverCore.set_solution!(solver.stats, solver.solver.y)
-    SolverCore.set_constraint_multipliers!(solver.stats, -solver.solver.X.x)
+    SolverCore.set_constraint_multipliers!(
+        solver.stats,
+        -LRO.cone_multipliers(solver.model, solver.solver.X),
+    )
     solver.stats.elapsed_time = solver.solver.tottime
     solver.stats.iter = solver.solver.iter
     return
