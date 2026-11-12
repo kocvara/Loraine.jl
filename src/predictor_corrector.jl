@@ -44,6 +44,89 @@ function solve_cg(solver, A, h, M)
     return direction, exit_code, Int64(num_iters)
 end
 
+# Factor the Schur complement `solver.BBBB` in `Float64`, regularizing it if
+# it is not numerically positive definite. Return `false` if it gives up, with
+# `solver.status = 3`.
+function factor_double!(solver::MySolver)
+    BBBB = LinearAlgebra.Hermitian(solver.BBBB)
+    #     @timeit solver.to "backslash" begin
+    if parent(BBBB) isa SparseMatrixCSC
+        # Convert to dense because
+        # 1. Cholesky is not implemented for `MultiFloat` for sparse
+        # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
+        BBBB = LinearAlgebra.Hermitian(
+            Matrix(parent(BBBB)),
+            LinearAlgebra.sym_uplo(BBBB.uplo),
+        )
+    end
+    # Reuse storage instead of allocating a dense factor matrix each iteration.
+    # `check = false` returns an unsuccessful factorization instead of
+    # throwing, so we avoid building/catching a `PosDefException`.
+    uplo = LinearAlgebra.sym_uplo(BBBB.uplo)
+    copyto!(solver.chol_work, parent(BBBB))
+    chol = cholesky!(Hermitian(solver.chol_work, uplo); check = false)
+    if !issuccess(chol)
+        if solver.verb > 0
+            println("Matrix H not positive definite, trying to regularize")
+        end
+        icount = 0
+        solver.regcount += 1
+        if solver.regcount > 5
+            if solver.verb > 0
+                @warn("too many regularizations of H, giving up")
+            end
+            set_identity_chol!(solver)
+            solver.status = 3
+            return false
+        end
+        while true
+            solver.BBBB .= solver.BBBB .+ 1e-4 .* I(size(solver.BBBB, 1))
+            copyto!(solver.chol_work, solver.BBBB)
+            chol = cholesky!(Hermitian(solver.chol_work, uplo); check = false)
+            issuccess(chol) && break
+            icount += 1
+            if icount > 1000
+                if solver.verb > 0
+                    @warn("H cannot be made positive definite, giving up")
+                end
+                set_identity_chol!(solver)
+                solver.status = 3
+                return false
+            end
+        end
+    end
+    solver.cholBBBB = chol
+    return true
+end
+
+# Factor the Schur complement, in single precision if possible. Return `false`
+# if it gives up.
+function factor_schur!(solver::MySolver)
+    s = solver.single_schur
+    if s isa SingleSchur && factor_single!(s, solver.BBBB)
+        return true
+    end
+    return factor_double!(solver)
+end
+
+# Solve the Schur system `solver.BBBB * x = b`. Return `false` if the
+# factorization gives up.
+function solve_schur!(solver::MySolver, x, b)
+    s = solver.single_schur
+    if s isa SingleSchur && s.active
+        if solve_single!(s, x, solver.BBBB, b)
+            return true
+        end
+        # Single precision is not accurate enough for this system
+        s.active = false
+        if !factor_double!(solver)
+            return false
+        end
+    end
+    ldiv!(x, solver.cholBBBB, b)
+    return true
+end
+
 function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
 
     solver.predict = true
@@ -84,55 +167,9 @@ function predictor(solver::MySolver{T}, halpha::Halpha) where {T}
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
-        BBBB = LinearAlgebra.Hermitian(solver.BBBB)
-        #     @timeit solver.to "backslash" begin
-        if parent(BBBB) isa SparseMatrixCSC
-            # Convert to dense because
-            # 1. Cholesky is not implemented for `MultiFloat` for sparse
-            # 2. It causes issues like https://github.com/JuliaSparse/SparseArrays.jl/issues/630, although that issue could be fixed by densifying the vector `h`.
-            BBBB = LinearAlgebra.Hermitian(
-                Matrix(parent(BBBB)),
-                LinearAlgebra.sym_uplo(BBBB.uplo),
-            )
+        if !factor_schur!(solver) || !solve_schur!(solver, solver.dely, h)
+            return
         end
-        # Reuse storage instead of allocating a dense factor matrix each iteration.
-        # `check = false` returns an unsuccessful factorization instead of
-        # throwing, so we avoid building/catching a `PosDefException`.
-        uplo = LinearAlgebra.sym_uplo(BBBB.uplo)
-        copyto!(solver.chol_work, parent(BBBB))
-        chol = cholesky!(Hermitian(solver.chol_work, uplo); check = false)
-        if !issuccess(chol)
-            if solver.verb > 0
-                println("Matrix H not positive definite, trying to regularize")
-            end
-            icount = 0
-            solver.regcount += 1
-            if solver.regcount > 5
-                if solver.verb > 0
-                    @warn("too many regularizations of H, giving up")
-                end
-                set_identity_chol!(solver)
-                solver.status = 3
-                return
-            end
-            while true
-                solver.BBBB .= solver.BBBB .+ 1e-4 .* I(size(solver.BBBB, 1))
-                copyto!(solver.chol_work, solver.BBBB)
-                chol = cholesky!(Hermitian(solver.chol_work, uplo); check = false)
-                issuccess(chol) && break
-                icount += 1
-                if icount > 1000
-                    if solver.verb > 0
-                        @warn("H cannot be made positive definite, giving up")
-                    end
-                    set_identity_chol!(solver)
-                    solver.status = 3
-                    return
-                end
-            end
-        end
-        solver.cholBBBB = chol
-        ldiv!(solver.dely, solver.cholBBBB, h)
     else
         A = MyA(solver.W, solver.model, solver.to)
         if solver.preconditioner == 0
@@ -234,7 +271,9 @@ function corrector(solver::MySolver{T}, halpha) where {T}
 
     # solving the linear system()
     if solver.kit == 0   # direct solver
-        ldiv!(solver.dely, solver.cholBBBB, h)
+        if !solve_schur!(solver, solver.dely, h)
+            return
+        end
     else
         A = MyA(solver.W, solver.model, solver.to)
         if solver.preconditioner == 0
