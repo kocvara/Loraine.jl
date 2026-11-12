@@ -16,3 +16,5 @@ include("cg_workspace.jl")
 include("MOI_wrapper.jl")
 
 include("primal_model.jl")
+
+include("soc.jl")

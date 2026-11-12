@@ -301,6 +301,7 @@ function SolverCore.solve!(
         end
         setproperty!(solver.solver, field, kw[2])
     end
+    SolverCore.set_solver_specific!(solver.stats, :dual_certificate, false)
     solver.solver.to = TimerOutput()
     solve(solver.solver, solver.halpha)
     solver.stats.status = STATUS_MAP[solver.solver.status+1]
@@ -315,6 +316,20 @@ function SolverCore.solve!(
         solver.stats,
         -LRO.cone_multipliers(solver.model, solver.solver.X),
     )
+    if solver.stats.status ∉ (:first_order, :acceptable) &&
+       LRO.constraint_violation(solver.model, solver.stats.solution) > 1e-7
+        scale = LRO.infeasibility_certificate(solver.model, -solver.stats.multipliers)
+        if !isnothing(scale)
+            solver.stats.multipliers ./= scale
+            SolverCore.set_status!(solver.stats, :infeasible)
+            SolverCore.set_solver_specific!(solver.stats, :dual_certificate, true)
+            SolverCore.set_solver_specific!(
+                solver.stats,
+                :dual_objective,
+                one(eltype(solver.stats.solution)),
+            )
+        end
+    end
     solver.stats.elapsed_time = solver.solver.tottime
     solver.stats.iter = solver.solver.iter
     return
