@@ -264,15 +264,16 @@ function predictor_trial_point!(solver, i)
     solver.Xn[i] .= solver.X[mat_idx] .+ solver.alpha[i] .* solver.delX[i]
     solver.Sn[i] .= solver.S[mat_idx] .+ solver.beta[i] .* solver.delS[i]
     # R = W.factor_inv delX delS W.factor + W.factor' delS delX W.factor_inv'
+    # As `delX` and `delS` are symmetric, the second term is the transpose of
+    # the first one.
     A = solver.kron_tmp[i]
     B = solver.kron_tmp2[i]
     R = solver.sol_buffer[mat_idx]
     mul!(A, W.factor_inv, solver.delX[i])
     mul!(B, A, solver.delS[i])
     mul!(R, B, W.factor)
-    mul!(A, W.factor', solver.delS[i])
-    mul!(B, A, solver.delX[i])
-    mul!(R, B, W.factor_inv', 1, 1)
+    transpose!(B, R)
+    R .+= B
     # RNT[i] = -R ./ deed  with  deed[k,l] = D[i][k] + D[i][l]
     d = solver.D[i]
     solver.RNT[i] .= .-R ./ (d .+ d')
@@ -286,6 +287,26 @@ function update_iterate!(solver, i, alpha_step, beta_step)
     @. solver.S[mat_idx] += beta_step * solver.delS[i]
     LinearAlgebra.hermitianpart!(solver.S[mat_idx])
     return
+end
+
+# `Diagonal(d) * L * Δ * L' * Diagonal(d)` given by its products so that the
+# step lengths do not form it with matrix products. `tmp` has two columns.
+struct ScaledDirection{T,M}
+    d::Vector{T}
+    L::M
+    Δ::Matrix{T}
+    tmp::Matrix{T}
+end
+
+function LinearAlgebra.mul!(w::AbstractVector, A::ScaledDirection, v::AbstractVector)
+    u = view(A.tmp, :, 1)
+    t = view(A.tmp, :, 2)
+    u .= A.d .* v
+    mul!(t, A.L', u)
+    mul!(u, Symmetric(A.Δ, :U), t)
+    mul!(w, A.L, u)
+    w .*= A.d
+    return w
 end
 
 function find_step(solver::MySolver{T}) where {T}
@@ -316,22 +337,13 @@ function find_step(solver::MySolver{T}) where {T}
                 end
 
                 # determining steplength to stay feasible
-                delSb = solver.kron_tmp2[i]
-                mul!(solver.kron_tmp[i], W.factor', solver.delS[i])
-                mul!(delSb, solver.kron_tmp[i], W.factor)
-                delXb = rhs_scratch
-                mul!(solver.kron_tmp[i], W.factor_inv, solver.delX[i])
-                mul!(delXb, solver.kron_tmp[i], W.factor_inv')
-
-                XXX = solver.kron_tmp[i]
-                @. XXX = solver.DDsi[i]' * delXb * solver.DDsi[i]
-                LinearAlgebra.hermitianpart!(XXX)
-                mimiX = minimum(first(LRO.eigen!(solver.eigen_workspaces[i], XXX)))
+                tmp = solver.step_tmp[i]
+                delXb = ScaledDirection(solver.DDsi[i], W.factor_inv, solver.delX[i], tmp)
+                mimiX = LRO.lanczos_eigmin!(solver.eigen_workspaces[i], delXb)
                 solver.alpha[i] = mimiX > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiX)
 
-                @. XXX = solver.DDsi[i]' * delSb * solver.DDsi[i]
-                LinearAlgebra.hermitianpart!(XXX)
-                mimiS = minimum(first(LRO.eigen!(solver.eigen_workspaces[i], XXX)))
+                delSb = ScaledDirection(solver.DDsi[i], W.factor', solver.delS[i], tmp)
+                mimiS = LRO.lanczos_eigmin!(solver.eigen_workspaces[i], delSb)
                 solver.beta[i] = mimiS > -1e-6 ? T(0.99) : min(T(1), -solver.tau / mimiS)
             end
         end

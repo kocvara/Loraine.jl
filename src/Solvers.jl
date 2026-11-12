@@ -1,6 +1,5 @@
 module Solvers
 
-using ..LapackWorkspaces
 
 export MySolver, solve, load, MyA, Halpha
 
@@ -151,8 +150,9 @@ mutable struct MySolver{T,M}
     # `predictor`/`corrector`/`find_step`, avoiding temporary matrix products.
     kron_tmp::Vector{Matrix{T}}
     eigen_workspaces::Vector{LRO.EigenWorkspace{T}}
-    inverse_workspaces::Vector{Union{Nothing,InverseWorkspace{T}}}
     kron_tmp2::Vector{Matrix{T}}
+    # Per-block dim×2 scratch for the products of `ScaledDirection`
+    step_tmp::Vector{Matrix{T}}
     # Newton RHS buffer; reused as block scratch after its Jacobian product.
     sol_buffer::LRO.VectorizedSolution{T}
 
@@ -539,8 +539,8 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
 
     solver.kron_tmp = Matrix{T}[]
     solver.kron_tmp2 = Matrix{T}[]
+    solver.step_tmp = Matrix{T}[]
     solver.eigen_workspaces = LRO.EigenWorkspace{T}[]
-    solver.inverse_workspaces = Union{Nothing,InverseWorkspace{T}}[]
     solver.sol_buffer = similar(solver.X)
 
     solver.regcount = 0
@@ -563,8 +563,8 @@ function setup_solver(solver::MySolver{T}, halpha::Halpha) where {T}
         push!(solver.RNT, zeros(T, dim, dim))
         push!(solver.kron_tmp, zeros(T, dim, dim))
         push!(solver.kron_tmp2, zeros(T, dim, dim))
+        push!(solver.step_tmp, zeros(T, dim, 2))
         push!(solver.eigen_workspaces, LRO.EigenWorkspace(solver.kron_tmp[end]))
-        push!(solver.inverse_workspaces, make_workspace(solver.kron_tmp2[end]))
     end
 
     halpha.Umat = Matrix{T}[]

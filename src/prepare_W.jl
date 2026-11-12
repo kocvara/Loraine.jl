@@ -16,7 +16,27 @@ function scaling_svd!(gram, A::Matrix{Float64}, workspace = nothing)
     return values, vectors
 end
 
+# The Cholesky factor of a sparse matrix has entries that decay exponentially
+# away from its sparsity pattern. When some of them are subnormal, the matrix
+# products of the NT scaling are up to 100 times slower (e.g., maxG11). The
+# entries below `eps^2` times the largest diagonal entry do not change these
+# products in floating-point arithmetic so they are set to zero.
+function _flush_tiny!(C::Cholesky)
+    F = C.factors
+    tol = eps(real(eltype(F)))^2 * maximum(i -> abs(F[i, i]), axes(F, 1); init = zero(real(eltype(F))))
+    for j in axes(F, 2), i in (C.uplo == 'U' ? (1:j) : (j:size(F, 1)))
+        if abs(F[i, j]) < tol
+            F[i, j] = zero(eltype(F))
+        end
+    end
+    return C
+end
+
 function try_cholesky!(solver, workspace, X, name::String)
+    return _flush_tiny!(_try_cholesky!(solver, workspace, X, name))
+end
+
+function _try_cholesky!(solver, workspace, X, name::String)
     try
         return cholesky!(copyto!(workspace, X))
     catch
@@ -70,24 +90,15 @@ function prepare_W_block!(solver::MySolver{T}, i) where {T}
     copyto!(solver.Si[i], I)
     ldiv!(CtmpS.L, solver.Si[i])
     ldiv!(CtmpS.L', solver.Si[i])
-    copyto!(W.factor_inv, W.factor)
-    block_inverse!(solver.inverse_workspaces[i], W.factor_inv)
+    # As `W.factor = L * V * Diagonal(DDsi)` where `L` is the Cholesky factor
+    # of `X` and `V` is orthogonal, its inverse is `Diagonal(DDsi)⁻¹ * V' / L`.
+    adjoint!(W.factor_inv, V)
+    rdiv!(W.factor_inv, Ctmp.L)
+    W.factor_inv ./= solver.DDsi[i]
+    # `L` is stored in `W.matrix` so it is overwritten last.
     LinearAlgebra.mul!(W.matrix, W.factor, W.factor')
-
-    mul!(solver.kron_tmp[i], W.factor', solver.S[mat_idx])
-    DDtmp = solver.kron_tmp2[i]
-    mul!(DDtmp, solver.kron_tmp[i], W.factor)
-    # Only the diagonal is used, so symmetrizing DDtmp is unnecessary.
-    # Cartesian indices avoid reshaping the matrix for a linear view.
-    indices = view(CartesianIndices(DDtmp), diagind(DDtmp))
-    diagonal = view(DDtmp, indices)
-    try
-        @. solver.DDsi[i] = inv(sqrt(diagonal))
-    catch
-        @warn("Numerical difficulties, giving up")
-        fill!(solver.DDsi[i], one(T))
-        solver.status = 4
-    end
+    # `W.factor' * S * W.factor` is `Diagonal(D)` as `CCtmp = U * Diagonal(D) * V'`
+    # so there is no need to recompute `DDsi` from its diagonal.
     return
 end
 

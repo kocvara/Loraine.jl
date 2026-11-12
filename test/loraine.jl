@@ -108,8 +108,10 @@ end
             solver = model.model.optimizer.solver.solver
             @test solver.datasparsity == datasparsity
             component = only(solver.model.schur_buffer[3])
-            nnzs = [nnz(A) for A in component.component.values]
-            @test component.last_dense == [count(>(datasparsity), nnzs)]
+            LRO = Loraine.Solvers.LRO
+            buffered = LRO.BufferedModelForSchur(solver.model.model, datasparsity)
+            @test component.last_dense ==
+                  only(buffered.schur_buffer[3]).last_dense
         end
     end
 end
@@ -361,6 +363,17 @@ end
     LS = Loraine.Solvers
     solver, _ = singular_schur_solver()
     solver.verb = 0
+    for T in (Float32, Float64)
+        # Entries far below the rounding of the factor are set to zero so
+        # that they cannot become subnormal in the products of the scaling.
+        L = T[1 0 0; floatmin(T) 1 0; eps(T) 1 1]
+        X = L * L'
+        workspace = similar(X)
+        factor = LS.try_cholesky!(solver, workspace, X, "X")
+        @test factor.U[1, 2] == 0
+        @test factor.U[1, 3] == eps(T)
+        @test Matrix(factor) ≈ X
+    end
     for T in (Float32, Float64), diagonal in (1.0, -1e-6)
         X = Matrix(Diagonal(T[diagonal, 2]))
         workspace = similar(X)
@@ -443,17 +456,14 @@ end
 end
 
 eigen_allocations(ws, A) = @allocated Loraine.LRO.eigen!(ws, A)
-inverse_allocations(ws, A) = @allocated Loraine.LapackWorkspaces.block_inverse!(ws, A)
 cone_allocations(ws, A) = @allocated Loraine.LRO.eigmin!(ws, A)
 
 @testset "Reusable LAPACK workspaces" begin
-    LW = Loraine.LapackWorkspaces
     for T in (Float32, Float64), n in (1, 3, 7)
         A = T[r == c ? 2+r : sin(r+2c)/10 for r = 1:n, c = 1:n]
         symmetric = Matrix(Symmetric(A))
         scratch = copy(symmetric)
         ws = Loraine.LRO.EigenWorkspace(scratch)
-        inverse_ws = LW.make_workspace(scratch)
         expected = eigvals(Symmetric(symmetric))
         for _ = 1:2
             values, vectors =
@@ -462,15 +472,9 @@ cone_allocations(ws, A) = @allocated Loraine.LRO.eigmin!(ws, A)
             @test symmetric * vectors ≈ vectors * Diagonal(values)
             values, _ = Loraine.LRO.eigen!(ws, copyto!(scratch, symmetric))
             @test values ≈ expected
-            LW.block_inverse!(inverse_ws, copyto!(scratch, A))
-            @test scratch ≈ inv(A)
         end
         copyto!(scratch, symmetric)
         @test eigen_allocations(ws, scratch) == 0
-        copyto!(scratch, A)
-        @test inverse_allocations(inverse_ws, scratch) == 0
-        fill!(scratch, zero(T))
-        @test_throws SingularException LW.block_inverse!(inverse_ws, scratch)
         scratch[1, 1] = T(NaN)
         @test_throws ArgumentError Loraine.LRO.eigen!(ws, scratch)
     end

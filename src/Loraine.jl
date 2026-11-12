@@ -32,8 +32,6 @@ end
 Optimizer() = Optimizer{Float64}()
 
 #modules
-include("lapack_workspace.jl")
-using .LapackWorkspaces
 include("Solvers.jl")
 using .Solvers
 
