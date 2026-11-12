@@ -17,7 +17,7 @@ function example_minimum_distortion()
     ]
     @variable(model, c² >= 1.0)
     @variable(model, Q[1:4, 1:4], PSD)
-    for i in 1:4, j in (i+1):4
+    for i = 1:4, j = (i+1):4
         @constraint(model, D[i, j]^2 <= Q[i, i] + Q[j, j] - 2 * Q[i, j])
         @constraint(model, Q[i, i] + Q[j, j] - 2 * Q[i, j] <= c² * D[i, j]^2)
     end
@@ -33,10 +33,10 @@ end
 
 Q = example_minimum_distortion()
 @test Q ≈ [
-    0  0  0  0
-    0  4 -2 -2
-    0 -2  4 -2
-    0 -2 -2  4
+    0 0 0 0
+    0 4 -2 -2
+    0 -2 4 -2
+    0 -2 -2 4
 ] / 3 rtol = 1e-6
 
 function plot_distortion(Q)

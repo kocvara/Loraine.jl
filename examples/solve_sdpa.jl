@@ -2,7 +2,7 @@
 (or any other SDP code linked in JuMP)"""
 
 using JuMP
-import Loraine 
+import Loraine
 # import CSDP
 # import SCS
 # using Mosek
@@ -11,10 +11,7 @@ import Loraine
 # using Dualization
 using MultiFloats
 
-function read_sdpa(
-    filename::String,
-    T::Type = Float64,
-)
+function read_sdpa(filename::String, T::Type = Float64)
     src = MOI.FileFormats.SDPA.Model{T}()
     MOI.read_from_file(src, filename)
     model = GenericModel{T}()

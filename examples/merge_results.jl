@@ -114,8 +114,7 @@ function merge(baseline = ARGS[1], comparison = ARGS[2])
     both = filter(row -> isfin(row.t_base) && isfin(row.t_comp), df)
     tot_base = sum(both.t_base)
     tot_comp = sum(both.t_comp)
-    geo = isempty(both.speedup) ? NaN :
-          exp(sum(log, both.speedup) / nrow(both))
+    geo = isempty(both.speedup) ? NaN : exp(sum(log, both.speedup) / nrow(both))
     println()
     println(
         "**",

@@ -49,8 +49,7 @@ function read_reference()
         else
             parse(Float64, cells[5])
         end
-        ref[name] =
-            (m = parse(Int, cells[3]), n = parse(Int, cells[4]), opt = opt)
+        ref[name] = (m = parse(Int, cells[3]), n = parse(Int, cells[4]), opt = opt)
     end
     return ref
 end
@@ -60,42 +59,47 @@ end
 function start_worker()
     pid = addprocs(1; exeflags = `--project=$(Base.active_project())`)[1]
     ospid = remotecall_fetch(getpid, pid)
-    remotecall_wait(Core.eval, pid, Main, quote
-        using JuMP
-        import Loraine
-        function solve_problem(path, kit, timeout)
-            t0 = time()
-            model = read_from_file(path)
-            set_optimizer(model, Loraine.Optimizer{Float64})
-            set_attribute(model, "kit", kit)
-            set_attribute(model, "eDIMACS", 1e-6)
-            set_attribute(model, "verb", 0)
-            set_attribute(model, "maxit", 100)
-            set_attribute(model, "datasparsity", 8)
-            optimize!(model) # warm up: absorb this problem's compilation
-            sample() = (
-                solve_time(model), # solver's own `SolveTimeSec`
-                barrier_iterations(model),
-                objective_value(model),
-                string(termination_status(model)),
-            )
-            # Re-solve for more samples (one row per solve, so `merge` can take
-            # the minimum), but only while another solve fits the budget (85% of
-            # the timeout). This keeps the whole call under the per-problem
-            # timeout while letting a larger `timeout` buy more samples; a solve
-            # slower than ~half the timeout just yields a single sample.
-            wall = @elapsed optimize!(model)
-            samples = [(wall, sample()...)]
-            # The 32-sample cap only binds for fast problems (slow ones are
-            # limited by the budget, so a larger `timeout` buys them more rows).
-            budget = 0.85 * timeout
-            while length(samples) < 32 && (time() - t0) + wall < budget
-                w = @elapsed optimize!(model)
-                push!(samples, (w, sample()...))
+    remotecall_wait(
+        Core.eval,
+        pid,
+        Main,
+        quote
+            using JuMP
+            import Loraine
+            function solve_problem(path, kit, timeout)
+                t0 = time()
+                model = read_from_file(path)
+                set_optimizer(model, Loraine.Optimizer{Float64})
+                set_attribute(model, "kit", kit)
+                set_attribute(model, "eDIMACS", 1e-6)
+                set_attribute(model, "verb", 0)
+                set_attribute(model, "maxit", 100)
+                set_attribute(model, "datasparsity", 8)
+                optimize!(model) # warm up: absorb this problem's compilation
+                sample() = (
+                    solve_time(model), # solver's own `SolveTimeSec`
+                    barrier_iterations(model),
+                    objective_value(model),
+                    string(termination_status(model)),
+                )
+                # Re-solve for more samples (one row per solve, so `merge` can take
+                # the minimum), but only while another solve fits the budget (85% of
+                # the timeout). This keeps the whole call under the per-problem
+                # timeout while letting a larger `timeout` buy more samples; a solve
+                # slower than ~half the timeout just yields a single sample.
+                wall = @elapsed optimize!(model)
+                samples = [(wall, sample()...)]
+                # The 32-sample cap only binds for fast problems (slow ones are
+                # limited by the budget, so a larger `timeout` buys them more rows).
+                budget = 0.85 * timeout
+                while length(samples) < 32 && (time() - t0) + wall < budget
+                    w = @elapsed optimize!(model)
+                    push!(samples, (w, sample()...))
+                end
+                return samples
             end
-            return samples
-        end
-    end)
+        end,
+    )
     return pid, ospid
 end
 
@@ -187,8 +191,9 @@ function bench(
                 [(timeout, NaN, -1, NaN, "TIMEOUT")]
             end
             for (t, st, iters, obj, status) in samples
-                gap = isfinite(obj) && isfinite(r.opt) ?
-                      abs(obj - r.opt) / max(1, abs(r.opt)) : NaN
+                gap =
+                    isfinite(obj) && isfinite(r.opt) ?
+                    abs(obj - r.opt) / max(1, abs(r.opt)) : NaN
                 println(
                     io,
                     join(

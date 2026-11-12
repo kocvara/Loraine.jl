@@ -15,11 +15,11 @@ makedocs(
     ],
     # The following ensures that we only include the docstrings from
     # this module for functions define in Base that we overwrite.
-    modules = [Loraine]
+    modules = [Loraine],
 )
 
 deploydocs(
-    repo   = "github.com/kocvara/Loraine.jl.git",
+    repo = "github.com/kocvara/Loraine.jl.git",
     target = "build",
     push_preview = true,
 )

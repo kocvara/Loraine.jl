@@ -22,7 +22,7 @@ function solve_max_cut_sdp(weights)
     # set_silent(model)
     MOI.set(model, MOI.RawOptimizerAttribute("kit"), 0)
     @variable(model, X[1:N, 1:N], PSD)
-    for i in 1:N
+    for i = 1:N
         set_start_value(X[i, i], 1.0)
     end
     @objective(model, Max, 0.25 * LinearAlgebra.dot(L, X))
@@ -32,7 +32,7 @@ function solve_max_cut_sdp(weights)
     Random.seed!(N)
     r = rand(N)
     r /= LinearAlgebra.norm(r)
-    cut = [LinearAlgebra.dot(r, V[:, i]) > 0 for i in 1:N]
+    cut = [LinearAlgebra.dot(r, V[:, i]) > 0 for i = 1:N]
     S = findall(cut)
     T = findall(.!cut)
     println("Solution:")

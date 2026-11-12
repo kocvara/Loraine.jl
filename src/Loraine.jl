@@ -22,11 +22,7 @@ struct Optimizer{T}
 end
 function Optimizer{T}() where {T}
     model = LRO.Optimizer{T}()
-    MOI.set(
-        model,
-        MOI.RawOptimizerAttribute("solver"),
-        Solvers.Solver{T},
-    )
+    MOI.set(model, MOI.RawOptimizerAttribute("solver"), Solvers.Solver{T})
     return model
 end
 Optimizer() = Optimizer{Float64}()
