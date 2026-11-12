@@ -108,8 +108,10 @@ end
             solver = model.model.optimizer.solver.solver
             @test solver.datasparsity == datasparsity
             component = only(solver.model.schur_buffer[3])
-            nnzs = [nnz(A) for A in component.component.values]
-            @test component.last_dense == [count(>(datasparsity), nnzs)]
+            LRO = Loraine.Solvers.LRO
+            buffered = LRO.BufferedModelForSchur(solver.model.model, datasparsity)
+            @test component.last_dense ==
+                  only(buffered.schur_buffer[3]).last_dense
         end
     end
 end
