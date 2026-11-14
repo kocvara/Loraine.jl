@@ -30,7 +30,10 @@ function check_workspace(::Type{T}, dims, rank) where {T}
         SparseMatrixCSC{T,Int64}(spzeros(T, n, 0)),
         Int64.(dims),
     )
-    model = LRO.BufferedModelForSchur(model, 1)
+    model = LRO.BufferedModelForSchur(
+        model;
+        dense_condition = LRO.And(LRO.MinNonzeros(1), LRO.DenseCost(100)),
+    )
     U = [randn(rng, T, d, rank) / 10 for d in dims]
     Z = [Matrix{T}(I, d, d) + ones(T, d, d) / d for d in dims]
     workspace = nothing
@@ -118,7 +121,10 @@ rank_one_allocations(t, block, U, Z, weights) =
             SparseMatrixCSC{T,Int64}(spzeros(T, nvar, 0)),
             Int64[n],
         )
-        buffered = LRO.BufferedModelForSchur(model, 1)
+        buffered = LRO.BufferedModelForSchur(
+        model;
+        dense_condition = LRO.And(LRO.MinNonzeros(1), LRO.DenseCost(100)),
+    )
         block = Loraine.Solvers.RankOneBlock(buffered, LRO.MatrixIndex(1))
         @test eltype(rowvals(block.AU)) == Int
         @test eltype(rowvals(block.contraction)) == Int

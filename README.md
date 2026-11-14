@@ -93,9 +93,12 @@ verb            # 2..full output; 1..short output; 0..no output [1]
 initpoint       # 0..Loraine heuristics, 1..SDPT3-like heuristics [0]
 timing          # 1..yes, 0..no
 maxit           # maximal number of global iterations [200]
-datasparsity    # data matrices treated as sparse when number of their 
-                # non-zero elements is below this parameter [8]
 ```
+
+The data matrices treated as dense when computing the Schur complement
+matrix are chosen with the `"dense_condition"` option of
+`LowRankOpt.Optimizer`, see the docstring of
+`LowRankOpt.default_dense_condition`.
 
 ## Citing
 

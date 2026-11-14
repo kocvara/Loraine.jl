@@ -78,7 +78,6 @@ mutable struct MySolver{T,M}
     initpoint::Int64
     timing::Int64
     maxit::Int64
-    datasparsity::Int64
 
     to::TimerOutput
 
@@ -170,12 +169,13 @@ mutable struct MySolver{T,M}
         initpoint::Int64,
         timing::Int64,
         maxit::Int64,
-        datasparsity::Int64,
-        model::LRO.Model{T,A},
-    ) where {T,A}
+        model::LRO.AbstractModel{T},
+    ) where {T}
 
-        buffered_model = LRO.BufferedModelForSchur(model, datasparsity)
-        solver = new{T,typeof(buffered_model)}()
+        # `LRO.Optimizer` gives a model already buffered with its
+        # `"dense_condition"` option, which is then returned unchanged.
+        model = LRO.BufferedModelForSchur(model)
+        solver = new{T,typeof(model)}()
         solver.kit = kit
         solver.tol_cg = tol_cg
         solver.tol_cg_up = tol_cg_up
@@ -189,8 +189,7 @@ mutable struct MySolver{T,M}
         solver.initpoint = initpoint
         solver.timing = timing
         solver.maxit = maxit
-        solver.datasparsity = datasparsity
-        solver.model = buffered_model
+        solver.model = model
         return solver
     end
 end
@@ -259,11 +258,11 @@ struct Solver{T,M,H} <: SolverCore.AbstractOptimizationSolver
     stats::SolverCore.GenericExecutionStats{T,Vector{T},Vector{T},Any}
 end
 
-function Solver{T}(model::LRO.Model; kws...) where {T}
+function Solver{T}(model::LRO.AbstractModel; kws...) where {T}
     options = Dict(kw[1] => kw[2] for kw in kws)
     stats = SolverCore.GenericExecutionStats(model)
     solver, halpha = load(model, options; T)
-    solver.X = LRO.VectorizedSolution{T}(stats.solution, model.dim)
+    solver.X = LRO.VectorizedSolution{T}(stats.solution, solver.model.model.dim)
     solver.y = stats.multipliers
     Solver(solver, halpha, stats)
 end
@@ -290,12 +289,6 @@ function SolverCore.solve!(
         field = Symbol(kw[1])
         if field == :verbose
             field = :verb # TODO rename to :verbose to follow NLPModels convention
-        end
-        if field == :datasparsity && kw[2] != solver.solver.datasparsity
-            # The Schur buffer depends on `datasparsity`.
-            model = solver.solver.model
-            model.schur_buffer =
-                LRO.buffer_for_schur_complement(model.model, kw[2])
         end
         setproperty!(solver.solver, field, kw[2])
     end
@@ -327,7 +320,6 @@ const DEFAULT_OPTIONS = Dict{String,Any}(
     "initpoint" => 0,
     "timing" => 1,
     "maxit" => 100,
-    "datasparsity" => 8,
 )
 
 function load(model, options::Dict; T = Float64)
@@ -345,7 +337,6 @@ function load(model, options::Dict; T = Float64)
     initpoint = Int64(get(options, "initpoint", 0))
     timing = Int64(get(options, "timing", 1))
     maxit = Int64(get(options, "maxit", 100))
-    datasparsity = Int64(get(options, "datasparsity", 8))
 
     solver = MySolver{T}(
         kit,
@@ -361,7 +352,6 @@ function load(model, options::Dict; T = Float64)
         initpoint,
         timing,
         maxit,
-        datasparsity,
         model,
     )
 
