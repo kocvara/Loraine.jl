@@ -95,23 +95,21 @@ end
         @test MOI.get(model, MOI.ObjectiveValue()) ≈ 23 rtol = 1e-6
     end
 
-    # `datasparsity` is only given to `solve!`, after the Schur buffer was
-    # built by the constructor
-    @testset "datasparsity" begin
-        for datasparsity in (0, 8, 10^6)
+    # The `"dense_condition"` option is consumed by `LRO.Optimizer` which gives
+    # the Schur buffer to Loraine
+    @testset "dense_condition" begin
+        for dense in (false, true)
             model = Loraine.loraine(
                 THETA1,
-                Dict("verb" => 0, "datasparsity" => datasparsity),
+                Dict("verb" => 0, "dense_condition" => c -> dense),
             )
             @test MOI.get(model, MOI.ObjectiveValue()) ≈ 23 rtol = 1e-6
             # `model` is a `LazyBridgeOptimizer` of a `CachingOptimizer`
             solver = model.model.optimizer.solver.solver
-            @test solver.datasparsity == datasparsity
             component = only(solver.model.schur_buffer[3])
-            LRO = Loraine.Solvers.LRO
-            buffered = LRO.BufferedModelForSchur(solver.model.model, datasparsity)
-            @test component.last_dense ==
-                  only(buffered.schur_buffer[3]).last_dense
+            n = only(component.last_nonzero)
+            @test n > 0
+            @test only(component.last_dense) == (dense ? n : 0)
         end
     end
 end

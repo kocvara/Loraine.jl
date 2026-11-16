@@ -71,7 +71,6 @@ function start_worker()
             set_attribute(model, "eDIMACS", 1e-6)
             set_attribute(model, "verb", 0)
             set_attribute(model, "maxit", 100)
-            set_attribute(model, "datasparsity", 8)
             optimize!(model) # warm up: absorb this problem's compilation
             sample() = (
                 solve_time(model), # solver's own `SolveTimeSec`

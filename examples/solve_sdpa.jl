@@ -52,7 +52,6 @@ set_attribute(model, "aamat", 2)
 set_attribute(model, "verb", 1)
 set_attribute(model, "initpoint", 1)
 set_attribute(model, "maxit", Int64(100))
-set_attribute(model, "datasparsity", 8)
 
 # set_optimizer(model, CSDP.Optimizer)
 optimize!(model)
